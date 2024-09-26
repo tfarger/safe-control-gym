@@ -28,7 +28,6 @@ class iLQR(BaseController):
             lamb_factor: float = 10,
             lamb_max: float = 1000,
             epsilon: float = 0.01,
-            prior_info: dict = None,
             **kwargs):
         '''Creates task and controller.
 
@@ -50,6 +49,7 @@ class iLQR(BaseController):
         super().__init__(env_func, **kwargs)
 
         # Model parameters
+        self.env = env_func()
         self.q_lqr = q_lqr
         self.r_lqr = r_lqr
         self.discrete_dynamics = discrete_dynamics
@@ -59,7 +59,6 @@ class iLQR(BaseController):
         self.lamb_factor = lamb_factor
         self.lamb_max = lamb_max
         self.epsilon = epsilon
-        self.prior_info = prior_info
 
         self.env = env_func(info_in_reset=True, done_on_out_of_bound=True, seed=self.seed)
 
