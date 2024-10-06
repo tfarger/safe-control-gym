@@ -1,8 +1,8 @@
-algo: sac
+algo: ppo
 algo_config:
   # model args
-  hidden_dim: 256
-  activation: "relu"
+  hidden_dim: 64
+  activation: relu
   norm_obs: False
   norm_reward: False
   clip_obs: 10.0
@@ -10,24 +10,25 @@ algo_config:
 
   # loss args
   gamma: 0.99
-  tau: 0.005
-  init_temperature: 0.2
-  use_entropy_tuning: False
-  target_entropy: null
+  use_gae: True
+  gae_lambda: 0.95
+  use_clipped_value: True
+  clip_param: 0.2
+  target_kl: 0.01
+  entropy_coef: 0.01
 
   # optim args
-  train_interval: 100
-  train_batch_size: 64
-  actor_lr: 0.001
+  opt_epochs: 10
+  mini_batch_size: 64
+  actor_lr: 0.0003
   critic_lr: 0.001
-  entropy_lr: 0.001
+  max_grad_norm: 0.5
 
   # runner args
   max_env_steps: 72000
-  warm_up_steps: 1000
-  rollout_batch_size: 4
   num_workers: 1
-  max_buffer_size: 1000000
+  rollout_batch_size: 4
+  rollout_steps: 100
   deque_size: 10
   eval_batch_size: 10
 
