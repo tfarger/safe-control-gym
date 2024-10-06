@@ -28,7 +28,6 @@ class iLQR(BaseController):
             lamb_factor: float = 10,
             lamb_max: float = 1000,
             epsilon: float = 0.01,
-            prior_info: dict = None,
             **kwargs):
         '''Creates task and controller.
 
@@ -41,15 +40,16 @@ class iLQR(BaseController):
             lamb_factor (float): The amount for which to increase lambda when training fails.
             lamb_max (float): The maximum lambda allowed.
             epsilon (float): The convergence tolerance of the cost function.
-        
+
         Note: This implementation has a Hessian regularization term self.lamb
-        to make sure H is well-conditioned for inversion. It is related to 
+        to make sure H is well-conditioned for inversion. It is related to
         lamb_factor and lamb_max. See [1] for more details.
         '''
 
         super().__init__(env_func, **kwargs)
 
         # Model parameters
+        self.env = env_func()
         self.q_lqr = q_lqr
         self.r_lqr = r_lqr
         self.discrete_dynamics = discrete_dynamics
@@ -59,7 +59,6 @@ class iLQR(BaseController):
         self.lamb_factor = lamb_factor
         self.lamb_max = lamb_max
         self.epsilon = epsilon
-        self.prior_info = prior_info
 
         self.env = env_func(info_in_reset=True, done_on_out_of_bound=True, seed=self.seed)
 
@@ -105,10 +104,11 @@ class iLQR(BaseController):
         self.previous_total_cost = -float('inf')
 
         # determine the maximum number of steps
-        max_steps = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC)\
-        
+        max_steps = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC)
+
         # Loop through iLQR iterations
         while self.ite_counter < self.max_iterations:
+            self.traj_step = 0
             self.run(env=env, max_steps=max_steps, training=True)
 
             # Save data and update policy if iteration is finished.
@@ -182,6 +182,8 @@ class iLQR(BaseController):
                 self.update_policy(env)
 
             self.ite_counter += 1
+        
+        self.reset()
 
     def update_policy(self, env):
         '''Updates policy.
@@ -284,35 +286,33 @@ class iLQR(BaseController):
         Args:
             obs (ndarray): The observation at this timestep.
             info (dict): The info at this timestep.
+            hardware (bool): Whether the controller is running on hardware.
 
         Returns:
             action (ndarray): The action chosen by the controller.
         '''
-
-        if not hardware:
-            step = self.extract_step(info)
-        else:
-            step = self.traj_step
+        # step = self.traj_step
+        # print('step:', step)
+        # print('step:', self.traj_step)
 
         if training:
             if self.ite_counter == 0:
-                action, gains_fb, input_ff = self.calculate_lqr_action(obs, step)
+                action, gains_fb, input_ff = self.calculate_lqr_action(obs, self.traj_step)
                 # Save gains and feedforward term
-                if step == 0:
+                if self.traj_step == 0:
                     self.gains_fb = gains_fb.reshape((1, self.model.nu, self.model.nx))
                     self.input_ff = input_ff.reshape(self.model.nu, 1)
                 else:
                     self.gains_fb = np.append(self.gains_fb, gains_fb.reshape((1, self.model.nu, self.model.nx)), axis=0)
                     self.input_ff = np.append(self.input_ff, input_ff.reshape(self.model.nu, 1), axis=1)
             else:
-                action = self.gains_fb[step].dot(obs) + self.input_ff[:, step]
+                action = self.gains_fb[self.traj_step].dot(obs) + self.input_ff[:, self.traj_step]
         elif self.gains_fb_best is not None:
-            action = self.gains_fb_best[step].dot(obs) + self.input_ff_best[:, step]
+            action = self.gains_fb_best[self.traj_step].dot(obs) + self.input_ff_best[:, self.traj_step]
         else:
-            action, _, _ = self.calculate_lqr_action(obs, step)
+            action, _, _ = self.calculate_lqr_action(obs, self.traj_step)
 
-        if hardware and self.traj_step < self.num_steps - 1:
-            self.traj_step += 1 
+        self.traj_step += 1
 
         return action
 
@@ -345,6 +345,7 @@ class iLQR(BaseController):
         '''Prepares for evaluation.'''
         self.env.reset()
         self.ite_counter = 0
+        self.traj_step = 0
 
     def run(self, env=None, max_steps=500, training=True):
         '''Runs evaluation with current policy.
@@ -387,4 +388,3 @@ class iLQR(BaseController):
         self.final_obs = obs
         self.final_info = info
         self.total_cost = total_cost
-        self.traj_step = 0
