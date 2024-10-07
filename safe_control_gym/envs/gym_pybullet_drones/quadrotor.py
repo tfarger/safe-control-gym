@@ -539,12 +539,19 @@ class Quadrotor(BaseAviary):
         Args:
             prior_prop (dict): specify the prior inertial prop to use in the symbolic model.
         """
-        # if self.QUAD_TYPE is QuadType.TWO_D_ATTITUDE:
-        #     params_pitch_rate =  prior_prop.get('params_pitch_rate',
-        #     params_acc =
-        # else:
         m = prior_prop.get('M', self.MASS)
         Iyy = prior_prop.get('Iyy', self.J[1, 1])
+
+        # identified parameters for the 2D attitude interface
+        # NOTE: these parameters are not set in the prior_prop dict
+        # since they are specific to the 2D attitude model
+        beta_1 = prior_prop.get('beta_1', 18.112984649321753)
+        beta_2 = prior_prop.get('beta_2', 3.6800)
+        beta_3 = prior_prop.get('beta_3', -0.008)
+        alpha_1 = prior_prop.get('alpha_1', -140.8)
+        alpha_2 = prior_prop.get('alpha_2', -13.4)
+        alpha_3 = prior_prop.get('alpha_3', 124.8)
+        pitch_bias = prior_prop.get('pitch_bias', 0.0)
 
         g, length = self.GRAVITY_ACC, self.L
         dt = self.CTRL_TIMESTEP
@@ -600,13 +607,12 @@ class Quadrotor(BaseAviary):
             # With the formulat F_desired = b_F * T + a_F
 
             # Define dynamics equations.
-            # TODO: create a parameter for the new quad model
             X_dot = cs.vertcat(x_dot,
-                               (18.112984649321753 * T + 3.6800) * cs.sin(theta) + -0.008,
+                               (beta_1 * T + beta_2) * cs.sin(theta + pitch_bias) + beta_3,
                                z_dot,
-                               (18.112984649321753 * T + 3.6800) * cs.cos(theta) - g,
+                               (beta_1 * T + beta_2) * cs.cos(theta + pitch_bias) - g,
                                theta_dot,
-                               -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+                               alpha_1 * (theta + pitch_bias ) + alpha_2 * theta_dot + alpha_3 * P)
             # Define observation.
             Y = cs.vertcat(x, x_dot, z, z_dot, theta, theta_dot)
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
