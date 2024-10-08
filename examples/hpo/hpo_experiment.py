@@ -20,7 +20,7 @@ def hpo(config):
         config.normalized_rl_action_space = True
         if 'disturbances' in config.task_config:
             if config.task_config.disturbances is not None:
-                raise ValueError('Double check with this setup.')
+                # raise ValueError('Double check with this setup.')
                 config.task_config.disturbances.observation[0]['std'] += [0, 0, 0, 0, 0, 0]
         config.algo_config.log_interval = 10000000
         config.algo_config.eval_interval = 10000000
@@ -32,8 +32,7 @@ def hpo(config):
         raise ValueError('Only ppo, gp_mpc, gpmpc_acados, and ilqr are supported for now.')
 
     # Experiment setup.
-    if config.plot_best is False:
-        set_dir_from_config(config)
+    set_dir_from_config(config)
     set_seed_from_config(config)
     set_device_from_config(config)
 
