@@ -591,12 +591,17 @@ class Quadrotor(BaseAviary):
 
             # Define dynamics equations.
             # TODO: create a parameter for the new quad model
+            wn = 30
             X_dot = cs.vertcat(x_dot,
-                               (18.112984649321753 * T + 3.6800) * cs.sin(theta) + -0.008,
+                               (18.112984649321753 * T + 3.7613154938448576) * cs.sin(theta),
+                            #    (14.9232 * T + 5.6066) * cs.sin(theta),
                                z_dot,
-                               (18.112984649321753 * T + 3.6800) * cs.cos(theta) - g,
+                               (18.112984649321753 * T + 3.7613154938448576) * cs.cos(theta) - g,
+                            #    (14.9232 * T + 5.6066) * cs.cos(theta) - g,
                                theta_dot,
-                               -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+                            #    -142.1 * theta - 14.919 * theta_dot + 120.137 * P)
+                                -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+                            #    -wn**2 * theta - 2 * wn * theta_dot + wn**2 * P)
             # Define observation.
             Y = cs.vertcat(x, x_dot, z, z_dot, theta, theta_dot)
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
