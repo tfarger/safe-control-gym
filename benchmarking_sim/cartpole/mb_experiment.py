@@ -1,7 +1,8 @@
-'''A LQR and iLQR example.'''
 
 import os
 import sys
+import yaml
+import munch
 import pickle
 from collections import defaultdict
 from functools import partial
@@ -12,13 +13,16 @@ from matplotlib.ticker import FormatStrFormatter
 
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.experiments.base_experiment import BaseExperiment
+from safe_control_gym.experiments.epoch_experiments import EpochExperiment
 from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.registration import make
-from safe_control_gym.utils.utils import mkdirs
+from safe_control_gym.utils.utils import mkdirs, set_dir_from_config
+from safe_control_gym.envs.gym_control.cartpole import CartPole
+from safe_control_gym.utils.gpmpc_plotting import make_plots
 
 script_path = os.path.dirname(os.path.realpath(__file__))
 
-def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
+def run(gui=False, n_episodes=1, n_steps=None, save_data=False):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -27,16 +31,17 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
-    # ALGO = 'ilqr'
+    ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
-    ALGO = 'gpmpc_acados'
+    # ALGO = 'gpmpc_acados'
     SYS = 'cartpole'
     TASK = 'stab'
-    # PRIOR = '300'
-    PRIOR = '100'
+    # TASK = 'track'
+    PRIOR = '200'
+    # PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
-    SAFETY_FILTER = None
-    # SAFETY_FILTER='linear_mpsc'
+    # SAFETY_FILTER = None
+    SAFETY_FILTER='linear_mpsc'
 
     
     # check if the config file exists
@@ -54,7 +59,7 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
                             ]
     else:
         MPSC_COST='one_step_cost'
-        assert ALGO != 'gp_mpc', 'Safety filter only supported for gp_mpc'
+        assert ALGO != 'gp_mpc', 'Safety filter is not supported for gp_mpc'
         assert os.path.exists(f'./config_overrides/{SAFETY_FILTER}_{SYS}_{TASK}_{PRIOR}.yaml'), f'./config_overrides/{SAFETY_FILTER}_{SYS}_{TASK}_{PRIOR}.yaml does not exist'
         sys.argv[1:] = ['--algo', ALGO,
                         '--task', agent,
@@ -71,12 +76,16 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
     fac = ConfigFactory()
     fac.add_argument('--func', type=str, default='train', help='main function to run.')
     fac.add_argument('--n_episodes', type=int, default=1, help='number of episodes to run.')
-    # merge config
+    # merge config and create output directory
     config = fac.merge()
+    set_dir_from_config(config)
+    config.algo_config.output_dir = config.output_dir
+    mkdirs(config.output_dir)
 
     # Create an environment
     env_func = partial(make,
                        config.task,
+                       seed=config.seed,
                        **config.task_config
                        )
     random_env = env_func(gui=False)
@@ -84,6 +93,7 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
     # Create controller.
     ctrl = make(config.algo,
                 env_func,
+                seed=config.seed,
                 **config.algo_config
                 )
     
@@ -91,9 +101,11 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
     if SAFETY_FILTER is not None:
         env_func_filter = partial(make,
                                 config.task,
+                                seed=config.seed,
                                 **config.task_config)
         safety_filter = make(config.safety_filter,
                             env_func_filter,
+                            seed=config.seed,
                             **config.sf_config)
         safety_filter.reset()
 
@@ -110,8 +122,20 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
 
         # Create experiment, train, and run evaluation
         if SAFETY_FILTER is None:
-            experiment = BaseExperiment(env=static_env, ctrl=ctrl, train_env=static_train_env)
-            experiment.launch_training()
+            if ALGO in ['gpmpc_acados', 'gp_mpc'] :
+                experiment = BaseExperiment(env=static_env, ctrl=ctrl, train_env=static_train_env)
+                if config.algo_config.num_epochs == 1:
+                    print('Evaluating prior controller')
+                elif config.algo_config.gp_model_path is not None:
+                    ctrl.load(config.algo_config.gp_model_path)
+                else:
+                    # manually launch training 
+                    # (NOTE: not using launch_training method since calling plotting before eval will break the eval)
+                    experiment.reset()
+                    train_runs, test_runs = ctrl.learn(env=static_train_env)
+            else:   
+                experiment = BaseExperiment(env=static_env, ctrl=ctrl, train_env=static_train_env)
+                experiment.launch_training()
         else:
             safety_filter.learn(env=static_train_env)
             mkdirs(f'{script_path}/models/')
@@ -124,8 +148,17 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
         else:
             trajs_data, _ = experiment.run_evaluation(training=True, n_steps=n_steps)
 
-        if gui:
-            post_analysis(trajs_data['obs'][0], trajs_data['action'][0], ctrl.env)
+        # plotting training and evaluation results
+        # training
+        if ALGO in ['gpmpc_acados', 'gp_mpc'] and \
+           config.algo_config.gp_model_path is None and \
+           config.algo_config.num_epochs > 1:
+            if isinstance(static_env, CartPole):
+                make_plots(test_runs=test_runs, 
+                        train_runs=train_runs, 
+                            dir=ctrl.output_dir)
+        # evaluation
+        plot_eval(trajs_data['obs'][0], trajs_data['action'][0], ctrl.env, config.output_dir)
 
         # Close environments
         static_env.close()
@@ -135,11 +168,15 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
         for key, value in trajs_data.items():
             all_trajs[key] += value
 
-    # calculate the cost of the trajectory
-    # Q = np.diag(config.algo_config.q_mpc)
-    # R = np.diag(config.algo_config.r_mpc)
+    # # calculate the cost of the trajectory
+    # if ALGO in ['ilqr', 'lqr']:
+    #     Q = np.diag(config.algo_config.q_lqr)
+    #     R = np.diag(config.algo_config.r_lqr)
+    # else:
+    #     Q = np.diag(config.algo_config.q_mpc)
+    #     R = np.diag(config.algo_config.r_mpc)
     # cost = 0
-    # for i in range(len(all_trajs['obs'][0]-1)):
+    # for i in range(len(all_trajs['obs'][0])-1):
     #     obs = all_trajs['obs'][0][i]
     #     action = all_trajs['action'][0][i]
     #     cost += obs.T @ Q @ obs + action.T @ R @ action
@@ -161,7 +198,7 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
 
 
-def post_analysis(state_stack, input_stack, env):
+def plot_eval(state_stack, input_stack, env, save_path=None):
     '''Plots the input and states to determine iLQR's success.
 
     Args:
@@ -191,6 +228,9 @@ def post_analysis(state_stack, input_stack, env):
     axs[-1].legend(ncol=3, bbox_transform=fig.transFigure, bbox_to_anchor=(1, 0), loc='lower right')
     axs[-1].set(xlabel='time (sec)')
 
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, 'state_trajectories.png'))
+
     # Plot inputs
     _, axs = plt.subplots(model.nu)
     if model.nu == 1:
@@ -203,7 +243,9 @@ def post_analysis(state_stack, input_stack, env):
     axs[0].set_title('Input Trajectories')
     axs[-1].set(xlabel='time (sec)')
 
-    plt.show()
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, 'input_trajectories.png'))
+
 
 
 def wrap2pi_vec(angle_vec):

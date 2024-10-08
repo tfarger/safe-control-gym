@@ -1,6 +1,7 @@
 
 
-
+import os
+import shutil
 import time
 from copy import deepcopy
 from functools import partial
@@ -14,16 +15,20 @@ from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.model_selection import train_test_split
 from skopt.sampler import Lhs
 
+from safe_control_gym.utils.utils import timing
 from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system
 from safe_control_gym.controllers.mpc.gp_utils import (GaussianProcessCollection, ZeroMeanIndependentGPModel,
                                                        covSEard, kmeans_centriods)
 from safe_control_gym.controllers.mpc.linear_mpc import MPC, LinearMPC
 from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.gp_mpc import GPMPC
+from safe_control_gym.controllers.mpc.mpc_acados import MPC_ACADOS
 from safe_control_gym.envs.benchmark_env import Task
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosSimSolver, AcadosModel
 
 import csv
+import matplotlib.pyplot as plt
+from termcolor import colored
 
 class GPMPC_ACADOS(GPMPC):
     '''Implements a GP-MPC controller with Acados optimization.'''
@@ -63,6 +68,7 @@ class GPMPC_ACADOS(GPMPC):
             output_dir: str = 'results/temp',
             compute_ipopt_initial_guess: bool = True,
             use_RTI: bool = False,
+            use_linear_prior: bool = True,
             **kwargs
     ):
         super().__init__(
@@ -98,12 +104,51 @@ class GPMPC_ACADOS(GPMPC):
             terminate_run_on_done = terminate_run_on_done,
             output_dir = output_dir,
             **kwargs)
-        # GP params
-        self.num_dyn_params = None
+        
         # MPC params
+        self.use_linear_prior = use_linear_prior
         self.init_solver = 'ipopt'
         self.compute_ipopt_initial_guess = compute_ipopt_initial_guess
         self.use_RTI = use_RTI
+        
+        if self.use_linear_prior:
+            self.prior_ctrl = LinearMPC(
+                self.prior_env_func,
+                horizon=horizon,
+                q_mpc=q_mpc,
+                r_mpc=r_mpc,
+                warmstart=warmstart,
+                soft_constraints=self.soft_constraints_params['prior_soft_constraints'],
+                terminate_run_on_done=terminate_run_on_done,
+                prior_info=prior_info,
+                # runner args
+                # shared/base args
+                output_dir=output_dir,
+                additional_constraints=additional_constraints,
+            )
+        else:
+            self.prior_ctrl = MPC_ACADOS(
+                env_func=self.prior_env_func,
+                horizon=horizon,
+                q_mpc=q_mpc,
+                r_mpc=r_mpc,
+                warmstart=warmstart,
+                soft_constraints=self.soft_constraints_params['prior_soft_constraints'],
+                terminate_run_on_done=terminate_run_on_done,
+                constraint_tol=constraint_tol,
+                output_dir=output_dir,
+                additional_constraints=additional_constraints,
+                use_gpu=use_gpu,
+                seed=seed,
+                use_RTI=use_RTI,
+            )
+        self.prior_ctrl.reset()
+        print('prior_ctrl:', type(self.prior_ctrl))
+        if self.use_linear_prior:
+            self.prior_dynamics_func = self.prior_ctrl.linear_dynamics_func
+        else:
+            self.prior_dynamics_func = self.prior_ctrl.dynamics_func
+
         self.x_guess = None
         self.u_guess = None
         self.x_prev = None
@@ -135,11 +180,11 @@ class GPMPC_ACADOS(GPMPC):
         z = cs.vertcat(acados_model.x, acados_model.u) # GP prediction point
         z = z[self.input_mask]
 
-        full_dyn = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
-                                            p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
-            + self.prior_ctrl.X_EQ[:, None] \
-            + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
-        self.full_func = cs.Function('full_func', [acados_model.x, acados_model.u], [full_dyn])
+        # full_dyn = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
+        #                                     p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
+        #     + self.prior_ctrl.X_EQ[:, None] \
+        #     + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
+        # self.full_func = cs.Function('full_func', [acados_model.x, acados_model.u], [full_dyn])
 
         if self.sparse_gp:
             # sparse GP inducing points
@@ -147,42 +192,31 @@ class GPMPC_ACADOS(GPMPC):
             z_ind should be of shape (n_ind_points, z.shape[0]) or (n_ind_points, len(self.input_mask))
             mean_post_factor should be of shape (len(self.target_mask), n_ind_points)
             Here we create the corresponding parameters since acados supports only 1D parameters
-            '''
-            # z_ind_list = []
-            # mean_post_factor_list = []
-            # # append the parameters in the order of inducing points
-            # for i in range(n_ind_points):
-            #     z_ind_list.append(cs.MX.sym(f'inducing_point_{i}', 1, z.shape[0]))
-            #     mean_post_factor_list.append(cs.MX.sym(f'mean_post_factor_{i}', len(self.target_mask), 1))
-            # z_ind = cs.horzcat(*z_ind_list)
-            # assert z_ind.shape[1] == n_ind_points * z.shape[0]
-            # mean_post_factor = cs.vertcat(*mean_post_factor_list)
-            # assert mean_post_factor.shape[0] == len(self.target_mask) * n_ind_points   
-            # # setting the inducing points and mean_post_factor as acados parameters
-            # dyn_param = cs.vertcat(z_ind.T, mean_post_factor) # shape (n_ind_points * z.shape[0] 
-            #                                                   # + n_ind_points * len(self.target_mask), 1)
-            # # print('dyn_param:', dyn_param)
-            # acados_model.p = dyn_param
-            # self.num_dyn_params = n_ind_points * (z.shape[0] + len(self.target_mask))
-
-            # z_ind = cs.reshape(z_ind, n_ind_points, len(self.input_mask))
-            # mean_post_factor = cs.reshape(mean_post_factor, len(self.target_mask), n_ind_points)    
-            
+            '''   
             z_ind = cs.MX.sym('z_ind', n_ind_points, len(self.input_mask))
             mean_post_factor = cs.MX.sym('mean_post_factor', len(self.target_mask), n_ind_points)   
             acados_model.p = cs.vertcat(cs.reshape(z_ind, -1, 1), cs.reshape(mean_post_factor, -1, 1))
             # define the dynamics
-            f_disc = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
-                                                p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
-            + self.prior_ctrl.X_EQ[:, None] \
-            + self.Bd @ cs.sum2(self.K_z_zind_func(z1=z, z2=z_ind)['K'] * mean_post_factor)
-            self.sparse_func = cs.Function('sparse_func', [acados_model.x, acados_model.u, z_ind, mean_post_factor], [f_disc])
-            self.fd_func = self.env_func(gui=False).symbolic.fd_func
+            if self.use_linear_prior:
+                f_disc = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
+                                                    p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
+                + self.prior_ctrl.X_EQ[:, None] \
+                + self.Bd @ cs.sum2(self.K_z_zind_func(z1=z, z2=z_ind)['K'] * mean_post_factor)
+            else:
+                f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf'] \
+                + self.Bd @ cs.sum2(self.K_z_zind_func(z1=z, z2=z_ind)['K'] * mean_post_factor)
+
+            # self.sparse_func = cs.Function('sparse_func', [acados_model.x, acados_model.u, z_ind, mean_post_factor], [f_disc])
+            # self.fd_func = self.env_func(gui=False).symbolic.fd_func
         else:
-            f_disc = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
-                                               p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
-            + self.prior_ctrl.X_EQ[:, None] \
-            + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
+            if self.use_linear_prior:
+                f_disc = self.prior_dynamics_func(x0=acados_model.x- self.prior_ctrl.X_EQ[:, None], 
+                                                p=acados_model.u- self.prior_ctrl.U_EQ[:, None])['xf'] \
+                + self.prior_ctrl.X_EQ[:, None] \
+                + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
+            else:
+                f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf'] \
+                + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
 
         acados_model.disc_dyn_expr = f_disc
 
@@ -209,8 +243,11 @@ class GPMPC_ACADOS(GPMPC):
         # set cost 
         ocp.cost.cost_type = 'LINEAR_LS'
         ocp.cost.cost_type_e = 'LINEAR_LS'
+        # cost weight matrices
         ocp.cost.W = scipy.linalg.block_diag(self.Q, self.R)
-        ocp.cost.W_e = self.Q
+        ocp.cost.W_e = self.P if hasattr(self, 'P') else self.Q
+        # ocp.cost.W_e = self.Q
+
         ocp.cost.Vx = np.zeros((ny, nx))
         ocp.cost.Vx[:nx, :nx] = np.eye(nx)
         ocp.cost.Vu = np.zeros((ny, nu))
@@ -243,9 +280,10 @@ class GPMPC_ACADOS(GPMPC):
         ocp = self.processing_acados_constraints_expression(ocp, h0_expr, h_expr, he_expr, state_tighten_list, input_tighten_list)
         # pass the tightening variables to the ocp object as parameters
         tighten_param = cs.vertcat(*state_tighten_list, *input_tighten_list)
-        # ocp.model.p = tighten_param
-        # ocp.parameter_values = np.zeros((ocp.model.p.shape[0], )) # dummy values
-        ocp.model.p = cs.vertcat(ocp.model.p, tighten_param)
+        if self.sparse_gp:
+            ocp.model.p = cs.vertcat(ocp.model.p, tighten_param)
+        else:   
+            ocp.model.p = tighten_param
         ocp.parameter_values = np.zeros((ocp.model.p.shape[0], )) # dummy values
 
         # slack costs for nonlinear constraints
@@ -280,19 +318,25 @@ class GPMPC_ACADOS(GPMPC):
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
         ocp.solver_options.integrator_type = 'DISCRETE'
         ocp.solver_options.nlp_solver_type = 'SQP' if not self.use_RTI else 'SQP_RTI'
-        ocp.solver_options.nlp_solver_max_iter = 25 if not self.use_RTI else 1
+        ocp.solver_options.nlp_solver_max_iter = 10 if not self.use_RTI else 1
+        ocp.solver_options.qp_solver_iter_max = 10
         ocp.solver_options.qp_tol = 1e-4
         ocp.solver_options.tol = 1e-4
-        # ocp.solver_options.as_rti_level = 4 if not self.use_RTI else 0
-        # ocp.solver_options.as_rti_iter = 1 if not self.use_RTI else 1
+        ocp.solver_options.as_rti_level = 0 if not self.use_RTI else 4
+        ocp.solver_options.as_rti_iter = 1 if not self.use_RTI else 1
 
         # ocp.solver_options.globalization = 'FUNNEL_L1PEN_LINESEARCH' if not self.use_RTI else 'MERIT_BACKTRACKING'
-        # ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
+        ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
         # prediction horizon
         ocp.solver_options.tf = self.T * self.dt
 
-        self.ocp = ocp
+        # c code generation
+        # NOTE: when using GP-MPC, a separated directory is needed; 
+        # otherwise, Acados solver can read the wrong c code
+        ocp.code_export_directory = self.output_dir + '/gpmpc_c_generated_code'
 
+        self.ocp = ocp
+        self.opti_dict = {'n_ind_points': n_ind_points}
         # compute sparse GP values
         # the actual values will be set in select_action_with_gp
         if self.sparse_gp:
@@ -374,24 +418,28 @@ class GPMPC_ACADOS(GPMPC):
         return ocp
 
     def select_action(self, obs, info=None):
-        print('current obs:', obs)
+        time_before = time.time()
         if self.gaussian_process is None:
             action = self.prior_ctrl.select_action(obs)
         else:
             action = self.select_action_with_gp(obs)
-        
+        time_after = time.time()
+        self.results_dict['runtime'].append(time_after - time_before)  
+        print('current obs:', obs)
+        print('current action:', action)
         self.last_obs = obs
         self.last_action = action
         
         return action
     
+    # @timing
     def select_action_with_gp(self, obs):
         time_before = time.time()
         nx, nu = self.model.nx, self.model.nu
         ny = nx + nu
         ny_e = nx
         # TODO: replace this with something safer
-        n_ind_points = self.n_ind_points
+        n_ind_points = self.opti_dict['n_ind_points']
 
         # set initial condition (0-th state)
         self.acados_ocp_solver.set(0, "lbx", obs)
@@ -436,10 +484,10 @@ class GPMPC_ACADOS(GPMPC):
             self.results_dict['inducing_points'] = [z_ind_val]
         # Set the probabilistic state and input constraint set limits.
         # Tightening at the first step is possible if self.compute_initial_guess is used 
-        time_before = time.time()
+        time_before_tighten = time.time()
         state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits()
-        time_after = time.time()
-        print('precompute_probabilistic_limits time:', time_after - time_before)
+        time_after_tighten = time.time()
+        print('precompute_probabilistic_limits time:', time_after_tighten - time_before_tighten)
 
         # compute the sparse GP values
         if self.recalc_inducing_points_at_every_step:
@@ -455,14 +503,15 @@ class GPMPC_ACADOS(GPMPC):
         
         # set acados parameters
         if self.sparse_gp:
-            # sparse GP parameters
-            print('z_ind_val:', z_ind_val.shape)
-            print('mean_post_factor_val:', mean_post_factor_val.shape)
+            ## sparse GP parameters
             assert z_ind_val.shape == (n_ind_points, len(self.input_mask))
             assert mean_post_factor_val.shape == (len(self.target_mask), n_ind_points)
-            z_ind_val = z_ind_val.reshape(-1, 1)
-            mean_post_factor_val = mean_post_factor_val.reshape(-1, 1)
+            # casadi use column major order, while np uses row major order by default
+            # Thus, Fortran order (column major) is used to reshape the arrays
+            z_ind_val = z_ind_val.reshape(-1, 1, order='F')
+            mean_post_factor_val = mean_post_factor_val.reshape(-1, 1, order='F')
             dyn_value = np.concatenate((z_ind_val, mean_post_factor_val)).reshape(-1)
+            ## tighten constraints
             for idx in range(self.T):
                 # tighten initial and path constraints
                 state_constraint_set = state_constraint_set_prev[0][:, idx]
@@ -470,9 +519,11 @@ class GPMPC_ACADOS(GPMPC):
                 tighten_value = np.concatenate((state_constraint_set, input_constraint_set))
                 # set the parameter values
                 parameter_values = np.concatenate((dyn_value, tighten_value))
+                # self.acados_ocp_solver.set(idx, "p", dyn_value)
                 self.acados_ocp_solver.set(idx, "p", parameter_values)
             # tighten terminal state constraints
             tighten_value = np.concatenate((state_constraint_set_prev[0][:, self.T], np.zeros((2 * nu,))))
+            # set the parameter values
             parameter_values = np.concatenate((dyn_value, tighten_value))
             self.acados_ocp_solver.set(self.T, "p", parameter_values)
         else:
@@ -485,8 +536,6 @@ class GPMPC_ACADOS(GPMPC):
             # tighten terminal state constraints
             tighten_value = np.concatenate((state_constraint_set_prev[0][:, self.T], np.zeros((2 * nu,))))
             self.acados_ocp_solver.set(self.T, "p", tighten_value)
-            # print('tighten_value:', tighten_value)
-            # print('state_constraint_set_prev[0][:, self.T]:', state_constraint_set_prev[0][:, self.T])
 
         # set reference for the control horizon
         goal_states = self.get_references()
@@ -500,6 +549,7 @@ class GPMPC_ACADOS(GPMPC):
 
         # solve the optimization problem
         # try:
+        # time_before_solve = time.time()
         if self.use_RTI:
             # preparation phase
             self.acados_ocp_solver.options_set('rti_phase', 1)
@@ -513,28 +563,49 @@ class GPMPC_ACADOS(GPMPC):
                 raise Exception(f'acados returned status {status}. Exiting.')
                 # print(f"acados returned status {status}. ")
             # if status == 2:
-            #     print(f"acados returned status {status}. ")
-            
-            action = self.acados_ocp_solver.get(0, "u")
+            #     print(f"acados returned status {status}. ")            
 
         else:
             status = self.acados_ocp_solver.solve()
             if status not in [0, 2]:
                 self.acados_ocp_solver.print_statistics()
-                raise Exception(f'acados returned status {status}. Exiting.')
+                # raise Exception(f'acados returned status {status}. Exiting.')
+                print(colored(f"acados returned status {status}. ", 'red'))
                 # print(f"acados returned status {status}. ")
             # if status == 2:
             #     print(f"acados returned status {status}. ")
-            action = self.acados_ocp_solver.get(0, "u")
 
-        # self.acados_ocp_solver.print_statistics()
+        action = self.acados_ocp_solver.get(0, "u")
+        # time_after_solve = time.time()
+        # print('acados solve time:', time_after_solve - time_before_solve)
+        # get the open-loop solution
+        if self.x_prev is None and self.u_prev is None:
+            self.x_prev = np.zeros((nx, self.T + 1))
+            self.u_prev = np.zeros((nu, self.T))
+        if self.u_prev is not None and nu == 1:
+            self.u_prev = self.u_prev.reshape((1, -1))
+
+        for i in range(self.T + 1):
+            self.x_prev[:, i] = self.acados_ocp_solver.get(i, "x")
+        for i in range(self.T):
+            self.u_prev[:, i] = self.acados_ocp_solver.get(i, "u")
+        if nu == 1:
+            self.u_prev = self.u_prev.flatten()
+        self.x_guess = self.x_prev
+        self.u_guess = self.u_prev
+
         time_after = time.time()
-        print(f'gpmpc acados sol time: {time_after - time_before:.3f}; sol status {status}; qp iter {self.acados_ocp_solver.get_stats("sqp_iter")}')
-        if time_after - time_before > 0.02:
-            print(f'========= Warning: MPC ACADOS took {time_after - time_before:.3f} seconds =========')
-        self.runtime_list.append(time_after - time_before)
+        print(f'gpmpc acados sol time: {time_after - time_before:.3f}; sol status {status}; nlp iter {self.acados_ocp_solver.get_stats("sqp_iter")}; qp iter {self.acados_ocp_solver.get_stats("qp_iter")}')
+        if time_after - time_before > 1/60:
+            print(colored(f'========= Warning: GPMPC ACADOS took {time_after - time_before:.3f} seconds =========', 'yellow'))
 
-        return action
+        if hasattr(self, 'K'):
+            action += self.K @ (self.x_prev[:, 0] - obs) 
+            # self.u_prev = self.u_prev + self.K @ (self.x_prev - obs)
+            # self.u_guess = self.u_prev
+            # action = self.u_prev[0] if nu == 1 else self.u_prev[:, 0]
+
+        return action 
  
     def reset(self):
         '''Reset the controller before running.'''
@@ -547,24 +618,37 @@ class GPMPC_ACADOS(GPMPC):
             self.traj = self.env.X_GOAL.T
             self.traj_step = 0
         # Dynamics model.
-        
+        self.setup_prior_dynamics()
         if self.gaussian_process is not None:
+            # self.compute_terminal_cost_and_ancillary_gain()
+            # sparse GP
             if self.sparse_gp and self.train_data['train_targets'].shape[0] <= self.n_ind_points:
                 n_ind_points = self.train_data['train_targets'].shape[0]
             elif self.sparse_gp:
                 n_ind_points = self.n_ind_points
             else:
                 n_ind_points = self.train_data['train_targets'].shape[0]
-            self.setup_prior_dynamics()
+
+            # explicitly clear the previously generated c code, ocp and solver
+            # otherwise the number of parameters will be incorrect
+            # TODO: find a better way to handle this
+            self.acados_model = None
+            self.ocp = None
+            self.acados_ocp_solver = None
+            # delete the generated c code directory        
+            if os.path.exists(self.output_dir + '/gpmpc_c_generated_code'):
+                print('deleting the generated c code directory')
+                shutil.rmtree(self.output_dir + '/gpmpc_c_generated_code', ignore_errors=False)
+                assert not os.path.exists(self.output_dir + '/gpmpc_c_generated_code')
+
+            # reinitialize the acados model and solver
             self.setup_acados_model(n_ind_points)
             self.setup_acados_optimizer(n_ind_points)
             time_before = time.time()
-            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, 'gpmpc_acados_ocp_solver.json')
+            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/gpmpc_acados_ocp_solver.json')
             time_after = time.time()
-            print('acados setup time:', time_after - time_before)
-        # self.setup_acados_optimizer()
-            # n_ind_points = self.train_data['train_targets'].shape[0]
-        print('=========== Resetting prior controller ===========')
+            print('acados solver setup time:', time_after - time_before)
+
         self.prior_ctrl.reset()
         self.setup_results_dict()
         # Previously solved states & inputs, useful for warm start.
@@ -574,11 +658,4 @@ class GPMPC_ACADOS(GPMPC):
         self.x_guess = None
         self.u_guess = None
 
-        # write the runtime list to a file
-        # if len(self.runtime_list) > 0:
-        #     with open(f'{self.output_dir}/runtime_list.txt', 'w') as f:
-        #         for item in self.runtime_list:
-        #             f.write("%s\n" % item)
-
-        self.runtime_list = []
 

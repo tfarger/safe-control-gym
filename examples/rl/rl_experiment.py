@@ -5,6 +5,7 @@ from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FormatStrFormatter
 
 from safe_control_gym.envs.benchmark_env import Environment, Task
 from safe_control_gym.experiments.base_experiment import BaseExperiment
@@ -12,7 +13,7 @@ from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.registration import make
 
 
-def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
+def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
     """Main function to run RL experiments.
 
     Args:
@@ -37,6 +38,8 @@ def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
         system = f'quadrotor_{str(config.task_config.quad_type)}D'
     else:
         system = config.task
+    # config.task_config.disturbances.observation[0].std = [config.task_config.noise_scale*i
+    #                                                       for i in config.task_config.disturbances.observation[0].std]
 
     env_func = partial(make,
                        config.task,
@@ -50,8 +53,13 @@ def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
                 output_dir=curr_path + '/temp')
 
     # Load state_dict from trained.
-    ctrl.load(f'{curr_path}/models/{config.algo}/{config.algo}_model_{system}_{task}.pt')
-    # ctrl.load(f'{curr_path}/models/{config.algo}/model_best.pt')
+    # ctrl.load(f'{curr_path}/models/{config.algo}/{config.algo}_model_{system}_{task}.pt')
+    # ctrl.load(f'{curr_path}/models/{config.algo}/model_latest.pt')
+    if 'pretrain_path' in config.keys():
+        # ctrl.load(config.pretrain_path + "/model_latest.pt")
+        ctrl.load(config.pretrain_path + "/model_best.pt")
+    else:
+        ctrl.load(f'{curr_path}/models/{config.algo}/model_latest.pt')
 
     # Remove temporary files and directories
     shutil.rmtree(f'{curr_path}/temp', ignore_errors=True)
@@ -60,6 +68,17 @@ def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
     experiment = BaseExperiment(env, ctrl)
     results, metrics = experiment.run_evaluation(n_episodes=n_episodes, n_steps=n_steps)
     ctrl.close()
+
+    ### Housekeeping
+    # temp = "./gen_traj_results_ppo.npy"
+    # np.save(temp, results, allow_pickle=True)
+
+    # temp = config.pretrain_path+"/perf_metric.npy"
+    # temp = config.pretrain_path+"/transfer_metric.npy"
+    # metrics['noise_scale'] = config.task_config.noise_scale
+    # temp = config.pretrain_path+"/robust_metric_"+str(config.task_config.noise_scale)+".npy"
+    # np.save(temp, metrics, allow_pickle=True)
+    # print(metrics)
 
     if plot is True:
         if system == Environment.CARTPOLE:
@@ -83,30 +102,6 @@ def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
             graph3_1 = 0
             graph3_2 = 2
 
-        _, ax = plt.subplots()
-        ax.plot(results['obs'][0][:, graph1_1], results['obs'][0][:, graph1_2], 'r--', label='RL Trajectory')
-        ax.scatter(results['obs'][0][0, graph1_1], results['obs'][0][0, graph1_2], color='g', marker='o', s=100, label='Initial State')
-        ax.set_xlabel(r'$\theta$')
-        ax.set_ylabel(r'$\dot{\theta}$')
-        ax.set_box_aspect(0.5)
-        ax.legend(loc='upper right')
-
-        if config.task_config.task == Task.TRAJ_TRACKING and config.task == Environment.CARTPOLE:
-            _, ax2 = plt.subplots()
-            ax2.plot(np.linspace(0, 20, results['obs'][0].shape[0]), results['obs'][0][:, 0], 'r--', label='RL Trajectory')
-            ax2.plot(np.linspace(0, 20, results['obs'][0].shape[0]), env.X_GOAL[:, 0], 'b', label='Reference')
-            ax2.set_xlabel(r'Time')
-            ax2.set_ylabel(r'X')
-            ax2.set_box_aspect(0.5)
-            ax2.legend(loc='upper right')
-        elif config.task == Environment.QUADROTOR:
-            _, ax2 = plt.subplots()
-            ax2.plot(results['obs'][0][:, graph3_1 + 1], results['obs'][0][:, graph3_2 + 1], 'r--', label='RL Trajectory')
-            ax2.set_xlabel(r'x_dot')
-            ax2.set_ylabel(r'z_dot')
-            ax2.set_box_aspect(0.5)
-            ax2.legend(loc='upper right')
-
         _, ax3 = plt.subplots()
         ax3.plot(results['obs'][0][:, graph3_1], results['obs'][0][:, graph3_2], 'r--', label='RL Trajectory')
         if config.task_config.task == Task.TRAJ_TRACKING and config.task == Environment.QUADROTOR:
@@ -120,12 +115,54 @@ def run(gui=False, plot=True, n_episodes=1, n_steps=None, curr_path='.'):
         ax3.set_box_aspect(0.5)
         ax3.legend(loc='upper right')
 
-        plt.tight_layout()
-        plt.show()
+        post_analysis(results['obs'][0], results['action'][0], env)
         # plt.savefig(f"{curr_path}/perf.png")
 
     return env.X_GOAL, results, metrics
 
+def post_analysis(state_stack, input_stack, env):
+    '''Plots the input and states to determine iLQR's success.
+
+    Args:
+        state_stack (ndarray): The list of observations of iLQR in the latest run.
+        input_stack (ndarray): The list of inputs of iLQR in the latest run.
+    '''
+    model = env.symbolic
+    stepsize = model.dt
+
+    plot_length = np.min([np.shape(input_stack)[0], np.shape(state_stack)[0]])
+    times = np.linspace(0, stepsize * plot_length, plot_length)
+
+    reference = env.X_GOAL
+    if env.TASK == Task.STABILIZATION:
+        reference = np.tile(reference.reshape(1, model.nx), (plot_length, 1))
+
+    # Plot states
+    fig, axs = plt.subplots(model.nx)
+    for k in range(model.nx):
+        axs[k].plot(times, np.array(state_stack).transpose()[k, 0:plot_length], label='actual')
+        axs[k].plot(times, reference.transpose()[k, 0:plot_length], color='r', label='desired')
+        axs[k].set(ylabel=env.STATE_LABELS[k] + f'\n[{env.STATE_UNITS[k]}]')
+        axs[k].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        if k != model.nx - 1:
+            axs[k].set_xticks([])
+    axs[0].set_title('State Trajectories')
+    axs[-1].legend(ncol=3, bbox_transform=fig.transFigure, bbox_to_anchor=(1, 0), loc='lower right')
+    axs[-1].set(xlabel='time (sec)')
+
+    # Plot inputs
+    _, axs = plt.subplots(model.nu)
+    if model.nu == 1:
+        axs = [axs]
+    for k in range(model.nu):
+        axs[k].plot(times, np.array(input_stack).transpose()[k, 0:plot_length])
+        axs[k].set(ylabel=f'input {k}')
+        axs[k].set(ylabel=env.ACTION_LABELS[k] + f'\n[{env.ACTION_UNITS[k]}]')
+        axs[k].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    axs[0].set_title('Input Trajectories')
+    axs[-1].set(xlabel='time (sec)')
+
+    plt.show()
 
 if __name__ == '__main__':
     run()
