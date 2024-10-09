@@ -243,7 +243,7 @@ def get_quad_average_rmse_error_xz_only(runs, ref):
     costs = np.zeros((num_epochs, num_episodes))
     for epoch in range(num_epochs):
         for episode in range(num_episodes):
-            mse, rmse = compute_state_rmse(runs[epoch][episode]['state'][:,[0,2]] - ref[:,[0,2]])
+            mse, rmse = compute_state_rmse(runs[epoch][episode]['obs'][:,[0,2]] - ref[:,[0,2]])
             costs[epoch, episode] = rmse
 
     mean_cost = np.mean(costs, axis=1)
