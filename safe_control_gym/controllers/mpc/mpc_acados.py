@@ -106,7 +106,7 @@ class MPC_ACADOS(MPC):
         if hasattr(self, 'ocp'):
             del self.ocp
         if hasattr(self, 'acados_ocp_solver'):
-            del self.acados_ocp_solver 
+            del self.acados_ocp_solver
 
         # delete the generated c code directory
         if os.path.exists(self.output_dir + '/mpc_c_generated_code'):
@@ -117,7 +117,7 @@ class MPC_ACADOS(MPC):
         self.setup_acados_model()
         # Acados optimizer.
         self.setup_acados_optimizer()
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp)
+        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
 
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''

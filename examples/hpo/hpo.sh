@@ -18,7 +18,7 @@ sampler=$4 # optuna or vizier
 localOrHost=$5
 sys=$6 # cartpole, or quadrotor_2D_attitude
 sys_name=${sys%%_*} # cartpole, or quadrotor
-algo=$7 # ilqr, gpmpc_acados
+algo=$7 # ilqr, gpmpc_acados, ppo
 prior=$8
 safety_filter=$9 # True or False
 task=${10} # stab, or tracking
@@ -64,6 +64,7 @@ if [ "$resume" == 'False' ]; then
                             --use_gpu True \
                             --task ${sys_name} --tag ${experiment_name} --seed ${seeds[0]} &
         pid1=$!
+        pids[0]=$pid1
 
         # wait until the first study is created
         sleep 3
@@ -96,6 +97,7 @@ if [ "$resume" == 'False' ]; then
                             --use_gpu True \
                             --task ${sys_name} --tag ${experiment_name} --seed ${seeds[0]} &
         pid1=$!
+        pids[0]=$pid1
 
         # wait until the first study is created
         sleep 3
@@ -147,6 +149,6 @@ done
 
 # back up the database after all jobs finish
 echo "backing up the database"
-mv ${algo}_hpo_${sampler}.db ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_${algo}.db
-mv ${algo}_hpo_${sampler}.db-journal ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_${algo}.db-journal
-mv ${algo}_hpo_endpoint.yaml ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_endpoint.yaml
+mv ${algo}_hpo_${sampler}.db ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_${sampler}.db
+mv ${algo}_hpo_${sampler}.db-journal ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_${sampler}.db-journal
+mv ${algo}_hpo_${sampler}_endpoint.yaml ./examples/hpo/hpo/${algo}/${experiment_name}/${algo}_hpo_${sampler}_endpoint.yaml

@@ -109,7 +109,7 @@ def test_hpo_cartpole(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
 
 @pytest.mark.parametrize('SYS', ['quadrotor_2D_attitude'])
 @pytest.mark.parametrize('TASK', ['tracking'])
-@pytest.mark.parametrize('ALGO', ['ilqr', 'gp_mpc', 'ppo'])
+@pytest.mark.parametrize('ALGO', ['ilqr', 'gp_mpc', 'linear_mpc', 'mpc_acados', 'ppo'])
 @pytest.mark.parametrize('PRIOR', [''])
 @pytest.mark.parametrize('SAFETY_FILTER', ['', 'linear_mpsc'])
 @pytest.mark.parametrize('SAMPLER', ['optuna', 'vizier'])
@@ -133,9 +133,9 @@ def test_hpo_quadrotor(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
 
     SYS_NAME = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
 
-    if ALGO == 'ilqr':
+    if ALGO == 'ilqr' or ALGO == 'gpmpc_acados' or ALGO == 'linear_mpc' or ALGO == 'mpc_acados':
         PRIOR = '100'
-    elif ALGO == 'gp_mpc' or ALGO == 'gpmpc_acados':
+    elif ALGO == 'gp_mpc':
         PRIOR = '200'
 
     # check if the config file exists
@@ -205,5 +205,5 @@ def test_hpo_quadrotor(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
         os.system(f'rm {ALGO}_hpo_{SAMPLER}.db')
     if os.path.exists(f'{ALGO}_hpo_{SAMPLER}.db-journal'):
         os.system(f'rm {ALGO}_hpo_{SAMPLER}.db-journal')
-    if os.path.exists(f'{ALGO}_hpo_endpoint.yaml'):
-        os.system(f'rm {ALGO}_hpo_endpoint.yaml')
+    if os.path.exists(f'{ALGO}_hpo_{SAMPLER}_endpoint.yaml'):
+        os.system(f'rm {ALGO}_hpo_{SAMPLER}_endpoint.yaml')

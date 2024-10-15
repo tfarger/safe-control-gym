@@ -4,8 +4,9 @@ from typing import Any, Dict
 
 import optuna
 
-from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, PPO_dict, SAC_dict, iLQR_dict,
-                                                               iLQR_SF_dict, is_log_scale)
+from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, LMPC_dict, MPC_dict, PPO_dict,
+                                                               SAC_dict, iLQR_dict, iLQR_SF_dict,
+                                                               is_log_scale)
 
 
 def ppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
@@ -173,6 +174,68 @@ def gpmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[
     return hps_suggestion
 
 
+def lmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for LMPC hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    horizon = trial.suggest_categorical('horizon', LMPC_dict['horizon']['values'])
+
+    # objective
+    state_weight = [
+        trial.suggest_float(f'q_mpc_{i}', LMPC_dict['q_mpc']['values'][0], LMPC_dict['q_mpc']['values'][1], log=is_log_scale(LMPC_dict['q_mpc']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'r_mpc_{i}', LMPC_dict['r_mpc']['values'][0], LMPC_dict['r_mpc']['values'][1], log=is_log_scale(LMPC_dict['r_mpc']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'horizon': horizon,
+        'q_mpc': state_weight,
+        'r_mpc': action_weight,
+    }
+
+    return hps_suggestion
+
+
+def mpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for MPC hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    horizon = trial.suggest_categorical('horizon', MPC_dict['horizon']['values'])
+
+    # objective
+    state_weight = [
+        trial.suggest_float(f'q_mpc_{i}', MPC_dict['q_mpc']['values'][0], MPC_dict['q_mpc']['values'][1], log=is_log_scale(MPC_dict['q_mpc']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'r_mpc_{i}', MPC_dict['r_mpc']['values'][0], MPC_dict['r_mpc']['values'][1], log=is_log_scale(MPC_dict['r_mpc']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'horizon': horizon,
+        'q_mpc': state_weight,
+        'r_mpc': action_weight,
+    }
+
+    return hps_suggestion
+
+
 def ilqr_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
     """Sampler for iLQR hyperparameters.
 
@@ -271,6 +334,8 @@ HYPERPARAMS_SAMPLER = {
     'sac': sac_sampler,
     'gp_mpc': gpmpc_sampler,
     'gpmpc_acados': gpmpc_sampler,
+    'linear_mpc': lmpc_sampler,
+    'mpc_acados': mpc_sampler,
     'ilqr': ilqr_sampler,
     'ilqr_sf': ilqr_sf_sampler,
 }
