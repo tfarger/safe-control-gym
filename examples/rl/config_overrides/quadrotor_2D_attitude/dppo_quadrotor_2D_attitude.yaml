@@ -1,29 +1,28 @@
-algo: ppo
 algo_config:
   # model args
   hidden_dim: 128
   activation: "relu"
 
   # loss args
-  use_gae: True
+  use_gae: False
   entropy_coef: 0.01
 
   # optim args
-  opt_epochs: 10
+  opt_epochs: 20
   mini_batch_size: 256
-  actor_lr: 0.003
-  critic_lr: 0.003
+  actor_lr: 0.0035
+  critic_lr: 0.0035
 
   # runner args
-  max_env_steps: 660000
+  max_env_steps: 432000
   rollout_batch_size: 5
-  rollout_steps: 660
+  rollout_steps: 540
   eval_batch_size: 10
 
   # misc
-  log_interval: 6600
-  save_interval: 660000
+  log_interval: 5400
+  save_interval: 540000
   num_checkpoints: 0
-  eval_interval: 6600
+  eval_interval: 5400
   eval_save_best: True
   tensorboard: False

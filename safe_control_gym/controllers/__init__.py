@@ -46,6 +46,10 @@ register(idx='safe_explorer_ppo',
          entry_point='safe_control_gym.controllers.safe_explorer.safe_ppo:SafeExplorerPPO',
          config_entry_point='safe_control_gym.controllers.safe_explorer:safe_ppo.yaml')
 
+register(idx='dppo',
+         entry_point='safe_control_gym.controllers.dppo.dppo:DPPO',
+         config_entry_point='safe_control_gym.controllers.dppo:dppo.yaml')
+
 register(idx='rarl',
          entry_point='safe_control_gym.controllers.rarl.rarl:RARL',
          config_entry_point='safe_control_gym.controllers.rarl:rarl.yaml')

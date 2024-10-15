@@ -16,6 +16,7 @@ class QuadType(IntEnum):
     THREE_D = 3  # Three-dimensional movement.
     TWO_D_ATTITUDE = 4  # Two-dimensional (in the x-z plane) movement with attitude control.
     TWO_D_ATTITUDE_5S = 5  # Two-dimensional (in the x-z plane) movement with attitude control with 5 states.
+    THREE_D_ATTITUDE = 6  # Three-dimensional movement with attitude control with 12 states.
 
 
 def cmd2pwm(thrust, pwm2rpm_scale, pwm2rpm_const, ct, pwm_min, pwm_max):
