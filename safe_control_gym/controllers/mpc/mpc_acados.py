@@ -1,6 +1,8 @@
 '''Model Predictive Control using Acados.'''
-
+import os
+import shutil
 from copy import deepcopy
+from datetime import datetime
 
 import casadi as cs
 import numpy as np
@@ -96,9 +98,21 @@ class MPC_ACADOS(MPC):
         '''Prepares for training or evaluation.'''
         print(colored('Resetting MPC', 'green'))
         super().reset()
-        self.acados_model = None
-        self.ocp = None
-        self.acados_ocp_solver = None
+        # self.acados_model = None
+        # self.ocp = None
+        # self.acados_ocp_solver = None
+        if hasattr(self, 'acados_model'):
+            del self.acados_model
+        if hasattr(self, 'ocp'):
+            del self.ocp
+        if hasattr(self, 'acados_ocp_solver'):
+            del self.acados_ocp_solver 
+
+        # delete the generated c code directory
+        if os.path.exists(self.output_dir + '/mpc_c_generated_code'):
+            print('deleting the generated MPC c code directory')
+            shutil.rmtree(self.output_dir + '/mpc_c_generated_code')
+            assert not os.path.exists(self.output_dir + '/mpc_c_generated_code'), 'Failed to delete the generated c code directory'
         # Dynamics model.
         self.setup_acados_model()
         # Acados optimizer.
@@ -132,6 +146,9 @@ class MPC_ACADOS(MPC):
         acados_model.x_labels = self.env.STATE_LABELS
         acados_model.u_labels = self.env.ACTION_LABELS
         acados_model.t_label = 'time'
+        # get current time stamp in $ymd_HMS format
+        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        acados_model.name = self.env.NAME + '_' + current_time
 
         self.acados_model = acados_model
 
