@@ -13,8 +13,8 @@ PPO_dict = {
     'activation': {'values': ['tanh', 'relu', 'leaky_relu'], 'scale': 'uniform', 'type': str, 'cat': 'categorical'},
     'target_kl': {'values': [0.00000001, 0.8], 'scale': 'uniform', 'type': float, 'cat': 'float'},
     'entropy_coef': {'values': [0.00000001, 0.1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'actor_lr': {'values': [1e-5, 1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'critic_lr': {'values': [1e-5, 1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
+    'actor_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
+    'critic_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'rew_state_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
     'rew_act_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
@@ -22,17 +22,17 @@ PPO_dict = {
 SAC_dict = {
     'hidden_dim': {'values': [32, 64, 128, 256, 512], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'gamma': {'values': [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999], 'scale': 'uniform', 'type': float, 'cat': 'discrete'},
-    'train_interval': {'values': [10, 100, 1000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
+    'train_interval': {'values': [10, 100, 200, 500, 1000, 1500, 2000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'train_batch_size': {'values': [32, 64, 128, 256, 512, 1024], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'max_env_steps': {'values': [30000, 72000, 114000, 156000, 216000, 276000, 336000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'warm_up_steps': {'values': [500, 1000, 2000, 4000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
-    'max_buffer_size': {'values': [10000, 50000, 100000, 200000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
+    'max_buffer_size': {'values': [20000, 50000, 100000, 150000, 200000, 350000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'activation': {'values': ['tanh', 'relu', 'leaky_relu'], 'scale': 'uniform', 'type': str, 'cat': 'categorical'},
     'tau': {'values': [0.005, 1.0], 'scale': 'uniform', 'type': float, 'cat': 'float'},
     'init_temperature': {'values': [0.01, 1], 'scale': 'uniform', 'type': float, 'cat': 'float'},
-    'actor_lr': {'values': [1e-5, 1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'critic_lr': {'values': [1e-5, 1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'entropy_lr': {'values': [1e-5, 1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
+    'actor_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
+    'critic_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
+    'entropy_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'rew_state_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
     'rew_act_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
