@@ -113,6 +113,9 @@ class GPMPC_ACADOS(GPMPC):
         self.compute_ipopt_initial_guess = compute_ipopt_initial_guess
         self.use_RTI = use_RTI
 
+        if hasattr(self, 'prior_ctrl'):
+            self.prior_ctrl.close()
+            
         if self.use_linear_prior:
             self.prior_ctrl = LinearMPC(
                 self.prior_env_func,

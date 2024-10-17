@@ -1047,6 +1047,15 @@ class GPMPC(MPC):
                 run_results = self.run(env=test_envs[epoch],
                                        terminate_run_on_done=self.terminate_test_on_done)
                 test_runs[epoch].update({test_ep: munch.munchify(run_results)})
+            max_steps = test_runs[epoch][0]['obs'].shape[0]
+            x_seq, actions, x_next_seq = self.gather_training_samples(test_runs, epoch - 1, max_steps)
+            test_inputs, test_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
+            if self.plot_trained_gp:
+                self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
+                                                      output_dir=self.output_dir,
+                                                      title=f'epoch_{epoch}_test'
+                                                      )
+
             # gather training data
             train_runs[epoch] = {}
             for episode in range(self.num_train_episodes_per_epoch):
@@ -1152,6 +1161,7 @@ class GPMPC(MPC):
         '''Clean up.'''
         self.env_training.close()
         self.env.close()
+        self.prior_ctrl.env.close()
 
     def setup_results_dict(self):
         '''Setup the results dictionary to store run information.'''
