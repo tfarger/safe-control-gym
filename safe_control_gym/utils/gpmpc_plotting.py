@@ -67,7 +67,7 @@ def plot_runs(all_runs, num_epochs, episode=0, ind=0, ylabel='x position', dir=N
     if traj is not None:
         plt.plot(traj[:, ind], label='Reference', color='gray', linestyle='--')
     # plot the prior controller
-    plt.plot(all_runs[0][episode]['state'][:, ind], label='Linear MPC')
+    plt.plot(all_runs[0][episode]['state'][:, ind], label='prior MPC')
     # plot each learning epoch
     for epoch in range(1, num_epochs):
         # plot the first episode of each epoch
@@ -87,7 +87,7 @@ def plot_runs(all_runs, num_epochs, episode=0, ind=0, ylabel='x position', dir=N
 
 def plot_runs_input(all_runs, num_epochs, episode=0, ind=0, ylabel='x position', dir=None,):
     # plot the prior controller
-    plt.plot(all_runs[0][episode]['action'][:, ind], label='Linear MPC')
+    plt.plot(all_runs[0][episode]['action'][:, ind], label='prior MPC')
     # plot each learning epoch
     for epoch in range(1, num_epochs):
         # plot the first episode of each epoch
@@ -253,7 +253,7 @@ def plot_xz_trajectory(runs, ref, dir):
     num_epochs = len(runs)
     plt.figure()
     plt.plot(ref[:, 0], ref[:, 2], label='Reference', color='gray', linestyle='--')
-    plt.plot(runs[0][0]['obs'][:, 0], runs[0][0]['obs'][:, 2], label='Linear MPC')
+    plt.plot(runs[0][0]['obs'][:, 0], runs[0][0]['obs'][:, 2], label='prior MPC')
     for epoch in range(1, num_epochs):
         plt.plot(runs[epoch][0]['obs'][:, 0], runs[epoch][0]['obs'][:, 2], label='GP-MPC %s' % epoch)
     plt.title('X-Z plane path')

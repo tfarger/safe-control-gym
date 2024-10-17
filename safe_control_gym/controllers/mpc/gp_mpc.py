@@ -246,6 +246,14 @@ class GPMPC(MPC):
         self.discrete_dfdx = A
         self.discrete_dfdu = B
 
+        x = cs.MX.sym('x', self.model.nx)
+        u = cs.MX.sym('u', self.model.nu)
+        z = cs.vertcat(x, u)
+        self.fd_func = self.env_func(gui=False).symbolic.fd_func
+        residual = self.fd_func(x0=x, p=u)['xf'] \
+                        - self.prior_dynamics_func(x0=x, p=u)['xf']
+        self.residual_func = cs.Function('residual_func', [z], [residual])
+
     def set_gp_dynamics_func(self, n_ind_points):
         '''Updates symbolic dynamics.
 
@@ -799,6 +807,7 @@ class GPMPC(MPC):
             action += self.K @ (x_val[:, 0] - obs) 
         return action
 
+    @timing
     def train_gp(self,
                  input_data=None,
                  target_data=None,
@@ -1036,8 +1045,20 @@ class GPMPC(MPC):
             if self.plot_trained_gp:
                 self.gaussian_process.plot_trained_gp(train_inputs, train_outputs,
                                                       output_dir=self.output_dir,
-                                                      title=f'epoch_{epoch}'
+                                                      title=f'epoch_{epoch}',
+                                                      residual_func=self.residual_func
                                                       )
+                
+            max_steps = train_runs[epoch-1][0]['obs'].shape[0]
+            x_seq, actions, x_next_seq = self.gather_training_samples(train_runs, epoch - 1, max_steps)
+            test_inputs, test_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
+            if self.plot_trained_gp:
+                self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
+                                                      output_dir=self.output_dir,
+                                                      title=f'epoch_{epoch}_train',
+                                                      residual_func=self.residual_func
+                                                      )
+                
             # Test new policy.
             test_runs[epoch] = {}
             for test_ep in range(self.num_test_episodes_per_epoch):
@@ -1053,7 +1074,8 @@ class GPMPC(MPC):
             if self.plot_trained_gp:
                 self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
                                                       output_dir=self.output_dir,
-                                                      title=f'epoch_{epoch}_test'
+                                                      title=f'epoch_{epoch}_test',
+                                                      residual_func=self.residual_func
                                                       )
 
             # gather training data

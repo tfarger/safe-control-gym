@@ -210,7 +210,6 @@ class GPMPC_ACADOS(GPMPC):
 
             self.sparse_gp_func = cs.Function('sparse_func',
                                               [acados_model.x, acados_model.u, z_ind, mean_post_factor], [f_disc])
-            self.fd_func = self.env_func(gui=False).symbolic.fd_func
         else:
             if self.use_linear_prior:
                 f_disc = self.prior_dynamics_func(x0=acados_model.x - self.prior_ctrl.X_EQ[:, None],
