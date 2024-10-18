@@ -146,14 +146,6 @@ class DPPOAgent:
         obs, _, _ = batch['obs'], batch['ret'], batch['v']
         v_cur_quant = self.ac.critic.forward(obs, distribution=True).squeeze()
         value_loss = self.value_loss(v_cur_quant, batch['value_target_quants'])
-
-        # if self.use_clipped_value:
-        #     v_old_clipped = v_old + (v_cur - v_old).clamp(-self.clip_param, self.clip_param)
-        #     v_loss = (v_cur - ret).pow(2)
-        #     v_loss_clipped = (v_old_clipped - ret).pow(2)
-        #     value_loss = 0.5 * torch.max(v_loss, v_loss_clipped).mean()
-        # else:
-        #     value_loss = 0.5 * (v_cur - ret).pow(2).mean()
         return value_loss
 
     def update(self,
@@ -181,7 +173,7 @@ class DPPOAgent:
                 self.critic_opt.zero_grad()
                 value_loss.backward()
                 self.critic_opt.step()
-
+                # logging
                 p_loss_epoch += policy_loss.item()
                 v_loss_epoch += value_loss.item()
                 e_loss_epoch += entropy_loss.item()
