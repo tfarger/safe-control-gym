@@ -17,8 +17,8 @@ algo_config:
 
   # runner args
   max_env_steps: 216000
-  rollout_batch_size: 4
-  rollout_steps: 540
+  rollout_batch_size: 5
+  rollout_steps: 660
   eval_batch_size: 10
 
   # misc

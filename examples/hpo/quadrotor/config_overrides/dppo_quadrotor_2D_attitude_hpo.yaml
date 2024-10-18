@@ -16,14 +16,15 @@ hpo_config:
   hps_config:
     # model args
     hidden_dim: 128
-    activation: relu
+    activation: tanh
 
     # loss args
-    gamma: 0.99
-    gae_lambda: 0.95
+    gamma: 0.98
+    gae_lambda: 0.92
     clip_param: 0.2
     target_kl: 0.01
     entropy_coef: 0.01
+    quantile_count: 256
 
     # optim args
     opt_epochs: 20
@@ -32,7 +33,7 @@ hpo_config:
     critic_lr: 0.001
 
     # runner args
-    max_env_steps: 216000
+    max_env_steps: 336000
     rollout_batch_size: 5
 
     # objective

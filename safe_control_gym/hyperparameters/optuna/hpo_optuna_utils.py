@@ -5,7 +5,7 @@ from typing import Any, Dict
 import optuna
 
 from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, LMPC_dict, MPC_dict, PPO_dict,
-                                                               SAC_dict, iLQR_dict, iLQR_SF_dict,
+                                                               DPPO_dict, SAC_dict, iLQR_dict, iLQR_SF_dict,
                                                                is_log_scale)
 
 
@@ -41,6 +41,7 @@ def ppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[st
     mini_batch_size = trial.suggest_categorical('mini_batch_size', PPO_dict['mini_batch_size']['values'])
     actor_lr = trial.suggest_float('actor_lr', PPO_dict['actor_lr']['values'][0], PPO_dict['actor_lr']['values'][1], log=is_log_scale(PPO_dict['actor_lr']))
     critic_lr = trial.suggest_float('critic_lr', PPO_dict['critic_lr']['values'][0], PPO_dict['critic_lr']['values'][1], log=is_log_scale(PPO_dict['critic_lr']))
+    rollout_batch_size = trial.suggest_categorical('rollout_batch_size', PPO_dict['rollout_batch_size']['values'])
     max_env_steps = trial.suggest_categorical('max_env_steps', PPO_dict['max_env_steps']['values'])
 
     # cost parameters
@@ -65,6 +66,7 @@ def ppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[st
         'mini_batch_size': mini_batch_size,
         'actor_lr': actor_lr,
         'critic_lr': critic_lr,
+        'rollout_batch_size': rollout_batch_size,
         'max_env_steps': max_env_steps,
         'rew_state_weight': state_weight,
         'rew_act_weight': action_weight,
@@ -72,6 +74,71 @@ def ppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[st
 
     return hps_suggestion
 
+def dppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for DPPO hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+
+    """
+    
+    # model args
+    hidden_dim = trial.suggest_categorical('hidden_dim', DPPO_dict['hidden_dim']['values'])
+    activation = trial.suggest_categorical('activation', DPPO_dict['activation']['values'])
+
+    # loss args
+    gamma = trial.suggest_categorical('gamma', DPPO_dict['gamma']['values'])
+    # Factor for trade-off of bias vs variance for Generalized Advantage Estimator
+    gae_lambda = trial.suggest_categorical('gae_lambda', DPPO_dict['gae_lambda']['values'])
+    clip_param = trial.suggest_categorical('clip_param', DPPO_dict['clip_param']['values'])
+    # Limit the KL divergence between updates
+    target_kl = trial.suggest_float('target_kl', DPPO_dict['target_kl']['values'][0], DPPO_dict['target_kl']['values'][1], log=is_log_scale(DPPO_dict['target_kl']))
+    # Entropy coefficient for the loss calculation
+    entropy_coef = trial.suggest_float('entropy_coef', DPPO_dict['entropy_coef']['values'][0], DPPO_dict['entropy_coef']['values'][1], log=is_log_scale(DPPO_dict['entropy_coef']))
+    # quntile count for quantile regression
+    quantile_count = trial.suggest_categorical('quantile_count', DPPO_dict['quantile_count']['values'])
+
+    # optim args
+    opt_epochs = trial.suggest_categorical('opt_epochs', DPPO_dict['opt_epochs']['values'])
+    mini_batch_size = trial.suggest_categorical('mini_batch_size', DPPO_dict['mini_batch_size']['values'])
+    actor_lr = trial.suggest_float('actor_lr', DPPO_dict['actor_lr']['values'][0], DPPO_dict['actor_lr']['values'][1], log=is_log_scale(DPPO_dict['actor_lr']))
+    critic_lr = trial.suggest_float('critic_lr', DPPO_dict['critic_lr']['values'][0], DPPO_dict['critic_lr']['values'][1], log=is_log_scale(DPPO_dict['critic_lr']))
+    rollout_batch_size = trial.suggest_categorical('rollout_batch_size', DPPO_dict['rollout_batch_size']['values'])
+    max_env_steps = trial.suggest_categorical('max_env_steps', DPPO_dict['max_env_steps']['values'])
+
+    # cost parameters
+    state_weight = [
+        trial.suggest_float(f'rew_state_weight_{i}', PPO_dict['rew_state_weight']['values'][0], PPO_dict['rew_state_weight']['values'][1], log=is_log_scale(PPO_dict['rew_state_weight']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'rew_act_weight_{i}', PPO_dict['rew_act_weight']['values'][0], PPO_dict['rew_act_weight']['values'][1], log=is_log_scale(PPO_dict['rew_act_weight']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'hidden_dim': hidden_dim,
+        'activation': activation,
+        'gamma': gamma,
+        'gae_lambda': gae_lambda,
+        'clip_param': clip_param,
+        'target_kl': target_kl,
+        'entropy_coef': entropy_coef,
+        'opt_epochs': opt_epochs,
+        'mini_batch_size': mini_batch_size,
+        'actor_lr': actor_lr,
+        'critic_lr': critic_lr,
+        'rollout_batch_size': rollout_batch_size,
+        'max_env_steps': max_env_steps,
+        'quantile_count': quantile_count,
+        'rew_state_weight': state_weight,
+        'rew_act_weight': action_weight,
+    }
+
+    return hps_suggestion
 
 def sac_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
     """Sampler for SAC hyperparameters.
@@ -331,6 +398,7 @@ def ilqr_sf_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dic
 
 HYPERPARAMS_SAMPLER = {
     'ppo': ppo_sampler,
+    'dppo': dppo_sampler,
     'sac': sac_sampler,
     'gp_mpc': gpmpc_sampler,
     'gpmpc_acados': gpmpc_sampler,

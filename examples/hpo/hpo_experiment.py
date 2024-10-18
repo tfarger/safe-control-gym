@@ -14,7 +14,7 @@ def hpo(config):
     '''
 
     # change the cost function for rl methods
-    if config.algo == 'ppo' or config.algo == 'sac':
+    if config.algo == 'ppo' or config.algo == 'sac' or config.algo == 'dppo':
         config.task_config.cost = 'rl_reward'
         config.task_config.obs_goal_horizon = 1
         if 'disturbances' in config.task_config:
@@ -28,7 +28,7 @@ def hpo(config):
     elif config.algo == 'ilqr':
         pass
     else:
-        raise ValueError('Only ppo, sac, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr are supported for now.')
+        raise ValueError('Only ppo, sac, dppo, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr are supported for now.')
 
     # Experiment setup.
     set_dir_from_config(config)
