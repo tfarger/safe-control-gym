@@ -1,21 +1,24 @@
-algo: ppo
 algo_config:
   # model args
   hidden_dim: 128
-  activation: "relu"
+  activation: "tanh"
 
   # loss args
+  gamma: 0.98
   use_gae: True
+  gae_lambda: 0.92
+  clip_param: 0.2
+  target_kl: 1.0e-2
   entropy_coef: 0.01
 
   # optim args
-  opt_epochs: 10
+  opt_epochs: 20
   mini_batch_size: 256
-  actor_lr: 0.003
-  critic_lr: 0.003
+  actor_lr: 0.001
+  critic_lr: 0.001
 
   # runner args
-  max_env_steps: 660000
+  max_env_steps: 396000
   rollout_batch_size: 5
   rollout_steps: 660
   eval_batch_size: 10
@@ -27,3 +30,37 @@ algo_config:
   eval_interval: 6600
   eval_save_best: True
   tensorboard: False
+
+#algo_config:
+#  # model args
+#  hidden_dim: 128
+#  activation: "relu"
+#
+#  # loss args
+#  gamma: 0.98
+#  use_gae: True   # or False
+#  gae_lambda: 0.92
+#  use_clipped_value: False  # or True
+#  clip_param: 0.1
+#  target_kl: 1.0e-5
+#  entropy_coef: 0.003
+#
+#  # optim args
+#  opt_epochs: 25
+#  mini_batch_size: 256
+#  actor_lr: 7.2e-5
+#  critic_lr: 0.0266
+#
+#  # runner args
+#  max_env_steps: 216000
+#  rollout_batch_size: 5
+#  rollout_steps: 660
+#  eval_batch_size: 10
+#
+#  # misc
+#  log_interval: 6600
+#  save_interval: 660000
+#  num_checkpoints: 0
+#  eval_interval: 6600
+#  eval_save_best: True
+#  tensorboard: False

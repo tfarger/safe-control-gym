@@ -58,7 +58,6 @@ class DPPO(BaseController):
         self.agent = DPPOAgent(self.env.observation_space,
                                self.env.action_space,
                                hidden_dim=self.hidden_dim,
-                               use_clipped_value=self.use_clipped_value,
                                clip_param=self.clip_param,
                                target_kl=self.target_kl,
                                entropy_coef=self.entropy_coef,
@@ -67,6 +66,8 @@ class DPPO(BaseController):
                                opt_epochs=self.opt_epochs,
                                mini_batch_size=self.mini_batch_size,
                                activation=self.activation,
+                               gae_lambda=self.gae_lambda,
+                               value_loss=self.value_loss,
                                device=self.device)
         self.agent.to(self.device)
         # Pre-/post-processing.

@@ -41,7 +41,6 @@ class DPPOAgent:
                  obs_space,
                  act_space,
                  hidden_dim=64,
-                 use_clipped_value=False,
                  clip_param=0.2,
                  target_kl=0.01,
                  entropy_coef=0.01,
@@ -50,8 +49,8 @@ class DPPOAgent:
                  opt_epochs=10,
                  mini_batch_size=64,
                  activation='tanh',
-                 qrdqn_quantile_count: int = 200,
-                 value_lambda: float = 0.95,
+                 quantile_count: int = 200,
+                 gae_lambda: float = 0.95,
                  value_loss: str = value_loss_l1,
                  value_loss_kwargs=None,
                  value_measure: str = None,
@@ -65,7 +64,6 @@ class DPPOAgent:
             value_loss_kwargs = {}
         self.obs_space = obs_space
         self.act_space = act_space
-        self.use_clipped_value = use_clipped_value
         self.clip_param = clip_param
         self.target_kl = target_kl
         self.entropy_coef = entropy_coef
@@ -73,8 +71,8 @@ class DPPOAgent:
         self.mini_batch_size = mini_batch_size
         self.activation = activation
         self._critic_network_name = self.network_qrdqn  # current implementation is only done for qrdqn
-        self.qrdqn_quantile_count = qrdqn_quantile_count
-        self.value_lambda = value_lambda
+        self.quantile_count = quantile_count
+        self.gae_lambda = gae_lambda
         self.value_loss_name = value_loss
         self.value_loss_kwargs = value_loss_kwargs
         self.device = device
@@ -84,6 +82,7 @@ class DPPOAgent:
                                  act_space,
                                  hidden_dims=[hidden_dim] * 2,
                                  activation=self.activation,
+                                 quantile_count=self.quantile_count,
                                  device=self.device)
 
         # Value loss
@@ -195,6 +194,53 @@ class DPPOAgent:
         return results
 
 
+class MLPActorCritic(nn.Module):
+    '''Model for the actor-critic agent.
+
+    Attributes:
+        actor (MLPActor): policy network.
+        critic (MLPCritic): value network.
+    '''
+
+    def __init__(self,
+                 obs_space,
+                 act_space,
+                 hidden_dims=(64, 64),
+                 activation='tanh',
+                 quantile_count=200,
+                 device=None
+                 ):
+        super().__init__()
+        obs_dim = obs_space.shape[0]
+        if isinstance(act_space, Box):
+            act_dim = act_space.shape[0]
+            discrete = False
+        else:
+            act_dim = act_space.n
+            discrete = True
+        # Policy.
+        self.actor = MLPActor(obs_dim, act_dim, hidden_dims, activation, discrete)
+        # Value function.
+        self.critic = QuantileCritic(obs_dim, hidden_dims, activation, quantile_count, device)
+
+    def step(self,
+             obs
+             ):
+        dist, _ = self.actor(obs)
+        a = dist.sample()
+        logp_a = dist.log_prob(a)
+        v = self.critic.v_net(obs)
+        v_quant = self.critic.v_net.last_quantiles.detach()
+        return a.cpu().numpy(), v.cpu().numpy(), v_quant.cpu().numpy(), logp_a.cpu().numpy()
+
+    def act(self,
+            obs
+            ):
+        dist, _ = self.actor(obs)
+        a = dist.mode()
+        return a.cpu().numpy()
+
+
 class MLPActor(nn.Module):
     '''Actor MLP model.'''
 
@@ -226,67 +272,26 @@ class MLPActor(nn.Module):
         return dist, logp_a
 
 
-class MLPCritic(nn.Module):
-    '''Critic MLP model.'''
+class QuantileCritic(nn.Module):
+    '''Critic model.'''
 
     def __init__(self,
                  obs_dim,
                  hidden_dims,
                  activation,
+                 quantile_count,
                  device
                  ):
         super().__init__()
-        self.v_net = QuantileNetwork(obs_dim, 1, hidden_dims, activation, device=device)
+        self.v_net = QuantileNetwork(obs_dim,
+                                     1,
+                                     hidden_dims,
+                                     activation,
+                                     quantile_count=quantile_count,
+                                     device=device)
 
     def forward(self, obs, distribution: bool = False):
-        # temp = self.v_net(obs).unsqueeze(0)
         return self.v_net(obs, distribution=distribution).unsqueeze(1)
-
-
-class MLPActorCritic(nn.Module):
-    '''Model for the actor-critic agent.
-
-    Attributes:
-        actor (MLPActor): policy network.
-        critic (MLPCritic): value network.
-    '''
-
-    def __init__(self,
-                 obs_space,
-                 act_space,
-                 hidden_dims=(64, 64),
-                 activation='tanh',
-                 device=None
-                 ):
-        super().__init__()
-        obs_dim = obs_space.shape[0]
-        if isinstance(act_space, Box):
-            act_dim = act_space.shape[0]
-            discrete = False
-        else:
-            act_dim = act_space.n
-            discrete = True
-        # Policy.
-        self.actor = MLPActor(obs_dim, act_dim, hidden_dims, activation, discrete)
-        # Value function.
-        self.critic = MLPCritic(obs_dim, hidden_dims, activation, device)
-
-    def step(self,
-             obs
-             ):
-        dist, _ = self.actor(obs)
-        a = dist.sample()
-        logp_a = dist.log_prob(a)
-        v = self.critic.v_net(obs)
-        v_quant = self.critic.v_net.last_quantiles.detach()
-        return a.cpu().numpy(), v.cpu().numpy(), v_quant.cpu().numpy(), logp_a.cpu().numpy()
-
-    def act(self,
-            obs
-            ):
-        dist, _ = self.actor(obs)
-        a = dist.mode()
-        return a.cpu().numpy()
 
 
 class DPPOBuffer(object):
