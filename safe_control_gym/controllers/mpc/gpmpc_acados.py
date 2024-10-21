@@ -154,6 +154,7 @@ class GPMPC_ACADOS(GPMPC):
             self.prior_dynamics_func = self.prior_ctrl.linear_dynamics_func
         else:
             self.prior_dynamics_func = self.prior_ctrl.dynamics_func
+            self.prior_dynamcis_func_c = self.prior_ctrl.model.fc_func
 
         self.x_guess = None
         self.u_guess = None

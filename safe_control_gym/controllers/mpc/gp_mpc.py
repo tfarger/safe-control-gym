@@ -192,6 +192,7 @@ class GPMPC(MPC):
             self.prior_dynamics_func = self.prior_ctrl.linear_dynamics_func
         else:
             self.prior_dynamics_func = self.prior_ctrl.dynamics_func
+            self.prior_dynamcis_func_c = self.prior_ctrl.model.fc_func
         self.X_EQ = self.prior_ctrl.X_EQ
         self.U_EQ = self.prior_ctrl.U_EQ
         # GP and training parameters.
@@ -253,6 +254,9 @@ class GPMPC(MPC):
         residual = self.fd_func(x0=x, p=u)['xf'] \
                         - self.prior_dynamics_func(x0=x, p=u)['xf']
         self.residual_func = cs.Function('residual_func', [z], [residual])
+        self.fc_func = self.env_func(gui=False).symbolic.fc_func # argument x, u
+        self.residual_func_c = self.fc_func(x=x, u=u)['f'] \
+                                - self.prior_dynamcis_func_c(x=x, u=u)['f']
 
     def set_gp_dynamics_func(self, n_ind_points):
         '''Updates symbolic dynamics.
@@ -1036,9 +1040,9 @@ class GPMPC(MPC):
         for epoch in range(1, self.num_epochs):
             # only take data from the last episode from the last epoch
             if self.rand_data_selection:
-                x_seq, actions, x_next_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples, train_envs[epoch - 1].np_random)
+                x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples, train_envs[epoch - 1].np_random)
             else:
-                x_seq, actions, x_next_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples)
+                x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples)
             train_inputs, train_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
             training_results = self.train_gp(input_data=train_inputs, target_data=train_outputs)
             # plot training results
@@ -1050,7 +1054,7 @@ class GPMPC(MPC):
                                                       )
                 
             max_steps = train_runs[epoch-1][0]['obs'].shape[0]
-            x_seq, actions, x_next_seq = self.gather_training_samples(train_runs, epoch - 1, max_steps)
+            x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, max_steps)
             test_inputs, test_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
             if self.plot_trained_gp:
                 self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
@@ -1069,7 +1073,7 @@ class GPMPC(MPC):
                                        terminate_run_on_done=self.terminate_test_on_done)
                 test_runs[epoch].update({test_ep: munch.munchify(run_results)})
             max_steps = test_runs[epoch][0]['obs'].shape[0]
-            x_seq, actions, x_next_seq = self.gather_training_samples(test_runs, epoch - 1, max_steps)
+            x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(test_runs, epoch - 1, max_steps)
             test_inputs, test_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
             if self.plot_trained_gp:
                 self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
@@ -1089,6 +1093,7 @@ class GPMPC(MPC):
                 train_runs[epoch].update({episode: munch.munchify(run_results)})
 
             lengthscale, outputscale, noise, kern = self.gaussian_process.get_hyperparameters(as_numpy=True)
+            # compute the condition number of the kernel matrix
             # TODO: fix data logging
             np.savez(os.path.join(self.output_dir, 'data_%s'% epoch),
                     data_inputs=training_results['train_inputs'],
@@ -1101,10 +1106,10 @@ class GPMPC(MPC):
                     num_samples=self.num_samples,
                     # trajectory=self.trajectory,
                     # ctrl_freq=self.config.task_config.ctrl_freq,
-                    # lengthscales=lengthscale,
-                    # outputscale=outputscale,
-                    # noise=noise,
-                    # kern=kern,
+                    lengthscales=lengthscale,
+                    outputscale=outputscale,
+                    noise=noise,
+                    kern=kern,
                     train_data=self.train_data,
                     test_data=self.test_data,
                     )
@@ -1149,7 +1154,9 @@ class GPMPC(MPC):
         actions_int = np.vstack(actions_int)
         x_next_seq_int = np.vstack(x_next_seq_int)
 
-        return x_seq_int, actions_int, x_next_seq_int
+        x_dot_seq_int = (x_next_seq_int - x_seq_int) / self.dt
+
+        return x_seq_int, actions_int, x_next_seq_int, x_dot_seq_int
 
     def select_action(self,
                       obs,
