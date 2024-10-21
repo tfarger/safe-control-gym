@@ -590,16 +590,56 @@ class GaussianProcessCollection:
         '''
         inputs = torch.from_numpy(inputs) if type(inputs) is np.ndarray else inputs
         targets = torch.from_numpy(targets) if type(targets) is np.ndarray else targets
+        
         if not self.parallel:
+            if self.target_mask is not None:
+                targets = targets[:, self.target_mask]
+            num_data = inputs.shape[0]
+            num_gps = len(self.gp_list)
+            residual_func = kwargs.get('residual_func', None)
+            residual = np.zeros((num_data, targets.shape[1]))
+            if residual_func is not None:
+                for i in range(num_data):
+                    residual[i, :] = residual_func(inputs[i, :].numpy())[self.target_mask].full().flatten()
+
+            target_label = ['m/s', 'm/s', 'rad/s']
+
+            t = np.arange(num_data)
+            fig, axs = plt.subplots(num_gps, 1, figsize=(10, 3 * num_gps))
             for gp_ind, gp in enumerate(self.gp_list):
-                fig_count = gp.plot_trained_gp(inputs,
-                                            targets[:, self.target_mask[gp_ind], None],
-                                            self.target_mask[gp_ind],
-                                            output_dir=output_dir,
-                                            fig_count=fig_count,
-                                            title=title,
-                                            **kwargs)
-                fig_count += 1
+                means, _ , preds = gp.predict(inputs, return_pred=True)
+                lower, upper = preds.confidence_region()
+                num_within_2std = torch.sum((targets[:, gp_ind] > lower) & (targets[:, gp_ind] < upper)).numpy()
+                percentage_within_2std = num_within_2std / len(targets[:, gp_ind]) * 100
+                print(f'Percentage of test points within 2 std for dim {self.target_mask[gp_ind]}: {percentage_within_2std:.2f}%')
+                axs[gp_ind].scatter(t, targets[:, gp_ind], c='r', label='Target', s=5) 
+                axs[gp_ind].plot(t, means, 'b', label='GP mean')
+                axs[gp_ind].fill_between(t, lower, upper, alpha=0.3, label='2 std', color='skyblue')
+                axs[gp_ind].plot(t, residual[:, gp_ind], 'g', label='Residual', linestyle='--')
+                plt_title = (f'GP dim {self.target_mask[gp_ind]}, {percentage_within_2std:.2f}% within 2 std')
+                if title is not None:
+                    plt_title += f', {title}'
+                axs[gp_ind].set_title(plt_title)
+                axs[gp_ind].set_ylabel(target_label[self.target_mask[gp_ind]])
+            
+            axs[-1].set_xlabel('Data index')
+            axs[0].legend(ncol=2)
+            fig.tight_layout()
+            if output_dir is not None:
+                plt_name = f'gp_validation.png' if title is None else f'gp_validation_{title}.png'
+                fig.savefig(os.path.join(output_dir, plt_name))
+                print(colored(f'Plot saved to {os.path.join(output_dir, plt_name)}', 'green'))
+            plt.close(fig)
+
+            # for gp_ind, gp in enumerate(self.gp_list):
+            #     fig_count = gp.plot_trained_gp(inputs,
+            #                                 targets[:, self.target_mask[gp_ind], None],
+            #                                 self.target_mask[gp_ind],
+            #                                 output_dir=output_dir,
+            #                                 fig_count=fig_count,
+            #                                 title=title,
+            #                                 **kwargs)
+            #     fig_count += 1
         else:
             self.gps.plot_trained_gp(inputs, targets, output_dir, title)
 
@@ -1206,7 +1246,7 @@ class GaussianProcess:
         self.model.train()
         self.likelihood.train()
 
-        max_trial = 3
+        max_trial = 1
         opti_result = []
         loss_result = []
         for trial_idx in range(max_trial):
@@ -1436,39 +1476,28 @@ class GaussianProcess:
         t = np.arange(inputs.shape[0])
         lower, upper = preds.confidence_region()
 
-        for i in range(self.output_dimension):
-            fig_count += 1
-            plt.figure(fig_count, figsize=(5, 2))
-            # if lower.ndim > 1:
-            #     plt.plot(t, residual[:, i], 'g', label='Residual', lineswidth=2, linestyle='--')
-            #     # compute the percentage of test points within 2 std
-            #     num_within_2std = torch.sum((targets[:, i] > lower[:, i]) & (targets[:, i] < upper[:, i])).numpy()
-            #     percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
-            #     print(f'Percentage of test points within 2 std for dim {i}: {percentage_within_2std:.2f}%')
-            #     plt.fill_between(t, lower[:, i].detach().numpy(), upper[:, i].detach().numpy(), alpha=0.5, label='2-$\sigma$')
-            #     plt.plot(t, means[:, i], 'b', label='GP prediction mean')
-            #     plt.scatter(t, targets[:, i], 'r', label='Target')
-            # else:
-            # compute the percentage of test points within 2 std
-            num_within_2std = torch.sum((targets[:, i] > lower) & (targets[:, i] < upper)).numpy()
-            percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
-            print(f'Percentage of test points within 2 std for dim {output_label}: {percentage_within_2std:.2f}%')
-            plt.fill_between(t, lower.detach().numpy(), upper.detach().numpy(), alpha=0.5, label='2-$\sigma$')
-            plt.plot(t, means, 'b', label='GP prediction mean')
-            plt.scatter(t, targets, color='r', label='Target')
-            plt.plot(t, residual, 'g', label='Residual',)
-            plt.legend(ncol=2)
-            plt_title = f'GP validation {output_label}, {percentage_within_2std:.2f}% within 2-$\sigma$'
-            if title is not None:
-                plt_title += f' {title}'
-            plt.title(plt_title)
- 
-            if output_dir is not None:
-                plt_name = f'gp_validation_{output_label}.png' if title is None else f'gp_validation_{output_label}_{title}.png'
-                plt.savefig(f'{output_dir}/{plt_name}')
-                print(f'Figure saved at {output_dir}/{plt_name}')
-            # clean up the plot
-            plt.close(fig_count)
+        fig_count += 1
+        plt.figure(fig_count, figsize=(5, 2))
+        # compute the percentage of test points within 2 std
+        num_within_2std = torch.sum((targets[:, i] > lower) & (targets[:, i] < upper)).numpy()
+        percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
+        print(f'Percentage of test points within 2 std for dim {output_label}: {percentage_within_2std:.2f}%')
+        plt.fill_between(t, lower.detach().numpy(), upper.detach().numpy(), alpha=0.5, label='2-$\sigma$')
+        plt.plot(t, means, 'b', label='GP mean')
+        plt.scatter(t, targets, color='r', label='Target')
+        plt.plot(t, residual, 'g', label='Residual',)
+        plt.legend(ncol=2)
+        plt_title = f'GP validation {output_label}, {percentage_within_2std:.2f}% within 2-$\sigma$'
+        if title is not None:
+            plt_title += f' {title}'
+        plt.title(plt_title)
+
+        if output_dir is not None:
+            plt_name = f'gp_validation_{output_label}.png' if title is None else f'gp_validation_{output_label}_{title}.png'
+            plt.savefig(f'{output_dir}/{plt_name}')
+            print(f'Figure saved at {output_dir}/{plt_name}')
+        # clean up the plot
+        plt.close(fig_count)
 
         return fig_count
 
