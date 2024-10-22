@@ -21,15 +21,14 @@ from skopt.sampler import Lhs
 from termcolor import colored
 
 from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system
-from safe_control_gym.controllers.mpc.gp_mpc import GPMPC
 from safe_control_gym.controllers.mpc.gp_utils import (GaussianProcessCollection, ZeroMeanIndependentGPModel,
                                                        covSEard, kmeans_centriods)
 from safe_control_gym.controllers.mpc.linear_mpc import MPC, LinearMPC
 from safe_control_gym.controllers.mpc.mpc import MPC
+from safe_control_gym.controllers.mpc.gpmpc_base import GPMPC
 from safe_control_gym.controllers.mpc.mpc_acados import MPC_ACADOS
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.utils.utils import timing
-
 
 class GPMPC_ACADOS(GPMPC):
     '''Implements a GP-MPC controller with Acados optimization.'''
