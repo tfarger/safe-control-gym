@@ -162,6 +162,10 @@ class ZeroMeanIndependentGPModel(gpytorch.models.ExactGP):
                 gpytorch.kernels.MaternKernel(ard_num_dims=train_x.shape[1]),
                 ard_num_dims=train_x.shape[1]
             )
+        elif kernel == 'RBF_single':
+            self.covar_module = gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.RBFKernel(),
+            )
 
     def forward(self,
                 x
@@ -1182,10 +1186,8 @@ class GaussianProcess:
                     train_targets
                     ):
         '''Init GP model from train inputs and train_targets.'''
-        if train_targets.ndim > 1:
-            target_dimension = train_targets.shape[1]
-        else:
-            target_dimension = 1
+        target_dimension = train_targets.shape[1] if train_targets.ndim > 1 else 1
+        input_dimension = train_inputs.shape[1] if train_inputs.ndim > 1 else 1
 
         if self.model is None:
             self.model = self.model_type(train_inputs,
@@ -1193,7 +1195,7 @@ class GaussianProcess:
                                          self.likelihood,
                                          kernel=self.kernel)
         # Extract dimensions for external use.
-        self.input_dimension = train_inputs.shape[1]
+        self.input_dimension = input_dimension
         self.output_dimension = target_dimension
         self.n_training_samples = train_inputs.shape[0]
 
@@ -1228,8 +1230,8 @@ class GaussianProcess:
         self.model.double()  # needed otherwise loads state_dict as float32
         self._compute_GP_covariances(train_inputs)
         self.casadi_predict = self.make_casadi_prediction_func(train_inputs, train_targets)
-        self.casadi_linearized_predict = \
-            self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
+        # self.casadi_linearized_predict = \
+        #     self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
 
     def train(self,
               train_input_data,
@@ -1269,6 +1271,11 @@ class GaussianProcess:
             test_y = test_y.cuda()
             self.model = self.model.cuda()
             self.likelihood = self.likelihood.cuda()
+
+        if self.input_dimension == 1:
+            test_x = test_x.reshape(-1)
+            train_x = train_x.reshape(-1)
+
         self.model.double()
         self.likelihood.double()
         self.model.train()
@@ -1280,17 +1287,17 @@ class GaussianProcess:
         for trial_idx in range(max_trial):
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-            init_output_scale = torch.rand(1).requires_grad_(False) * 3
-            init_length_scale = torch.rand(self.input_dimension, 1, 1).requires_grad_(False) * 3
-            init_noise = torch.from_numpy(self.noise_prior)
-            if gpu:
-                init_output_scale = init_output_scale.cuda()
-                init_length_scale = init_length_scale.cuda()
-                init_noise = init_noise.cuda()
+            # init_output_scale = torch.rand(1).requires_grad_(False) * 3
+            # init_length_scale = torch.rand(self.input_dimension, 1, 1).requires_grad_(False) * 3
+            # init_noise = torch.from_numpy(self.noise_prior)
+            # if gpu:
+            #     init_output_scale = init_output_scale.cuda()
+            #     init_length_scale = init_length_scale.cuda()
+                # init_noise = init_noise.cuda()
 
-            self.model.covar_module.initialize(outputscale=init_output_scale)
-            self.model.covar_module.base_kernel.initialize(lengthscale=init_length_scale)
-            self.model.likelihood.initialize(noise=init_noise)
+            # self.model.covar_module.initialize(outputscale=init_output_scale)
+            # self.model.covar_module.base_kernel.initialize(lengthscale=init_length_scale)
+            # self.model.likelihood.initialize(noise=init_noise)
             print('init outputscale: ', self.model.covar_module.outputscale)
             print('init lengthscale: ', self.model.covar_module.base_kernel.lengthscale)
             print('init noise: ', self.model.likelihood.noise)
@@ -1340,8 +1347,8 @@ class GaussianProcess:
         self.model.load_state_dict(torch.load(fname))
         self._compute_GP_covariances(train_x)
         self.casadi_predict = self.make_casadi_prediction_func(train_x, train_y)
-        self.casadi_linearized_predict = \
-            self.make_casadi_linearized_prediction_func(train_x, train_y)
+        # self.casadi_linearized_predict = \
+        #     self.make_casadi_linearized_prediction_func(train_x, train_y)
 
 
     def predict(self,
@@ -1393,7 +1400,12 @@ class GaussianProcess:
         train_targets = train_targets.numpy()
         lengthscale = self.model.covar_module.base_kernel.lengthscale.detach().numpy()
         output_scale = self.model.covar_module.outputscale.detach().numpy()
-        Nx = len(self.input_mask)
+        # Nx = len(self.input_mask)
+        Nx = self.input_dimension
+        if train_targets.ndim == 1:
+            train_targets = train_targets.reshape(-1, 1)
+        if train_inputs.ndim == 1:
+            train_inputs = train_inputs.reshape(-1, 1)
         z = ca.SX.sym('z', Nx)
         if self.kernel == 'RBF':
             K_z_ztrain = ca.Function('k_z_ztrain',
