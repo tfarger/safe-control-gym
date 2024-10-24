@@ -14,6 +14,8 @@ from termcolor import colored
 
 from safe_control_gym.utils.utils import mkdirs
 
+from safe_control_gym.math_and_models.linear_model import LinearModel
+
 torch.manual_seed(0)
 
 
@@ -159,6 +161,10 @@ class ZeroMeanIndependentGPModel(gpytorch.models.ExactGP):
             self.covar_module = gpytorch.kernels.ScaleKernel(
                 gpytorch.kernels.MaternKernel(ard_num_dims=train_x.shape[1]),
                 ard_num_dims=train_x.shape[1]
+            )
+        elif kernel == 'RBF_single':
+            self.covar_module = gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.RBFKernel(),
             )
 
     def forward(self,
@@ -590,16 +596,82 @@ class GaussianProcessCollection:
         '''
         inputs = torch.from_numpy(inputs) if type(inputs) is np.ndarray else inputs
         targets = torch.from_numpy(targets) if type(targets) is np.ndarray else targets
+        
         if not self.parallel:
+            if self.target_mask is not None:
+                targets = targets[:, self.target_mask]
+            num_data = inputs.shape[0]
+            num_gps = len(self.gp_list)
+            residual_func = kwargs.get('residual_func', None)
+            residual = np.zeros((num_data, targets.shape[1]))
+            if residual_func is not None:
+                for i in range(num_data):
+                    residual[i, :] = residual_func(inputs[i, :].numpy())[self.target_mask].full().flatten()
+
+            target_label = ['m/s', 'm/s', 'rad/s']
+
+            x = ca.MX.sym('x', self.input_dimension)
+            feature = [
+                ca.vertcat(ca.sin(x[4]), ca.sin(x[4]) * x[6],),
+                ca.vertcat(ca.sin(x[4]), ca.sin(x[4]) * x[6],),
+                ca.vertcat(x[4], x[5], x[7]),
+            ]
+            feature = [ca.Function('feature', [x], [f]) for f in feature]
+
+            t = np.arange(num_data)
+            fig, axs = plt.subplots(num_gps, 1, figsize=(10, 3 * num_gps))
             for gp_ind, gp in enumerate(self.gp_list):
-                fig_count = gp.plot_trained_gp(inputs,
-                                            targets[:, self.target_mask[gp_ind], None],
-                                            self.target_mask[gp_ind],
-                                            output_dir=output_dir,
-                                            fig_count=fig_count,
-                                            title=title,
-                                            **kwargs)
-                fig_count += 1
+                # fit a linear model and compare the result
+                linear_model = LinearModel(inputs.numpy(), targets[:, gp_ind].numpy(), feature[gp_ind])
+                linear_model.fit()
+                weights = linear_model.weight()
+                print(f'Linear model weights: {weights}')
+                lr_pred = linear_model.predict(inputs.numpy())
+
+                means, _ , preds = gp.predict(inputs, return_pred=True)
+                lower, upper = preds.confidence_region()
+                num_within_2std = torch.sum((targets[:, gp_ind] > lower) & (targets[:, gp_ind] < upper)).numpy()
+                percentage_within_2std = num_within_2std / len(targets[:, gp_ind]) * 100
+                print(f'Percentage of test points within 2 std for dim {self.target_mask[gp_ind]}: {percentage_within_2std:.2f}%')
+                axs[gp_ind].scatter(t, targets[:, gp_ind], c='r', label='Target', s=5) 
+                axs[gp_ind].plot(t, means, 'b', label='GP mean', linewidth=3)
+                axs[gp_ind].fill_between(t, lower, upper, alpha=0.3, label='2 std', color='skyblue')
+                axs[gp_ind].plot(t, residual[:, gp_ind], 'g', label='Residual', linestyle='--', linewidth=3)
+                axs[gp_ind].plot(t, lr_pred, label='Linear model', linestyle='-.', color='orange', linewidth=5)
+
+                # compute the fitting rmse
+                gp_rmse = np.sqrt(np.mean((targets[:, gp_ind].numpy() - means.numpy()) ** 2))
+                lr_rmse = np.sqrt(np.mean((targets[:, gp_ind].numpy() - lr_pred) ** 2))
+
+                # dump rmse in txt file
+                with open(os.path.join(output_dir, f'rmse_{title}.txt'), 'a') as f:
+                    f.write(f'GP dim {self.target_mask[gp_ind]}, RMSE: {gp_rmse:.4f}, LR RMSE: {lr_rmse:.4f}\n')
+
+                plt_title = (f'GP dim {self.target_mask[gp_ind]}, {percentage_within_2std:.2f}% within 2 std,\n'
+                             f'GP RMSE: {gp_rmse:.3f}, LR RMSE: {lr_rmse:.3f}, LR weights: {weights}')
+                if title is not None:
+                    plt_title += f', {title}'
+                axs[gp_ind].set_title(plt_title)
+                axs[gp_ind].set_ylabel(target_label[gp_ind])
+            
+            axs[-1].set_xlabel('Data index')
+            axs[0].legend(ncol=2)
+            fig.tight_layout()
+            if output_dir is not None:
+                plt_name = f'gp_validation.png' if title is None else f'gp_validation_{title}.png'
+                fig.savefig(os.path.join(output_dir, plt_name))
+                print(colored(f'Plot saved to {os.path.join(output_dir, plt_name)}', 'green'))
+            plt.close(fig)
+
+            # for gp_ind, gp in enumerate(self.gp_list):
+            #     fig_count = gp.plot_trained_gp(inputs,
+            #                                 targets[:, self.target_mask[gp_ind], None],
+            #                                 self.target_mask[gp_ind],
+            #                                 output_dir=output_dir,
+            #                                 fig_count=fig_count,
+            #                                 title=title,
+            #                                 **kwargs)
+            #     fig_count += 1
         else:
             self.gps.plot_trained_gp(inputs, targets, output_dir, title)
 
@@ -1114,10 +1186,8 @@ class GaussianProcess:
                     train_targets
                     ):
         '''Init GP model from train inputs and train_targets.'''
-        if train_targets.ndim > 1:
-            target_dimension = train_targets.shape[1]
-        else:
-            target_dimension = 1
+        target_dimension = train_targets.shape[1] if train_targets.ndim > 1 else 1
+        input_dimension = train_inputs.shape[1] if train_inputs.ndim > 1 else 1
 
         if self.model is None:
             self.model = self.model_type(train_inputs,
@@ -1125,7 +1195,7 @@ class GaussianProcess:
                                          self.likelihood,
                                          kernel=self.kernel)
         # Extract dimensions for external use.
-        self.input_dimension = train_inputs.shape[1]
+        self.input_dimension = input_dimension
         self.output_dimension = target_dimension
         self.n_training_samples = train_inputs.shape[0]
 
@@ -1160,8 +1230,8 @@ class GaussianProcess:
         self.model.double()  # needed otherwise loads state_dict as float32
         self._compute_GP_covariances(train_inputs)
         self.casadi_predict = self.make_casadi_prediction_func(train_inputs, train_targets)
-        self.casadi_linearized_predict = \
-            self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
+        # self.casadi_linearized_predict = \
+        #     self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
 
     def train(self,
               train_input_data,
@@ -1201,28 +1271,33 @@ class GaussianProcess:
             test_y = test_y.cuda()
             self.model = self.model.cuda()
             self.likelihood = self.likelihood.cuda()
+
+        if self.input_dimension == 1:
+            test_x = test_x.reshape(-1)
+            train_x = train_x.reshape(-1)
+
         self.model.double()
         self.likelihood.double()
         self.model.train()
         self.likelihood.train()
 
-        max_trial = 3
+        max_trial = 1
         opti_result = []
         loss_result = []
         for trial_idx in range(max_trial):
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-            init_output_scale = torch.rand(1).requires_grad_(False) * 3
-            init_length_scale = torch.rand(self.input_dimension, 1, 1).requires_grad_(False) * 3
-            init_noise = torch.from_numpy(self.noise_prior)
-            if gpu:
-                init_output_scale = init_output_scale.cuda()
-                init_length_scale = init_length_scale.cuda()
-                init_noise = init_noise.cuda()
+            # init_output_scale = torch.rand(1).requires_grad_(False) * 3
+            # init_length_scale = torch.rand(self.input_dimension, 1, 1).requires_grad_(False) * 3
+            # init_noise = torch.from_numpy(self.noise_prior)
+            # if gpu:
+            #     init_output_scale = init_output_scale.cuda()
+            #     init_length_scale = init_length_scale.cuda()
+                # init_noise = init_noise.cuda()
 
-            self.model.covar_module.initialize(outputscale=init_output_scale)
-            self.model.covar_module.base_kernel.initialize(lengthscale=init_length_scale)
-            self.model.likelihood.initialize(noise=init_noise)
+            # self.model.covar_module.initialize(outputscale=init_output_scale)
+            # self.model.covar_module.base_kernel.initialize(lengthscale=init_length_scale)
+            # self.model.likelihood.initialize(noise=init_noise)
             print('init outputscale: ', self.model.covar_module.outputscale)
             print('init lengthscale: ', self.model.covar_module.base_kernel.lengthscale)
             print('init noise: ', self.model.likelihood.noise)
@@ -1272,8 +1347,8 @@ class GaussianProcess:
         self.model.load_state_dict(torch.load(fname))
         self._compute_GP_covariances(train_x)
         self.casadi_predict = self.make_casadi_prediction_func(train_x, train_y)
-        self.casadi_linearized_predict = \
-            self.make_casadi_linearized_prediction_func(train_x, train_y)
+        # self.casadi_linearized_predict = \
+        #     self.make_casadi_linearized_prediction_func(train_x, train_y)
 
 
     def predict(self,
@@ -1325,7 +1400,12 @@ class GaussianProcess:
         train_targets = train_targets.numpy()
         lengthscale = self.model.covar_module.base_kernel.lengthscale.detach().numpy()
         output_scale = self.model.covar_module.outputscale.detach().numpy()
-        Nx = len(self.input_mask)
+        # Nx = len(self.input_mask)
+        Nx = self.input_dimension
+        if train_targets.ndim == 1:
+            train_targets = train_targets.reshape(-1, 1)
+        if train_inputs.ndim == 1:
+            train_inputs = train_inputs.reshape(-1, 1)
         z = ca.SX.sym('z', Nx)
         if self.kernel == 'RBF':
             K_z_ztrain = ca.Function('k_z_ztrain',
@@ -1436,39 +1516,28 @@ class GaussianProcess:
         t = np.arange(inputs.shape[0])
         lower, upper = preds.confidence_region()
 
-        for i in range(self.output_dimension):
-            fig_count += 1
-            plt.figure(fig_count, figsize=(5, 2))
-            # if lower.ndim > 1:
-            #     plt.plot(t, residual[:, i], 'g', label='Residual', lineswidth=2, linestyle='--')
-            #     # compute the percentage of test points within 2 std
-            #     num_within_2std = torch.sum((targets[:, i] > lower[:, i]) & (targets[:, i] < upper[:, i])).numpy()
-            #     percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
-            #     print(f'Percentage of test points within 2 std for dim {i}: {percentage_within_2std:.2f}%')
-            #     plt.fill_between(t, lower[:, i].detach().numpy(), upper[:, i].detach().numpy(), alpha=0.5, label='2-$\sigma$')
-            #     plt.plot(t, means[:, i], 'b', label='GP prediction mean')
-            #     plt.scatter(t, targets[:, i], 'r', label='Target')
-            # else:
-            # compute the percentage of test points within 2 std
-            num_within_2std = torch.sum((targets[:, i] > lower) & (targets[:, i] < upper)).numpy()
-            percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
-            print(f'Percentage of test points within 2 std for dim {output_label}: {percentage_within_2std:.2f}%')
-            plt.fill_between(t, lower.detach().numpy(), upper.detach().numpy(), alpha=0.5, label='2-$\sigma$')
-            plt.plot(t, means, 'b', label='GP prediction mean')
-            plt.scatter(t, targets, color='r', label='Target')
-            plt.plot(t, residual, 'g', label='Residual',)
-            plt.legend(ncol=2)
-            plt_title = f'GP validation {output_label}, {percentage_within_2std:.2f}% within 2-$\sigma$'
-            if title is not None:
-                plt_title += f' {title}'
-            plt.title(plt_title)
- 
-            if output_dir is not None:
-                plt_name = f'gp_validation_{output_label}.png' if title is None else f'gp_validation_{output_label}_{title}.png'
-                plt.savefig(f'{output_dir}/{plt_name}')
-                print(f'Figure saved at {output_dir}/{plt_name}')
-            # clean up the plot
-            plt.close(fig_count)
+        fig_count += 1
+        plt.figure(fig_count, figsize=(5, 2))
+        # compute the percentage of test points within 2 std
+        num_within_2std = torch.sum((targets[:, i] > lower) & (targets[:, i] < upper)).numpy()
+        percentage_within_2std = num_within_2std / len(targets[:, i]) * 100
+        print(f'Percentage of test points within 2 std for dim {output_label}: {percentage_within_2std:.2f}%')
+        plt.fill_between(t, lower.detach().numpy(), upper.detach().numpy(), alpha=0.5, label='2-$\sigma$')
+        plt.plot(t, means, 'b', label='GP mean')
+        plt.scatter(t, targets, color='r', label='Target')
+        plt.plot(t, residual, 'g', label='Residual',)
+        plt.legend(ncol=2)
+        plt_title = f'GP validation {output_label}, {percentage_within_2std:.2f}% within 2-$\sigma$'
+        if title is not None:
+            plt_title += f' {title}'
+        plt.title(plt_title)
+
+        if output_dir is not None:
+            plt_name = f'gp_validation_{output_label}.png' if title is None else f'gp_validation_{output_label}_{title}.png'
+            plt.savefig(f'{output_dir}/{plt_name}')
+            print(f'Figure saved at {output_dir}/{plt_name}')
+        # clean up the plot
+        plt.close(fig_count)
 
         return fig_count
 

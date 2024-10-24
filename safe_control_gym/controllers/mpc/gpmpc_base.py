@@ -20,6 +20,7 @@ import time, os
 from copy import deepcopy
 from functools import partial
 from termcolor import colored
+from abc import ABC, abstractmethod
 
 import casadi as cs
 import gpytorch
@@ -39,7 +40,7 @@ from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.utils.utils import timing
 
 
-class GPMPC(MPC):
+class GPMPC(MPC, ABC):
     '''MPC with Gaussian Process as dynamics residual.'''
 
     def __init__(
@@ -127,41 +128,7 @@ class GPMPC(MPC):
 
         print('prior_info[prior_prop]', prior_info['prior_prop'])
         self.use_linear_prior = use_linear_prior
-        # Initialize the method using linear MPC.
-        if self.use_linear_prior:
-            self.prior_ctrl = LinearMPC(
-                self.prior_env_func,
-                horizon=horizon,
-                q_mpc=q_mpc,
-                r_mpc=r_mpc,
-                warmstart=warmstart,
-                soft_constraints=self.soft_constraints_params['prior_soft_constraints'],
-                terminate_run_on_done=terminate_run_on_done,
-                prior_info=prior_info,
-                # runner args
-                # shared/base args
-                output_dir=output_dir,
-                additional_constraints=additional_constraints,
-            )
-        else:
-            self.prior_ctrl = MPC(
-                env_func=self.prior_env_func,
-                horizon=horizon,
-                q_mpc=q_mpc,
-                r_mpc=r_mpc,
-                warmstart=warmstart,
-                soft_constraints=self.soft_constraints_params['prior_soft_constraints'],
-                terminate_run_on_done=terminate_run_on_done,
-                constraint_tol=constraint_tol,
-                output_dir=output_dir,
-                additional_constraints=additional_constraints,
-                use_gpu=use_gpu,
-                seed=seed,
-                compute_ipopt_initial_guess=True,
-                prior_info=prior_info,
-            )
-            
-        self.prior_ctrl.reset()
+
         self.sparse_gp = sparse_gp
         super().__init__(
             self.prior_env_func,
@@ -188,13 +155,7 @@ class GPMPC(MPC):
         self.train_data = None
         self.data_inputs = None
         self.data_targets = None
-        if self.use_linear_prior:
-            self.prior_dynamics_func = self.prior_ctrl.linear_dynamics_func
-        else:
-            self.prior_dynamics_func = self.prior_ctrl.dynamics_func
-            self.prior_dynamcis_func_c = self.prior_ctrl.model.fc_func
-        self.X_EQ = self.prior_ctrl.X_EQ
-        self.U_EQ = self.prior_ctrl.U_EQ
+
         # GP and training parameters.
         self.gaussian_process = None
         self.train_iterations = train_iterations
@@ -228,9 +189,6 @@ class GPMPC(MPC):
         # MPC params
         self.gp_soft_constraints = self.soft_constraints_params['gp_soft_constraints']
         self.gp_soft_constraints_coeff = self.soft_constraints_params['gp_soft_constraints_coeff']
-        self.init_solver = 'ipopt'
-        # self.solver = 'qrsqp'
-        self.solver = 'ipopt'
 
         self.last_obs = None
         self.last_action = None
@@ -255,8 +213,8 @@ class GPMPC(MPC):
                         - self.prior_dynamics_func(x0=x, p=u)['xf']
         self.residual_func = cs.Function('residual_func', [z], [residual])
         self.fc_func = self.env_func(gui=False).symbolic.fc_func # argument x, u
-        self.residual_func_c = self.fc_func(x=x, u=u)['f'] \
-                                - self.prior_dynamcis_func_c(x=x, u=u)['f']
+        # self.residual_func_c = self.fc_func(x=x, u=u)['f'] \
+        #                         - self.prior_dynamcis_func_c(x=x, u=u)['f']
 
     def set_gp_dynamics_func(self, n_ind_points):
         '''Updates symbolic dynamics.
@@ -518,298 +476,6 @@ class GPMPC(MPC):
         return mean_post_factor.detach().numpy(), Sigma_inv.detach().numpy(), K_zind_zind_inv.detach().numpy(), z_ind
         # return mean_post_factor.detach().numpy(), Sigma.detach().numpy(), K_zind_zind_inv.detach().numpy(), z_ind
 
-    def setup_gp_optimizer(self, n_ind_points, solver='ipopt'):
-        '''Sets up nonlinear optimization problem including cost objective, variable bounds and dynamics constraints.
-
-        Args:
-            n_ind_points (int): Number of inducing points.
-        '''
-        print(f'Setting up GP MPC with {solver} solver.') 
-        nx, nu = self.model.nx, self.model.nu
-        T = self.T
-        # Define optimizer and variables.
-        opti = cs.Opti()
-        # States.
-        x_var = opti.variable(nx, T + 1)
-        # Inputs.
-        u_var = opti.variable(nu, T)
-        # Initial state.
-        x_init = opti.parameter(nx, 1)
-        # Reference (equilibrium point or trajectory, last step for terminal cost).
-        x_ref = opti.parameter(nx, T + 1)
-        # Add slack variables
-        if self.gp_soft_constraints:
-            state_slack_list = []
-            for state_constraint in self.constraints.state_constraints:
-                state_slack_list.append(opti.variable(state_constraint.num_constraints, T + 1))
-            input_slack_list = []
-            for input_constraint in self.constraints.input_constraints:
-                input_slack_list.append(opti.variable(input_constraint.num_constraints, T))
-            soft_con_coeff = self.gp_soft_constraints_coeff
-        # Chance constraint limits.
-        state_constraint_set = []
-        for state_constraint in self.constraints.state_constraints:
-            state_constraint_set.append(opti.parameter(state_constraint.num_constraints, T + 1))
-        input_constraint_set = []
-        for input_constraint in self.constraints.input_constraints:
-            input_constraint_set.append(opti.parameter(input_constraint.num_constraints, T))
-        # Sparse GP mean postfactor matrix.
-        mean_post_factor = opti.parameter(len(self.target_mask), n_ind_points)
-
-        # Sparse GP inducing points.
-        z_ind = opti.parameter(n_ind_points, len(self.input_mask))
-        # Cost (cumulative).
-        cost = 0
-        cost_func = self.model.loss
-        for i in range(T):
-            cost += cost_func(x=x_var[:, i],
-                              u=u_var[:, i],
-                              Xr=x_ref[:, i],
-                              Ur=np.zeros((nu, 1)),
-                              Q=self.Q,
-                              R=self.R)['l']
-        # Terminal cost.
-        cost += cost_func(x=x_var[:, -1],
-                          u=np.zeros((nu, 1)),
-                          Xr=x_ref[:, -1],
-                          Ur=np.zeros((nu, 1)),
-                          Q=self.P if hasattr(self, 'P') else self.Q,
-                          R=self.R)['l']
-        z = cs.vertcat(x_var[:, :-1], u_var)
-        z = z[self.input_mask, :]
-
-        # Constraints
-        for i in range(self.T):
-            # Dynamics constraints using the dynamics of the prior and the mean of the GP.
-            # This follows the tractable dynamics formulation in Section III.B in Hewing 2019.
-            # Note that for the GP approximation, we are purposely using elementwise multiplication *.
-            if self.sparse_gp:
-                if self.use_linear_prior:
-                    next_state = self.prior_dynamics_func(x0=x_var[:, i] - self.prior_ctrl.X_EQ[:, None],
-                                                        p=u_var[:, i] - self.prior_ctrl.U_EQ[:, None])['xf'] + \
-                        self.prior_ctrl.X_EQ[:, None] + self.Bd @ cs.sum2(self.K_z_zind_func(z1=z[:, i].T, z2=z_ind)['K'] * mean_post_factor)
-                else:
-                    next_state = self.prior_dynamics_func(x0=x_var[:, i],
-                                                          p=u_var[:, i])['xf'] + \
-                    self.Bd @ cs.sum2(self.K_z_zind_func(z1=z[:, i].T, z2=z_ind)['K'] * mean_post_factor)
-            else:
-                # Sparse GP approximation doesn't always work well, thus, use Exact GP regression. This is much slower,
-                # but for unstable systems, make performance much better.
-                if self.use_linear_prior:
-                    next_state = self.prior_dynamics_func(x0=x_var[:, i] - self.prior_ctrl.X_EQ[:, None],
-                                                        p=u_var[:, i] - self.prior_ctrl.U_EQ[:, None])['xf'] + \
-                        self.prior_ctrl.X_EQ[:, None] + self.Bd @ self.gaussian_process.casadi_predict(z=z[:, i])['mean']
-                else:
-                    next_state = self.prior_dynamics_func(x0=x_var[:, i],
-                                                          p=u_var[:, i])['xf'] + \
-                    self.Bd @ self.gaussian_process.casadi_predict(z=z[:, i])['mean']
-            opti.subject_to(x_var[:, i + 1] == next_state)
-            # Probabilistic state and input constraints according to Hewing 2019 constraint tightening.
-            for s_i, state_constraint in enumerate(self.state_constraints_sym):
-                if self.gp_soft_constraints:
-                    opti.subject_to(state_constraint(x_var[:, i]) <= state_constraint_set[s_i][:, i] + state_slack_list[s_i][:, i])
-                    cost += soft_con_coeff * state_slack_list[s_i][:, i].T @ state_slack_list[s_i][:, i]
-                    opti.subject_to(state_slack_list[s_i][:, i] >= 0)
-                else:
-                    opti.subject_to(state_constraint(x_var[:, i]) <= state_constraint_set[s_i][:, i] - self.constraint_tol)
-            for u_i, input_constraint in enumerate(self.input_constraints_sym):
-                if self.gp_soft_constraints:
-                    opti.subject_to(input_constraint(u_var[:, i]) <= input_constraint_set[u_i][:, i] + input_slack_list[u_i][:, i])
-                    cost += soft_con_coeff * input_slack_list[u_i][:, i].T @ input_slack_list[u_i][:, i]
-                    opti.subject_to(input_slack_list[u_i][:, i] >= 0)
-                else:
-                    opti.subject_to(input_constraint(u_var[:, i]) <= input_constraint_set[u_i][:, i] - self.constraint_tol)
-
-        # Final state constraints.
-        for s_i, state_constraint in enumerate(self.state_constraints_sym):
-            if self.gp_soft_constraints:
-                opti.subject_to(state_constraint(x_var[:, -1]) <= state_constraint_set[s_i][:, -1] + state_slack_list[s_i][:, -1])
-                cost += soft_con_coeff * state_slack_list[s_i][:, -1].T @ state_slack_list[s_i][:, -1]
-                opti.subject_to(state_slack_list[s_i][:, -1] >= 0)
-            else:
-                opti.subject_to(state_constraint(x_var[:, -1]) <= state_constraint_set[s_i][:, -1] - self.constraint_tol)
-
-        # Bound constraints.
-        upper_state_bounds = np.clip(self.prior_ctrl.env.observation_space.high, None, 10)
-        lower_state_bounds = np.clip(self.prior_ctrl.env.observation_space.low, -10, None)
-        upper_input_bounds = np.clip(self.prior_ctrl.env.action_space.high, None, 10)
-        lower_input_bounds = np.clip(self.prior_ctrl.env.action_space.low, -10, None)
-        for i in range(self.T):
-            opti.subject_to(opti.bounded(lower_state_bounds + self.constraint_tol,
-                                         x_var[:, i],
-                                         upper_state_bounds - self.constraint_tol))
-            opti.subject_to(opti.bounded(lower_input_bounds + self.constraint_tol,
-                                         u_var[:, i],
-                                         upper_input_bounds - self.constraint_tol))
-        opti.subject_to(opti.bounded(lower_state_bounds + self.constraint_tol,
-                                     x_var[:, -1],
-                                     upper_state_bounds - self.constraint_tol))
-
-        opti.minimize(cost)
-        # Initial condition constraints.
-        opti.subject_to(x_var[:, 0] == x_init)
-        # Create solver (IPOPT solver in this version).
-        # opts = {'ipopt.print_level': 4,
-        #         'ipopt.sb': 'yes',
-        #         'ipopt.max_iter': 100,  # 100,
-        #         'print_time': 1,
-        #         'expand': True,
-        #         'verbose': True}
-        opts = {'expand': True,}
-        # opti.solver('ipopt', opts)
-        opti.solver(solver, opts)
-        self.opti_dict = {
-            'opti': opti,
-            'x_var': x_var,
-            'u_var': u_var,
-            'x_init': x_init,
-            'x_ref': x_ref,
-            'state_constraint_set': state_constraint_set,
-            'input_constraint_set': input_constraint_set,
-            'mean_post_factor': mean_post_factor,
-            'z_ind': z_ind,
-            'cost': cost,
-            'n_ind_points': n_ind_points
-        }
-
-        # if False and n_ind_points < self.n_ind_points:
-        if not self.sparse_gp:
-            mean_post_factor_val, z_ind_val = self.precompute_mean_post_factor_all_data()
-            self.mean_post_factor_val = mean_post_factor_val
-            self.z_ind_val = z_ind_val
-        else:
-            mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
-            self.mean_post_factor_val = mean_post_factor_val
-            self.z_ind_val = z_ind_val
-
-    def select_action_with_gp(self,
-                              obs
-                              ):
-        '''Solves nonlinear MPC problem to get next action.
-
-         Args:
-             obs (np.array): current state/observation.
-
-         Returns:
-             np.array: input/action to the task/env.
-         '''
-        opti_dict = self.opti_dict
-        opti = opti_dict['opti']
-        x_var = opti_dict['x_var']
-        u_var = opti_dict['u_var']
-        x_init = opti_dict['x_init']
-        x_ref = opti_dict['x_ref']
-        state_constraint_set = opti_dict['state_constraint_set']
-        input_constraint_set = opti_dict['input_constraint_set']
-        mean_post_factor = opti_dict['mean_post_factor']
-        z_ind = opti_dict['z_ind']
-        n_ind_points = opti_dict['n_ind_points']
-        # Assign the initial state.
-        opti.set_value(x_init, obs)
-        # Assign reference trajectory within horizon.
-        goal_states = self.get_references()
-        opti.set_value(x_ref, goal_states)
-        if self.mode == 'tracking':
-            self.traj_step += 1
-        # Set the probabilistic state and input constraint set limits.
-        state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits()
-
-        for si in range(len(self.constraints.state_constraints)):
-            opti.set_value(state_constraint_set[si], state_constraint_set_prev[si])
-        for ui in range(len(self.constraints.input_constraints)):
-            opti.set_value(input_constraint_set[ui], input_constraint_set_prev[ui])
-        if self.recalc_inducing_points_at_every_step:
-            mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
-            self.results_dict['inducing_points'].append(z_ind_val)
-        else:
-            mean_post_factor_val = self.mean_post_factor_val
-            z_ind_val = self.z_ind_val
-            self.results_dict['inducing_points'] = [z_ind_val]
-
-        opti.set_value(mean_post_factor, mean_post_factor_val)
-        opti.set_value(z_ind, z_ind_val)
-        # Initial guess for the optimization problem.
-        if self.warmstart and self.x_prev is None and self.u_prev is None:
-            if self.gaussian_process is None:
-                if self.use_linear_prior:
-                    x_guess, u_guess \
-                        = self.prior_ctrl.compute_initial_guess(obs, goal_states, self.X_EQ, self.U_EQ)
-                else:
-                    x_guess, u_guess = self.compute_initial_guess(obs, goal_states)
-            else:
-                x_guess, u_guess = self.compute_initial_guess(obs, goal_states)
-                # set the solver back
-                self.setup_gp_optimizer(n_ind_points=n_ind_points,
-                                        solver=self.solver)
-            opti.set_initial(x_var, x_guess)
-            opti.set_initial(u_var, u_guess)  # Initial guess for optimization problem.
-        elif self.warmstart and self.x_prev is not None and self.u_prev is not None:
-            # shift previous solutions by 1 step
-            x_guess = deepcopy(self.x_prev)
-            u_guess = deepcopy(self.u_prev)
-            x_guess[:, :-1] = x_guess[:, 1:]
-            u_guess[:-1] = u_guess[1:]
-            opti.set_initial(x_var, x_guess)
-            opti.set_initial(u_var, u_guess)
-        # Solve the optimization problem.
-        try:
-            sol = opti.solve()
-            x_val, u_val = sol.value(x_var), sol.value(u_var)
-            self.u_prev = u_val
-            self.x_prev = x_val
-        except RuntimeError:
-            # sol = opti.solve()
-            if self.solver == 'ipopt':
-                x_val, u_val = opti.debug.value(x_var), opti.debug.value(u_var)
-            else:
-                return_status = opti.return_status()
-                print(f'Optimization failed with status: {return_status}')
-                if return_status == 'unknown':
-                    # self.terminate_loop = True
-                    u_val = self.u_prev
-                    x_val = self.x_prev
-                    if u_val is None:
-                        print('[WARN]: MPC Infeasible first step.')
-                        u_val = u_guess
-                        x_val = x_guess
-                elif return_status == 'Maximum_Iterations_Exceeded':
-                    self.terminate_loop = True
-                    u_val = opti.debug.value(u_var)
-                    x_val = opti.debug.value(x_var)
-                elif return_status == 'Search_Direction_Becomes_Too_Small':
-                    self.terminate_loop = True
-                    u_val = opti.debug.value(u_var)
-                    x_val = opti.debug.value(x_var)
-
-        u_val = np.atleast_2d(u_val)
-        self.x_prev = x_val
-        self.u_prev = u_val
-        self.results_dict['horizon_states'].append(deepcopy(self.x_prev))
-        self.results_dict['horizon_inputs'].append(deepcopy(self.u_prev))
-        # self.results_dict['t_wall'].append(opti.stats()['t_wall_total'])
-        zi = np.hstack((x_val[:, 0], u_val[:, 0]))
-        zi = zi[self.input_mask]
-        gp_contribution = np.sum(self.K_z_zind_func(z1=zi, z2=z_ind_val)['K'].toarray() * mean_post_factor_val, axis=1)
-        print(f'GP Mean eq Contribution: {gp_contribution}')
-        zi = np.hstack((x_val[:, 0], u_val[:, 0]))
-        pred, _, _ = self.gaussian_process.predict(zi[None, :])
-        print(f'True GP value: {pred.numpy()}')
-        lin_pred = self.prior_dynamics_func(x0=x_val[:, 0] - self.prior_ctrl.X_EQ,
-                                            p=u_val[:, 0] - self.prior_ctrl.U_EQ)['xf'].toarray() + \
-            self.prior_ctrl.X_EQ[:, None]
-        self.results_dict['linear_pred'].append(lin_pred)
-        self.results_dict['gp_mean_eq_pred'].append(gp_contribution)
-        self.results_dict['gp_pred'].append(pred.numpy())
-        # Take the first one from solved action sequence.
-        if u_val.ndim > 1:
-            action = u_val[:, 0]
-        else:
-            action = np.array([u_val[0]])
-        self.prev_action = action,
-        # use the ancillary gain
-        if hasattr(self, 'K'):
-            action += self.K @ (x_val[:, 0] - obs) 
-        return action
 
     @timing
     def train_gp(self,
@@ -1158,6 +824,7 @@ class GPMPC(MPC):
 
         return x_seq_int, actions_int, x_next_seq_int, x_dot_seq_int
 
+    @abstractmethod
     def select_action(self,
                       obs,
                       info=None,
@@ -1171,20 +838,8 @@ class GPMPC(MPC):
         Returns:
             action (ndarray): Desired policy action.
         '''
-        # try:
-        if self.gaussian_process is None:
-            action = self.prior_ctrl.select_action(obs)
-        else:
-            # if (self.last_obs is not None and self.last_action is not None and self.online_learning):
-            #     print('[ERROR]: Not yet supported.')
-            #     exit()
-            t1 = time.perf_counter()
-            action = self.select_action_with_gp(obs)
-            t2 = time.perf_counter()
-            print(f'GP SELECT ACTION TIME: {(t2 - t1)}')
-            self.last_obs = obs
-            self.last_action = action
-        return action
+        raise NotImplementedError
+
 
     def close(self):
         '''Clean up.'''
@@ -1206,34 +861,176 @@ class GPMPC(MPC):
         if self.sparse_gp:
             self.results_dict['inducing_points'] = []
 
+    @abstractmethod
     def reset(self):
         '''Reset the controller before running.'''
-        # Setup reference input.
-        if self.env.TASK == Task.STABILIZATION:
-            self.mode = 'stabilization'
-            self.x_goal = self.env.X_GOAL
-        elif self.env.TASK == Task.TRAJ_TRACKING:
-            self.mode = 'tracking'
-            self.traj = self.env.X_GOAL.T
-            self.traj_step = 0
-        # Dynamics model.
-        if self.gaussian_process is not None:
-            # if self.kernel in ['RBF', 'RBF_single']:
-            #     self.compute_terminal_cost_and_ancillary_gain()
-            if self.sparse_gp and self.train_data['train_targets'].shape[0] <= self.n_ind_points:
-                n_ind_points = self.train_data['train_targets'].shape[0]
-            elif self.sparse_gp:
-                n_ind_points = self.n_ind_points
-            else:
-                n_ind_points = self.train_data['train_targets'].shape[0]
+        raise NotImplementedError
 
-            self.set_gp_dynamics_func(n_ind_points)
-            self.setup_gp_optimizer(n_ind_points)
-        self.prior_ctrl.reset()
-        self.setup_results_dict()
-        # Previously solved states & inputs, useful for warm start.
-        self.x_prev = None
-        self.u_prev = None
+
+    def setup_gp_optimizer(self, n_ind_points, solver='ipopt'):
+        '''Sets up nonlinear optimization problem including cost objective, variable bounds and dynamics constraints.
+
+        Args:
+            n_ind_points (int): Number of inducing points.
+        '''
+        print(f'Setting up GP MPC with {solver} solver.') 
+        nx, nu = self.model.nx, self.model.nu
+        T = self.T
+        # Define optimizer and variables.
+        opti = cs.Opti()
+        # States.
+        x_var = opti.variable(nx, T + 1)
+        # Inputs.
+        u_var = opti.variable(nu, T)
+        # Initial state.
+        x_init = opti.parameter(nx, 1)
+        # Reference (equilibrium point or trajectory, last step for terminal cost).
+        x_ref = opti.parameter(nx, T + 1)
+        # Add slack variables
+        if self.gp_soft_constraints:
+            state_slack_list = []
+            for state_constraint in self.constraints.state_constraints:
+                state_slack_list.append(opti.variable(state_constraint.num_constraints, T + 1))
+            input_slack_list = []
+            for input_constraint in self.constraints.input_constraints:
+                input_slack_list.append(opti.variable(input_constraint.num_constraints, T))
+            soft_con_coeff = self.gp_soft_constraints_coeff
+        # Chance constraint limits.
+        state_constraint_set = []
+        for state_constraint in self.constraints.state_constraints:
+            state_constraint_set.append(opti.parameter(state_constraint.num_constraints, T + 1))
+        input_constraint_set = []
+        for input_constraint in self.constraints.input_constraints:
+            input_constraint_set.append(opti.parameter(input_constraint.num_constraints, T))
+        # Sparse GP mean postfactor matrix.
+        mean_post_factor = opti.parameter(len(self.target_mask), n_ind_points)
+
+        # Sparse GP inducing points.
+        z_ind = opti.parameter(n_ind_points, len(self.input_mask))
+        # Cost (cumulative).
+        cost = 0
+        cost_func = self.model.loss
+        for i in range(T):
+            cost += cost_func(x=x_var[:, i],
+                              u=u_var[:, i],
+                              Xr=x_ref[:, i],
+                              Ur=np.zeros((nu, 1)),
+                              Q=self.Q,
+                              R=self.R)['l']
+        # Terminal cost.
+        cost += cost_func(x=x_var[:, -1],
+                          u=np.zeros((nu, 1)),
+                          Xr=x_ref[:, -1],
+                          Ur=np.zeros((nu, 1)),
+                          Q=self.P if hasattr(self, 'P') else self.Q,
+                          R=self.R)['l']
+        z = cs.vertcat(x_var[:, :-1], u_var)
+        z = z[self.input_mask, :]
+
+        # Constraints
+        for i in range(self.T):
+            # Dynamics constraints using the dynamics of the prior and the mean of the GP.
+            # This follows the tractable dynamics formulation in Section III.B in Hewing 2019.
+            # Note that for the GP approximation, we are purposely using elementwise multiplication *.
+            if self.sparse_gp:
+                if self.use_linear_prior:
+                    next_state = self.prior_dynamics_func(x0=x_var[:, i] - self.prior_ctrl.X_EQ[:, None],
+                                                        p=u_var[:, i] - self.prior_ctrl.U_EQ[:, None])['xf'] + \
+                        self.prior_ctrl.X_EQ[:, None] + self.Bd @ cs.sum2(self.K_z_zind_func(z1=z[:, i].T, z2=z_ind)['K'] * mean_post_factor)
+                else:
+                    next_state = self.prior_dynamics_func(x0=x_var[:, i],
+                                                          p=u_var[:, i])['xf'] + \
+                    self.Bd @ cs.sum2(self.K_z_zind_func(z1=z[:, i].T, z2=z_ind)['K'] * mean_post_factor)
+            else:
+                # Sparse GP approximation doesn't always work well, thus, use Exact GP regression. This is much slower,
+                # but for unstable systems, make performance much better.
+                if self.use_linear_prior:
+                    next_state = self.prior_dynamics_func(x0=x_var[:, i] - self.prior_ctrl.X_EQ[:, None],
+                                                        p=u_var[:, i] - self.prior_ctrl.U_EQ[:, None])['xf'] + \
+                        self.prior_ctrl.X_EQ[:, None] + self.Bd @ self.gaussian_process.casadi_predict(z=z[:, i])['mean']
+                else:
+                    next_state = self.prior_dynamics_func(x0=x_var[:, i],
+                                                          p=u_var[:, i])['xf'] + \
+                    self.Bd @ self.gaussian_process.casadi_predict(z=z[:, i])['mean']
+            opti.subject_to(x_var[:, i + 1] == next_state)
+            # Probabilistic state and input constraints according to Hewing 2019 constraint tightening.
+            for s_i, state_constraint in enumerate(self.state_constraints_sym):
+                if self.gp_soft_constraints:
+                    opti.subject_to(state_constraint(x_var[:, i]) <= state_constraint_set[s_i][:, i] + state_slack_list[s_i][:, i])
+                    cost += soft_con_coeff * state_slack_list[s_i][:, i].T @ state_slack_list[s_i][:, i]
+                    opti.subject_to(state_slack_list[s_i][:, i] >= 0)
+                else:
+                    opti.subject_to(state_constraint(x_var[:, i]) <= state_constraint_set[s_i][:, i] - self.constraint_tol)
+            for u_i, input_constraint in enumerate(self.input_constraints_sym):
+                if self.gp_soft_constraints:
+                    opti.subject_to(input_constraint(u_var[:, i]) <= input_constraint_set[u_i][:, i] + input_slack_list[u_i][:, i])
+                    cost += soft_con_coeff * input_slack_list[u_i][:, i].T @ input_slack_list[u_i][:, i]
+                    opti.subject_to(input_slack_list[u_i][:, i] >= 0)
+                else:
+                    opti.subject_to(input_constraint(u_var[:, i]) <= input_constraint_set[u_i][:, i] - self.constraint_tol)
+
+        # Final state constraints.
+        for s_i, state_constraint in enumerate(self.state_constraints_sym):
+            if self.gp_soft_constraints:
+                opti.subject_to(state_constraint(x_var[:, -1]) <= state_constraint_set[s_i][:, -1] + state_slack_list[s_i][:, -1])
+                cost += soft_con_coeff * state_slack_list[s_i][:, -1].T @ state_slack_list[s_i][:, -1]
+                opti.subject_to(state_slack_list[s_i][:, -1] >= 0)
+            else:
+                opti.subject_to(state_constraint(x_var[:, -1]) <= state_constraint_set[s_i][:, -1] - self.constraint_tol)
+
+        # Bound constraints.
+        upper_state_bounds = np.clip(self.prior_ctrl.env.observation_space.high, None, 10)
+        lower_state_bounds = np.clip(self.prior_ctrl.env.observation_space.low, -10, None)
+        upper_input_bounds = np.clip(self.prior_ctrl.env.action_space.high, None, 10)
+        lower_input_bounds = np.clip(self.prior_ctrl.env.action_space.low, -10, None)
+        for i in range(self.T):
+            opti.subject_to(opti.bounded(lower_state_bounds + self.constraint_tol,
+                                         x_var[:, i],
+                                         upper_state_bounds - self.constraint_tol))
+            opti.subject_to(opti.bounded(lower_input_bounds + self.constraint_tol,
+                                         u_var[:, i],
+                                         upper_input_bounds - self.constraint_tol))
+        opti.subject_to(opti.bounded(lower_state_bounds + self.constraint_tol,
+                                     x_var[:, -1],
+                                     upper_state_bounds - self.constraint_tol))
+
+        opti.minimize(cost)
+        # Initial condition constraints.
+        opti.subject_to(x_var[:, 0] == x_init)
+        # Create solver (IPOPT solver in this version).
+        # opts = {'ipopt.print_level': 4,
+        #         'ipopt.sb': 'yes',
+        #         'ipopt.max_iter': 100,  # 100,
+        #         'print_time': 1,
+        #         'expand': True,
+        #         'verbose': True}
+        opts = {'expand': True,}
+        # opti.solver('ipopt', opts)
+        opti.solver(solver, opts)
+        self.opti_dict = {
+            'opti': opti,
+            'x_var': x_var,
+            'u_var': u_var,
+            'x_init': x_init,
+            'x_ref': x_ref,
+            'state_constraint_set': state_constraint_set,
+            'input_constraint_set': input_constraint_set,
+            'mean_post_factor': mean_post_factor,
+            'z_ind': z_ind,
+            'cost': cost,
+            'n_ind_points': n_ind_points
+        }
+
+        # if False and n_ind_points < self.n_ind_points:
+        if not self.sparse_gp:
+            mean_post_factor_val, z_ind_val = self.precompute_mean_post_factor_all_data()
+            self.mean_post_factor_val = mean_post_factor_val
+            self.z_ind_val = z_ind_val
+        else:
+            mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
+            self.mean_post_factor_val = mean_post_factor_val
+            self.z_ind_val = z_ind_val
+
 
     def compute_initial_guess(self, init_state, goal_states):
         '''Compute an initial guess of the solution to the optimization problem.'''
