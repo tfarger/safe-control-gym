@@ -15,13 +15,13 @@ PPO_dict = {
     'entropy_coef': {'values': [0.00000001, 0.1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'actor_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'critic_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'rollout_batch_size': {'values': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
+    'rollout_batch_size': {'values': [2, 3, 4, 5], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'rew_state_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
     'rew_act_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
 
 SAC_dict = {
-    'hidden_dim': {'values': [32, 64, 128, 256, 512], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
+    'hidden_dim': {'values': [8, 16, 32, 64, 128, 256, 512], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'gamma': {'values': [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999], 'scale': 'uniform', 'type': float, 'cat': 'discrete'},
     'train_interval': {'values': [10, 100, 200, 500, 1000, 1500, 2000], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'train_batch_size': {'values': [32, 64, 128, 256, 512, 1024], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
@@ -34,8 +34,8 @@ SAC_dict = {
     'actor_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'critic_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'entropy_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'rew_state_weight': {'values': [0.001, 30], 'scale': 'uniform', 'type': list, 'cat': 'float'},
-    'rew_act_weight': {'values': [0.001, 30], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'rew_state_weight': {'values': [0.001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'rew_act_weight': {'values': [0.001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
 
 DPPO_dict = {
@@ -51,7 +51,7 @@ DPPO_dict = {
     'entropy_coef': {'values': [0.00000001, 0.1], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'actor_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
     'critic_lr': {'values': [1e-5, 1e-2], 'scale': 'log', 'type': float, 'cat': 'float'},  # log-scaled
-    'rollout_batch_size': {'values': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
+    'rollout_batch_size': {'values': [2, 3, 4, 5], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'quantile_count': {'values': [32, 64, 128, 256, 512], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'rew_state_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
     'rew_act_weight': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
