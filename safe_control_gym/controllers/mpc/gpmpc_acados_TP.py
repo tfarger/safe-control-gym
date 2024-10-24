@@ -344,6 +344,20 @@ class GPMPC_ACADOS_TP(GPMPC):
 
         return train_runs, test_runs
     
+    def load(self, model_path):
+        '''Load the model from a file.
+
+        Args:
+            model_path (str): Path to the model to load.
+        '''
+        data = np.load(f'{model_path}/data.npz')
+        gp_model_path_T = f'{model_path}/best_model_T.pth'
+        gp_model_path_P = f'{model_path}/best_model_P.pth'
+        gp_model_path = [gp_model_path_T, gp_model_path_P]
+        self.train_gp(input_data=data['data_inputs'], 
+                        target_data=data['data_targets'],
+                        gp_model=gp_model_path,)
+    
     @timing
     def train_gp(self,
                  input_data, target_data,
@@ -432,12 +446,17 @@ class GPMPC_ACADOS_TP(GPMPC):
             kernel='RBF_single',
         )
 
-        GP_T.train(train_input_T, train_target_T, test_inputs_T, test_targets_T,
-                 n_train=self.optimization_iterations[0], learning_rate=self.learning_rate[0], 
-                 gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_T.pth'))
-        GP_P.train(train_input_P, train_target_P, test_inputs_P, test_targets_P,
-                 n_train=self.optimization_iterations[1], learning_rate=self.learning_rate[1],
-                 gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_P.pth'))
+        if gp_model:
+            GP_T.init_with_hyperparam(train_input_T, train_target_T, gp_model[0])
+            GP_P.init_with_hyperparam(train_input_P, train_target_P, gp_model[1])
+            print(colored(f'Loaded pretrained model from {self.gp_model_path}', 'green'))
+        else:
+            GP_T.train(train_input_T, train_target_T, test_inputs_T, test_targets_T,
+                    n_train=self.optimization_iterations[0], learning_rate=self.learning_rate[0], 
+                    gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_T.pth'))
+            GP_P.train(train_input_P, train_target_P, test_inputs_P, test_targets_P,
+                    n_train=self.optimization_iterations[1], learning_rate=self.learning_rate[1],
+                    gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_P.pth'))
 
         self.gaussian_process = [GP_T, GP_P]
         
@@ -524,12 +543,12 @@ class GPMPC_ACADOS_TP(GPMPC):
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*sparse_pred[0],
                                  0, cs.cos(acados_model.x[4])*sparse_pred[0],
                                  0, sparse_pred[1])
-            f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u], [f_cont])
+            f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u, acados_model.p], [f_cont])
             # use rk4 to discretize the continuous dynamics
-            k1 = f_cont_func(acados_model.x, acados_model.u)
-            k2 = f_cont_func(acados_model.x + self.dt/2 * k1, acados_model.u)
-            k3 = f_cont_func(acados_model.x + self.dt/2 * k2, acados_model.u)
-            k4 = f_cont_func(acados_model.x + self.dt * k3, acados_model.u)
+            k1 = f_cont_func(acados_model.x, acados_model.u, acados_model.p)
+            k2 = f_cont_func(acados_model.x + self.dt/2 * k1, acados_model.u, acados_model.p)
+            k3 = f_cont_func(acados_model.x + self.dt/2 * k2, acados_model.u, acados_model.p)
+            k4 = f_cont_func(acados_model.x + self.dt * k3, acados_model.u, acados_model.p)
             f_disc = acados_model.x + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
 
             # f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf']
@@ -551,9 +570,6 @@ class GPMPC_ACADOS_TP(GPMPC):
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*casadi_pred_T, 
                                  0, cs.cos(acados_model.x[4])*casadi_pred_T,
                                  0, casadi_pred_P)
-        # acados_model.f_expl_expr = f_cont
-
-
             f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u], [f_cont])
             # use rk4 to discretize the continuous dynamics
             k1 = f_cont_func(acados_model.x, acados_model.u)
@@ -562,6 +578,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             k4 = f_cont_func(acados_model.x + self.dt * k3, acados_model.u)
             f_disc = acados_model.x + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
 
+        # acados_model.f_expl_expr = f_cont
         acados_model.disc_dyn_expr = f_disc
 
 
@@ -774,7 +791,7 @@ class GPMPC_ACADOS_TP(GPMPC):
 
         return ocp
 
-    @timing
+    # @timing
     def select_action(self, obs, info=None):
         time_before = time.time()
         if self.gaussian_process is None:
@@ -783,8 +800,6 @@ class GPMPC_ACADOS_TP(GPMPC):
             action = self.select_action_with_gp(obs)
         time_after = time.time()
         self.results_dict['runtime'].append(time_after - time_before)
-        print('current obs:', obs)
-        print('current action:', action)
         self.last_obs = obs
         self.last_action = action
 
@@ -862,14 +877,14 @@ class GPMPC_ACADOS_TP(GPMPC):
                 tighten_value = np.concatenate((state_constraint_set, input_constraint_set))
                 # set the parameter values
                 parameter_values = np.concatenate((dyn_value, tighten_value))
-                # self.acados_ocp_solver.set(idx, "p", dyn_value)
-                self.acados_ocp_solver.set(idx, 'p', parameter_values)
+                self.acados_ocp_solver.set(idx, "p", dyn_value)
+                # self.acados_ocp_solver.set(idx, 'p', parameter_values)
             # tighten terminal state constraints
             tighten_value = np.concatenate((state_constraint_set_prev[0][:, self.T], np.zeros((2 * nu,))))
             # set the parameter values
             parameter_values = np.concatenate((dyn_value, tighten_value))
-            self.acados_ocp_solver.set(self.T, 'p', parameter_values)
-            # self.acados_ocp_solver.set(self.T, "p", dyn_value)
+            # self.acados_ocp_solver.set(self.T, 'p', parameter_values)
+            self.acados_ocp_solver.set(self.T, "p", dyn_value)
         else:
             for idx in range(self.T):
                 # tighten initial and path constraints
@@ -1110,8 +1125,7 @@ class GPMPC_ACADOS_TP(GPMPC):
         # This will be mulitplied by the mean_post_factor computed at every time step to compute the approximate mean.
         self.K_z_zind_func = cs.Function('K_z_zind', [z1, z_ind], [K_z_zind], ['z1', 'z2'], ['K'])
 
-
-    @timing
+    # @timing
     def precompute_probabilistic_limits(self,
                                         print_sets=False
                                         ):

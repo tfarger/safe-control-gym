@@ -843,7 +843,7 @@ class BatchGPModel:
         print('lengthscale: ', self.model.covar_module.base_kernel.lengthscale)
         self._compute_GP_covariances(train_inputs)
         self.casadi_predict = self.make_casadi_prediction_func(train_inputs, train_targets)
-        self.casadi_linearized_predict = self.make_casadi_linearized_predict_func(train_inputs, train_targets)  
+        # self.casadi_linearized_predict = self.make_casadi_linearized_predict_func(train_inputs, train_targets)  
 
     def train(self,
               train_input_data,
