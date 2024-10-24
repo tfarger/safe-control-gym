@@ -334,7 +334,7 @@ class GaussianProcessCollection:
         self.K_plus_noise = gp_K_plus_noise
         self.K_plus_noise_inv = gp_K_plus_noise_inv
         self.casadi_predict = self.make_casadi_predict_func()
-        self.casadi_linearized_predict = self.make_casadi_linearized_predict_func()
+        # self.casadi_linearized_predict = self.make_casadi_linearized_predict_func()
 
     def get_hyperparameters(self,
                             as_numpy=False
@@ -439,7 +439,7 @@ class GaussianProcessCollection:
             self.K_plus_noise_inv = self.gps.gp_K_plus_noise_inv
 
         self.casadi_predict = self.make_casadi_predict_func()
-        self.casadi_linearized_predict = self.make_casadi_linearized_predict_func()
+        # self.casadi_linearized_predict = self.make_casadi_linearized_predict_func()
 
     def predict(self,
                 x,

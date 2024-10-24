@@ -32,7 +32,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     '''
     # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
-    ALGO = 'gpmpc_acados'
+    # ALGO = 'gpmpc_acados'
+    ALGO = 'gpmpc_acados_TP'
     # ALGO = 'mpc'
     # ALGO = 'mpc_acados'
     # ALGO = 'linear_mpc'
@@ -286,7 +287,7 @@ if __name__ == '__main__':
     #       {np.mean(runtime_list):.3f} sec')
 
     runtime_list = []
-    num_seed = 50
+    num_seed = 10
     start_seed = 1 # [1, 5, 6, 8, 9, 11, 12]
     suceeded = 0
     seed = start_seed

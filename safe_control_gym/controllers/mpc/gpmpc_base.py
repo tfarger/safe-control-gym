@@ -232,7 +232,7 @@ class GPMPC(MPC, ABC):
         self.length_scales = lengthscales.squeeze()
         self.signal_var = signal_var.squeeze()
         self.noise_var = noise_var.squeeze()
-        self.gp_K_plus_noise = gp_K_plus_noise
+        self.gp_K_plus_noise = gp_K_plus_noise # (target_dim, n_data_points, n_data_points)
         Nx = len(self.input_mask)
         Ny = len(self.target_mask)
         # Create CasADI function for computing the kernel K_z_zind with parameters for z, z_ind, length scales and signal variance.
@@ -457,16 +457,16 @@ class GPMPC(MPC, ABC):
                 z_ind = inputs[inds][:, self.input_mask]
             else:
                 raise ValueError('[Error]: gp_mpc.precompute_sparse_gp_values: Only \'kmeans\' or \'random\' allowed.')
-        K_zind_zind = self.gaussian_process.kernel(torch.Tensor(z_ind).double())
-        K_zind_zind_inv = self.gaussian_process.kernel_inv(torch.Tensor(z_ind).double())
+        K_zind_zind = self.gaussian_process.kernel(torch.Tensor(z_ind).double()) # (dim_gp_outputs, n_ind_points, n_ind_points)
+        K_zind_zind_inv = self.gaussian_process.kernel_inv(torch.Tensor(z_ind).double()) # (dim_gp_outputs, n_ind_points, n_ind_points)
         K_x_zind = self.gaussian_process.kernel(torch.from_numpy(inputs[:, self.input_mask]).double(),
-                                                torch.tensor(z_ind).double())
+                                                torch.tensor(z_ind).double()) # (dim_gp_outputs, n_data_points, n_ind_points)
         # Q_X_X = K_x_zind @ K_zind_zind_inv @ K_x_zind.transpose(1,2)
-        Q_X_X = K_x_zind @ torch.linalg.solve(K_zind_zind, K_x_zind.transpose(1, 2))
-        Gamma = torch.diagonal(self.gaussian_process.K_plus_noise - Q_X_X, 0, 1, 2)
-        Gamma_inv = torch.diag_embed(1 / Gamma)
+        Q_X_X = K_x_zind @ torch.linalg.solve(K_zind_zind, K_x_zind.transpose(1, 2)) # (dim_gp_outputs, n_data_points, n_data_points)
+        Gamma = torch.diagonal(self.gaussian_process.K_plus_noise - Q_X_X, 0, 1, 2) # (dim_gp_outputs, n_data_points)
+        Gamma_inv = torch.diag_embed(1 / Gamma) # (dim_gp_outputs, n_data_points, n_data_points)
         # TODO: Should inverse be used here instead? pinverse was more stable previsouly.
-        Sigma_inv = K_zind_zind + K_x_zind.transpose(1, 2) @ Gamma_inv @ K_x_zind
+        Sigma_inv = K_zind_zind + K_x_zind.transpose(1, 2) @ Gamma_inv @ K_x_zind # (dim_gp_outputs, n_ind_points, n_ind_points)
         # Sigma = torch.pinverse(K_zind_zind + K_x_zind.transpose(1, 2) @ Gamma_inv @ K_x_zind)  # For debugging
         mean_post_factor = torch.zeros((dim_gp_outputs, n_ind_points))
         for i in range(dim_gp_outputs):

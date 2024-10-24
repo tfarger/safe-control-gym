@@ -23,7 +23,7 @@ from termcolor import colored
 
 from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system
 from safe_control_gym.controllers.mpc.gp_utils import (GaussianProcessCollection, ZeroMeanIndependentGPModel,
-                                                       covSEard, kmeans_centriods, GaussianProcess)
+                                                       covMatern52ard, covSEard, covSE_single, kmeans_centriods, GaussianProcess)
 from safe_control_gym.controllers.mpc.linear_mpc import MPC, LinearMPC
 from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.gpmpc_base import GPMPC
@@ -252,7 +252,8 @@ class GPMPC_ACADOS_TP(GPMPC):
         training_results = None
         for epoch in range(1, self.num_epochs):
             # only take data from the last episode from the last epoch
-            if self.rand_data_selection:
+            # if self.rand_data_selection:
+            if True:
                 x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples, train_envs[epoch - 1].np_random)
             else:
                 x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples)
@@ -514,15 +515,29 @@ class GPMPC_ACADOS_TP(GPMPC):
             mean_post_factor should be of shape (len(self.target_mask), n_ind_points)
             Here we create the corresponding parameters since acados supports only 1D parameters
             '''
-            z_ind = cs.MX.sym('z_ind', n_ind_points, len(self.input_mask))
-            mean_post_factor = cs.MX.sym('mean_post_factor', len(self.target_mask), n_ind_points)
+            z_ind = cs.MX.sym('z_ind', n_ind_points, 4)
+            mean_post_factor = cs.MX.sym('mean_post_factor', 2, n_ind_points)
             acados_model.p = cs.vertcat(cs.reshape(z_ind, -1, 1), cs.reshape(mean_post_factor, -1, 1))
             # define the dynamics
-            # f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf'] \
-            #     + 
+            sparse_pred = cs.sum2(self.K_z_zind_func(z1=z[6, 4, 5, 7], z2=z_ind)['K'] * mean_post_factor)
+            f_cont = self.prior_dynamcis_func_c(x=acados_model.x, u=acados_model.u)['f']\
+                    + cs.vertcat(0, cs.sin(acados_model.x[4])*sparse_pred[0],
+                                 0, cs.cos(acados_model.x[4])*sparse_pred[0],
+                                 0, sparse_pred[1])
+            f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u], [f_cont])
+            # use rk4 to discretize the continuous dynamics
+            k1 = f_cont_func(acados_model.x, acados_model.u)
+            k2 = f_cont_func(acados_model.x + self.dt/2 * k1, acados_model.u)
+            k3 = f_cont_func(acados_model.x + self.dt/2 * k2, acados_model.u)
+            k4 = f_cont_func(acados_model.x + self.dt * k3, acados_model.u)
+            f_disc = acados_model.x + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
 
-            self.sparse_gp_func = cs.Function('sparse_func',
-                                              [acados_model.x, acados_model.u, z_ind, mean_post_factor], [f_disc])
+            # f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf']
+            #     + 
+            
+
+            # self.sparse_gp_func = cs.Function('sparse_func',
+            #                                   [acados_model.x, acados_model.u, z_ind, mean_post_factor], [f_disc])
         else:
             # f_disc = self.prior_dynamics_func(x0=acados_model.x, p=acados_model.u)['xf'] \
             #         + self.Bd @ self.gaussian_process.casadi_predict(z=z)['mean']
@@ -536,7 +551,9 @@ class GPMPC_ACADOS_TP(GPMPC):
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*casadi_pred_T, 
                                  0, cs.cos(acados_model.x[4])*casadi_pred_T,
                                  0, casadi_pred_P)
-            
+        # acados_model.f_expl_expr = f_cont
+
+
             f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u], [f_cont])
             # use rk4 to discretize the continuous dynamics
             k1 = f_cont_func(acados_model.x, acados_model.u)
@@ -546,6 +563,8 @@ class GPMPC_ACADOS_TP(GPMPC):
             f_disc = acados_model.x + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
 
         acados_model.disc_dyn_expr = f_disc
+
+
 
         acados_model.x_labels = self.env.STATE_LABELS
         acados_model.u_labels = self.env.ACTION_LABELS
@@ -653,6 +672,8 @@ class GPMPC_ACADOS_TP(GPMPC):
         # ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
         ocp.solver_options.integrator_type = 'DISCRETE'
+        # ocp.solver_options.integrator_type = 'ERK'
+
         ocp.solver_options.nlp_solver_type = 'SQP' if not self.use_RTI else 'SQP_RTI'
         ocp.solver_options.nlp_solver_max_iter = 10 if not self.use_RTI else 1
         ocp.solver_options.qp_solver_iter_max = 10
@@ -675,14 +696,14 @@ class GPMPC_ACADOS_TP(GPMPC):
         self.opti_dict = {'n_ind_points': n_ind_points}
         # compute sparse GP values
         # the actual values will be set in select_action_with_gp
-        # if self.sparse_gp:
-        #     mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
-        #     self.mean_post_factor_val = mean_post_factor_val
-        #     self.z_ind_val = z_ind_val
-        # else:
-        #     mean_post_factor_val, z_ind_val = self.precompute_mean_post_factor_all_data()
-        #     self.mean_post_factor_val = mean_post_factor_val
-        #     self.z_ind_val = z_ind_val
+        if self.sparse_gp:
+            mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
+            self.mean_post_factor_val = mean_post_factor_val
+            self.z_ind_val = z_ind_val
+        else:
+            mean_post_factor_val, z_ind_val = self.precompute_mean_post_factor_all_data()
+            self.mean_post_factor_val = mean_post_factor_val
+            self.z_ind_val = z_ind_val
 
     def processing_acados_constraints_expression(self, ocp: AcadosOcp, h0_expr, h_expr, he_expr,
                                                  state_tighten_list, input_tighten_list) -> AcadosOcp:
@@ -811,7 +832,6 @@ class GPMPC_ACADOS_TP(GPMPC):
                 self.acados_ocp_solver.set(idx, 'u', np.zeros((nu,)))
 
         # compute the sparse GP values
-        '''
         if self.recalc_inducing_points_at_every_step:
             mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
             self.results_dict['inducing_points'].append(z_ind_val)
@@ -820,16 +840,15 @@ class GPMPC_ACADOS_TP(GPMPC):
             mean_post_factor_val = self.mean_post_factor_val
             z_ind_val = self.z_ind_val
             self.results_dict['inducing_points'] = [z_ind_val]
-        '''
+        
         # Set the probabilistic state and input constraint set limits.
         # Tightening at the first step is possible if self.compute_initial_guess is used
-
-        state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits(True)
+        state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits()
         # set acados parameters
         if self.sparse_gp:
             # sparse GP parameters
-            assert z_ind_val.shape == (n_ind_points, len(self.input_mask))
-            assert mean_post_factor_val.shape == (len(self.target_mask), n_ind_points)
+            assert z_ind_val.shape == (n_ind_points, 4)
+            assert mean_post_factor_val.shape == (2, n_ind_points)
             # casadi use column major order, while np uses row major order by default
             # Thus, Fortran order (column major) is used to reshape the arrays
             z_ind_val = z_ind_val.reshape(-1, 1, order='F')
@@ -917,6 +936,180 @@ class GPMPC_ACADOS_TP(GPMPC):
             # action = self.u_prev[0] if nu == 1 else self.u_prev[:, 0]
 
         return action
+    
+    def precompute_mean_post_factor_all_data(self):
+        '''If the number of data points is less than the number of inducing points, use all the data
+        as kernel points.
+        '''
+        dim_gp_outputs = len(self.gaussian_process)
+        n_training_samples = self.train_data['train_targets'].shape[0]
+        inputs = self.train_data['train_inputs']
+        targets = self.train_data['train_targets']
+        # if self.normalize_training_data:
+        #     inputs = (inputs - self.gaussian_process.input_scaler_mean[self.input_mask]) / self.gaussian_process.input_scaler_std[self.input_mask]
+        #     targets = (targets - self.gaussian_process.output_scaler_mean[self.target_mask]) / self.gaussian_process.output_scaler_std[self.target_mask]
+        mean_post_factor = np.zeros((dim_gp_outputs, n_training_samples))
+        for i in range(dim_gp_outputs):
+            K_z_z = self.gaussian_process[i].model.K_plus_noise
+            mean_post_factor[i] = K_z_z.detach().numpy() @ targets[:, i]
+
+        return mean_post_factor, inputs
+
+    def precompute_sparse_gp_values(self, n_ind_points):
+        '''Uses the last MPC solution to precomupte values associated with the FITC GP approximation.
+
+        Args:
+            n_ind_points (int): Number of inducing points.
+        '''
+        n_data_points = self.train_data['train_targets'].shape[0]
+        dim_gp_outputs = len(self.gaussian_process)
+        inputs = self.train_data['train_inputs']
+        targets = self.train_data['train_targets']
+        # if self.normalize_training_data:
+        #     for i in range(inputs.shape[0]):
+        #         inputs[i, :] = (inputs[i, :] - self.gaussian_process.input_scaler_mean[self.input_mask]) / self.gaussian_process.input_scaler_std[self.input_mask]
+        #         targets[i, :] = (targets[i, :] - self.gaussian_process.output_scaler_mean[self.target_mask]) / self.gaussian_process.output_scaler_std[self.target_mask]
+        # Get the inducing points.
+        if False and self.x_prev is not None and self.u_prev is not None:
+            # Use the previous MPC solution as in Hewing 2019.
+            z_prev = np.hstack((self.x_prev[:, :-1].T, self.u_prev.T))
+            z_prev = z_prev[:, self.input_mask]
+            inds = self.env.np_random.choice(range(n_data_points), size=n_ind_points - self.T, replace=False)
+            # z_ind = self.data_inputs[inds][:, self.input_mask]
+            z_ind = np.vstack((z_prev, inputs[inds][:, self.input_mask]))
+        else:
+            # If there is no previous solution. Choose T random training set points.
+            if self.inducing_point_selection_method == 'kmeans':
+                centroids = kmeans_centriods(n_ind_points, inputs, rand_state=self.seed)
+                contiguous_masked_inputs = np.ascontiguousarray(inputs)  # required for version sklearn later than 1.0.2
+                inds, _ = pairwise_distances_argmin_min(centroids, contiguous_masked_inputs)
+                z_ind = inputs[inds]
+            elif self.inducing_point_selection_method == 'random':
+                inds = self.env.np_random.choice(range(n_data_points), size=n_ind_points, replace=False)
+                z_ind = inputs[inds]
+            else:
+                raise ValueError('[Error]: gp_mpc.precompute_sparse_gp_values: Only \'kmeans\' or \'random\' allowed.')
+        GP_T = self.gaussian_process[0]
+        GP_P = self.gaussian_process[1]
+        K_zind_zind_T = GP_T.model.covar_module(torch.from_numpy(z_ind[:,0]).double())
+        K_zind_zind_P = GP_P.model.covar_module(torch.from_numpy(z_ind[:,1:]).double())
+        K_zind_zind_inv_T = K_zind_zind_T.inv_matmul(torch.eye(n_ind_points).double()).detach()
+        K_zind_zind_inv_P = K_zind_zind_P.inv_matmul(torch.eye(n_ind_points).double()).detach()
+        K_zind_zind_T = GP_T.model.covar_module(torch.from_numpy(z_ind[:,0]).double()).evaluate().detach()
+        K_zind_zind_P = GP_P.model.covar_module(torch.from_numpy(z_ind[:,1:]).double()).evaluate().detach()
+
+        K_zind_zind = torch.zeros((dim_gp_outputs, n_ind_points, n_ind_points))
+        K_zind_zind[0] = K_zind_zind_T
+        K_zind_zind[1] = K_zind_zind_P
+        K_zind_zind_inv = torch.zeros((dim_gp_outputs, n_ind_points, n_ind_points))
+        K_zind_zind_inv[0] = K_zind_zind_inv_T
+        K_zind_zind_inv[1] = K_zind_zind_inv_P
+        K_x_zind_T = GP_T.model.covar_module(torch.from_numpy(inputs[:,0]).double(), torch.from_numpy(z_ind[:,0]).double()).evaluate().detach()
+        K_x_zind_P = GP_P.model.covar_module(torch.from_numpy(inputs[:,1:]).double(), torch.from_numpy(z_ind[:,1:]).double()).evaluate().detach()
+        K_x_zind = torch.zeros((dim_gp_outputs, n_data_points, n_ind_points))
+        K_x_zind[0] = K_x_zind_T
+        K_x_zind[1] = K_x_zind_P
+        
+        K_plus_noise_T = GP_T.model.K_plus_noise.detach()
+        K_plus_noise_P = GP_P.model.K_plus_noise.detach()
+        K_plus_noise = torch.zeros((dim_gp_outputs, n_data_points, n_data_points))
+        K_plus_noise[0] = K_plus_noise_T
+        K_plus_noise[1] = K_plus_noise_P
+
+        # K_zind_zind = self.gaussian_process.kernel(torch.Tensor(z_ind).double())
+        # K_zind_zind_inv = self.gaussian_process.kernel_inv(torch.Tensor(z_ind).double())
+        # K_x_zind = self.gaussian_process.kernel(torch.from_numpy(inputs[:, self.input_mask]).double(),
+        #                                         torch.tensor(z_ind).double())
+        # Q_X_X = K_x_zind @ K_zind_zind_inv @ K_x_zind.transpose(1,2)
+        Q_X_X = K_x_zind @ torch.linalg.solve(K_zind_zind, K_x_zind.transpose(1, 2))
+        Gamma = torch.diagonal(K_plus_noise - Q_X_X, 0, 1, 2)
+        Gamma_inv = torch.diag_embed(1 / Gamma)
+        # TODO: Should inverse be used here instead? pinverse was more stable previsouly.
+        Sigma_inv = K_zind_zind + K_x_zind.transpose(1, 2) @ Gamma_inv @ K_x_zind # (dim_gp_outputs, n_ind_points, n_ind_points)
+        # Sigma = torch.pinverse(K_zind_zind + K_x_zind.transpose(1, 2) @ Gamma_inv @ K_x_zind)  # For debugging
+        mean_post_factor = torch.zeros((dim_gp_outputs, n_ind_points))
+        # for i in range(dim_gp_outputs):
+        mean_post_factor[0] = torch.linalg.solve(Sigma_inv[0, :, :], K_x_zind[0, :, :].T @ Gamma_inv[0, :, :] @
+                                                    torch.from_numpy(targets[:, 0]).float()) # NOTE: transpose to match the shape of the targets
+        mean_post_factor[1] = torch.linalg.solve(Sigma_inv[1, :, :], K_x_zind[1, :, :].T @ Gamma_inv[1, :, :] @
+                                                    torch.from_numpy(targets[:, 1]).float()) # NOTE: transpose to match the shape of the targets
+            # mean_post_factor[i] = Sigma[i] @ K_x_zind[i].T @ Gamma_inv[i] @ torch.from_numpy(targets[:, self.target_mask[i]]).double()
+        return mean_post_factor.detach().numpy(), Sigma_inv.detach().numpy(), K_zind_zind_inv.detach().numpy(), z_ind
+
+    def create_sparse_GP_machinery(self, n_ind_points):
+        '''This setups the gaussian process approximations for FITC formulation.'''
+        # lengthscales, signal_var, noise_var, gp_K_plus_noise = self.gaussian_process.get_hyperparameters(as_numpy=True)
+        
+        GP_T = self.gaussian_process[0]
+        GP_P = self.gaussian_process[1]
+        lengthscales_T = GP_T.model.covar_module.base_kernel.lengthscale.detach().numpy()
+        lengthscales_P = GP_P.model.covar_module.base_kernel.lengthscale.detach().numpy()
+        signal_var_T = GP_T.model.covar_module.outputscale.detach().numpy()
+        signal_var_P = GP_P.model.covar_module.outputscale.detach().numpy()
+        noise_var_T = GP_T.likelihood.noise.detach().numpy()
+        noise_var_P = GP_P.likelihood.noise.detach().numpy()
+        gp_K_plus_noise_T = GP_T.model.K_plus_noise.detach().numpy()
+        gp_K_plus_noise_P = GP_P.model.K_plus_noise.detach().numpy()
+        gp_K_plus_noise_inv_T = GP_T.model.K_plus_noise_inv.detach().numpy()
+        gp_K_plus_noise_inv_P = GP_P.model.K_plus_noise_inv.detach().numpy()
+
+        # stacking
+        lengthscales = np.vstack((lengthscales_T, lengthscales_P))
+        signal_var = np.array([signal_var_T, signal_var_P])
+        noise_var = np.array([noise_var_T, noise_var_P])
+        gp_K_plus_noise = np.zeros((2, gp_K_plus_noise_T.shape[0], gp_K_plus_noise_T.shape[1]))
+        gp_K_plus_noise[0] = gp_K_plus_noise_T
+        gp_K_plus_noise[1] = gp_K_plus_noise_P
+        
+        self.length_scales = lengthscales.squeeze()
+        self.signal_var = signal_var.squeeze()
+        self.noise_var = noise_var.squeeze()
+        self.gp_K_plus_noise = gp_K_plus_noise
+        Nx =self.train_data['train_inputs'].shape[1]
+        Ny =self.train_data['train_targets'].shape[1]
+        # Create CasADI function for computing the kernel K_z_zind with parameters for z, z_ind, length scales and signal variance.
+        # We need the CasADI version of this so that it can by symbolically differentiated in in the MPC optimization.
+        z1 = cs.SX.sym('z1', Nx)
+        z2 = cs.SX.sym('z2', Nx)
+        ell_s = cs.SX.sym('ell', Nx)
+        sf2_s = cs.SX.sym('sf2')
+        z_ind = cs.SX.sym('z_ind', n_ind_points, Nx)
+        ks = cs.SX.zeros(1, n_ind_points)
+
+        # if self.normalize_training_data:
+        #     z1 = (z1 - self.gaussian_process.input_scaler_mean[self.input_mask]) / self.gaussian_process.input_scaler_std[self.input_mask]
+        #     z2 = (z2 - self.gaussian_process.input_scaler_mean[self.input_mask]) / self.gaussian_process.input_scaler_std[self.input_mask]
+        #     for i in range(n_ind_points):
+        #         z_ind[i, :] = ((z_ind[i, :].T - self.gaussian_process.input_scaler_mean[self.input_mask]) / self.gaussian_process.input_scaler_std[self.input_mask]).T
+
+        if self.kernel == 'Matern':
+            covMatern = cs.Function('covMatern', [z1, z2, ell_s, sf2_s],
+                                    [covMatern52ard(z1, z2, ell_s, sf2_s)])
+            for i in range(n_ind_points):
+                ks[i] = covMatern(z1, z_ind[i, :], ell_s, sf2_s)
+        elif self.kernel == 'RBF':
+            covSE = cs.Function('covSE', [z1, z2, ell_s, sf2_s],
+                                [covSEard(z1, z2, ell_s, sf2_s)])
+            for i in range(n_ind_points):
+                ks[i] = covSE(z1, z_ind[i, :], ell_s, sf2_s)
+        elif self.kernel == 'RBF_single':
+            covSE = cs.Function('covSE', [z1, z2, ell_s, sf2_s],
+                                [covSE_single(z1, z2, ell_s, sf2_s)])
+            for i in range(n_ind_points):
+                ks[i] = covSE(z1, z_ind[i, :], ell_s, sf2_s)
+        else:
+            raise NotImplementedError('Kernel type not implemented.')
+        ks_func = cs.Function('K_s', [z1, z_ind, ell_s, sf2_s], [ks])
+        K_z_zind = cs.SX.zeros(Ny, n_ind_points)
+        for i in range(Ny):
+            if self.kernel == 'RBF_single':
+                K_z_zind[i, :] = ks_func(z1, z_ind, self.length_scales[i], self.signal_var[i])
+            else:
+                K_z_zind[i, :] = ks_func(z1, z_ind, self.length_scales[i, :], self.signal_var[i])
+
+        # This will be mulitplied by the mean_post_factor computed at every time step to compute the approximate mean.
+        self.K_z_zind_func = cs.Function('K_z_zind', [z1, z_ind], [K_z_zind], ['z1', 'z2'], ['K'])
+
 
     @timing
     def precompute_probabilistic_limits(self,
