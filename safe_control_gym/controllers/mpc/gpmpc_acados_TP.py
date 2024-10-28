@@ -978,6 +978,140 @@ class GPMPC_ACADOS_TP(GPMPC):
 
         return action
     
+    def compute_initial_guess(self, init_state, goal_states):
+        time_before = time.time()
+        nx, nu = self.model.nx, self.model.nu
+        ny = nx + nu
+        ny_e = nx
+        # TODO: replace this with something safer
+        n_ind_points = self.opti_dict['n_ind_points']
+
+        # set initial condition (0-th state)
+        self.acados_ocp_solver.set(0, 'lbx', init_state)
+        self.acados_ocp_solver.set(0, 'ubx', init_state)
+        # set initial guess for the solution
+        if self.warmstart:
+            if self.x_guess is None or self.u_guess is None:
+                if self.compute_ipopt_initial_guess:
+                    # compute initial guess with IPOPT
+                    self.compute_initial_guess(init_state, self.get_references())
+                else:
+                    # use zero initial guess (TODO: use acados warm start)
+                    self.x_guess = np.zeros((nx, self.T + 1))
+                    if nu == 1:
+                        self.u_guess = np.zeros((self.T,))
+                    else:
+                        self.u_guess = np.zeros((nu, self.T))
+            # set initial guess
+            for idx in range(self.T + 1):
+                init_x = self.x_guess[:, idx]
+                self.acados_ocp_solver.set(idx, 'x', init_x)
+            for idx in range(self.T):
+                if nu == 1:
+                    init_u = np.array([self.u_guess[idx]])
+                else:
+                    init_u = self.u_guess[:, idx]
+                self.acados_ocp_solver.set(idx, 'u', init_u)
+        else:
+            for idx in range(self.T + 1):
+                self.acados_ocp_solver.set(idx, 'x', init_state)
+            for idx in range(self.T):
+                self.acados_ocp_solver.set(idx, 'u', np.zeros((nu,)))
+
+        # compute the sparse GP values
+        if self.recalc_inducing_points_at_every_step:
+            mean_post_factor_val, _, _, z_ind_val = self.precompute_sparse_gp_values(n_ind_points)
+            self.results_dict['inducing_points'].append(z_ind_val)
+        else:
+            # use the precomputed values
+            mean_post_factor_val = self.mean_post_factor_val
+            z_ind_val = self.z_ind_val
+            self.results_dict['inducing_points'] = [z_ind_val]
+        
+        # Set the probabilistic state and input constraint set limits.
+        # Tightening at the first step is possible if self.compute_initial_guess is used
+        state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits()
+        # set acados parameters
+        if self.sparse_gp:
+            # sparse GP parameters
+            assert z_ind_val.shape == (n_ind_points, 4)
+            assert mean_post_factor_val.shape == (2, n_ind_points)
+            # casadi use column major order, while np uses row major order by default
+            # Thus, Fortran order (column major) is used to reshape the arrays
+            z_ind_val = z_ind_val.reshape(-1, 1, order='F')
+            mean_post_factor_val = mean_post_factor_val.reshape(-1, 1, order='F')
+            dyn_value = np.concatenate((z_ind_val, mean_post_factor_val)).reshape(-1)
+            # tighten constraints
+            for idx in range(self.T):
+                # tighten initial and path constraints
+                state_constraint_set = state_constraint_set_prev[0][:, idx]
+                input_constraint_set = input_constraint_set_prev[0][:, idx]
+                tighten_value = np.concatenate((state_constraint_set, input_constraint_set))
+                # set the parameter values
+                parameter_values = np.concatenate((dyn_value, tighten_value))
+                # self.acados_ocp_solver.set(idx, "p", dyn_value)
+                self.acados_ocp_solver.set(idx, 'p', parameter_values)
+            # tighten terminal state constraints
+            tighten_value = np.concatenate((state_constraint_set_prev[0][:, self.T], np.zeros((2 * nu,))))
+            # set the parameter values
+            parameter_values = np.concatenate((dyn_value, tighten_value))
+            self.acados_ocp_solver.set(self.T, 'p', parameter_values)
+        else:
+            for idx in range(self.T):
+                # tighten initial and path constraints
+                state_constraint_set = state_constraint_set_prev[0][:, idx]
+                input_constraint_set = input_constraint_set_prev[0][:, idx]
+                tighten_value = np.concatenate((state_constraint_set, input_constraint_set))
+                self.acados_ocp_solver.set(idx, 'p', tighten_value)
+            # tighten terminal state constraints
+            tighten_value = np.concatenate((state_constraint_set_prev[0][:, self.T], np.zeros((2 * nu,))))
+            self.acados_ocp_solver.set(self.T, 'p', tighten_value)
+
+
+        # set reference for the control horizon
+        # goal_states = self.get_references()
+        for idx in range(self.T):
+            y_ref = np.concatenate((goal_states[:, idx], np.zeros((nu,))))
+            self.acados_ocp_solver.set(idx, 'yref', y_ref)
+        y_ref_e = goal_states[:, -1]
+        self.acados_ocp_solver.set(self.T, 'yref', y_ref_e)
+
+        # solve the optimization problem
+        if self.use_RTI:
+            # preparation phase
+            self.acados_ocp_solver.options_set('rti_phase', 1)
+            status = self.acados_ocp_solver.solve()
+
+            # feedback phase
+            self.acados_ocp_solver.options_set('rti_phase', 2)
+            status = self.acados_ocp_solver.solve()
+        else:
+            status = self.acados_ocp_solver.solve()
+        if status not in [0, 2]:
+            self.acados_ocp_solver.print_statistics()
+            print(colored(f'acados returned status {status}. ', 'red'))
+
+        action = self.acados_ocp_solver.get(0, 'u')
+        # get the open-loop solution
+        if self.x_prev is None and self.u_prev is None:
+            self.x_prev = np.zeros((nx, self.T + 1))
+            self.u_prev = np.zeros((nu, self.T))
+        if self.u_prev is not None and nu == 1:
+            self.u_prev = self.u_prev.reshape((1, -1))
+
+        for i in range(self.T + 1):
+            self.x_prev[:, i] = self.acados_ocp_solver.get(i, 'x')
+        for i in range(self.T):
+            self.u_prev[:, i] = self.acados_ocp_solver.get(i, 'u')
+        if nu == 1:
+            self.u_prev = self.u_prev.flatten()
+        self.x_guess = self.x_prev
+        self.u_guess = self.u_prev
+
+        time_after = time.time()
+        if hasattr(self, 'K'):
+            action += self.K @ (self.x_prev[:, 0] - init_state)
+    
     def precompute_mean_post_factor_all_data(self):
         '''If the number of data points is less than the number of inducing points, use all the data
         as kernel points.
