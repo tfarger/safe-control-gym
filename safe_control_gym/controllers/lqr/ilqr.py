@@ -104,12 +104,13 @@ class iLQR(BaseController):
         self.previous_total_cost = -float('inf')
 
         # determine the maximum number of steps
-        max_steps = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC)
+        self.max_steps = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC)
+        print(f'Maximum number of steps: {self.max_steps}')
 
         # Loop through iLQR iterations
         while self.ite_counter < self.max_iterations:
             self.traj_step = 0
-            self.run(env=env, max_steps=max_steps, training=True)
+            self.run(env=env, max_steps=self.max_steps, training=True)
 
             # Save data and update policy if iteration is finished.
             self.state_stack = np.vstack((self.state_stack, self.final_obs))
@@ -280,7 +281,7 @@ class iLQR(BaseController):
             else:
                 self.update_unstable = True
 
-    def select_action(self, obs, info=None, training=False, hardware=False):
+    def select_action(self, obs, info=None, training=False):
         '''Determine the action to take at the current timestep.
 
         Args:
@@ -291,9 +292,6 @@ class iLQR(BaseController):
         Returns:
             action (ndarray): The action chosen by the controller.
         '''
-        # step = self.traj_step
-        # print('step:', step)
-        # print('step:', self.traj_step)
 
         if training:
             if self.ite_counter == 0:
@@ -312,7 +310,8 @@ class iLQR(BaseController):
         else:
             action, _, _ = self.calculate_lqr_action(obs, self.traj_step)
 
-        self.traj_step += 1
+        if self.traj_step < self.max_steps - 1:
+            self.traj_step += 1
 
         return action
 
