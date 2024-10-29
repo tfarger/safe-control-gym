@@ -22,6 +22,7 @@ casadi = "^3.6.0"
 pybullet = "^3.2.0"
 numpy = "^1.22.1"
 cvxpy = "^1.1.18"
+pycddlib = "^2.1.7"
 pytope = "^0.0.4"
 Mosek = "^10.0.18"
 termcolor = "^1.1.0"
@@ -31,6 +32,8 @@ optuna = "^3.0"
 optuna-dashboard = "^0.9"
 pandas = "^1.4.0"
 google-vizier = {version = "0.1.18", extras = ["jax"]}
+jax = "==0.4.33"
+jaxlib = "==0.4.33"
 
 [tool.poetry.dev-dependencies]
 

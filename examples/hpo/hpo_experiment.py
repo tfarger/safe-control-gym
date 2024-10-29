@@ -14,22 +14,21 @@ def hpo(config):
     '''
 
     # change the cost function for rl methods
-    if config.algo == 'ppo':
+    if config.algo == 'ppo' or config.algo == 'sac' or config.algo == 'dppo':
         config.task_config.cost = 'rl_reward'
         config.task_config.obs_goal_horizon = 1
-        config.normalized_rl_action_space = True
         if 'disturbances' in config.task_config:
             if config.task_config.disturbances is not None:
                 # raise ValueError('Double check with this setup.')
                 config.task_config.disturbances.observation[0]['std'] += [0, 0, 0, 0, 0, 0]
         config.algo_config.log_interval = 10000000
         config.algo_config.eval_interval = 10000000
-    elif config.algo == 'gp_mpc':
-        config.task_config.info_in_reset = False
+    elif config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'linear_mpc' or config.algo == 'mpc_acados':
+        pass
     elif config.algo == 'ilqr':
         pass
     else:
-        raise ValueError('Only ppo, gp_mpc, gpmpc_acados, and ilqr are supported for now.')
+        raise ValueError('Only ppo, sac, dppo, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr are supported for now.')
 
     # Experiment setup.
     set_dir_from_config(config)

@@ -135,6 +135,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=False):
         system = f'quadrotor_{str(config.task_config.quad_type)}D'
         if config.task_config.quad_type == 4:
             system = 'quadrotor_2D'
+        if config.task_config.quad_type == 6:
+            system = 'quadrotor_3D'
     else:
         system = config.task
 

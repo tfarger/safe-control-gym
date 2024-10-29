@@ -108,7 +108,7 @@ class HPO_Vizier(BaseHPO):
         """ Hyperparameter optimization.
         """
         if self.load_study:
-            with open(f'{self.study_name}_endpoint.yaml', 'r') as config_file:
+            with open(f'{self.study_name}_vizier_endpoint.yaml', 'r') as config_file:
                 endpoint = yaml.safe_load(config_file)['endpoint']
             clients.environment_variables.server_endpoint = endpoint
             study_config = vz.StudyConfig.from_problem(self.problem)
@@ -118,7 +118,7 @@ class HPO_Vizier(BaseHPO):
             server = servers.DefaultVizierServer(database_url=f'sqlite:///{self.study_name}_vizier.db')
             clients.environment_variables.server_endpoint = server.endpoint
             endpoint = server.endpoint
-            with open(f'{self.study_name}_endpoint.yaml', 'w') as config_file:
+            with open(f'{self.study_name}_vizier_endpoint.yaml', 'w') as config_file:
                 yaml.dump({'endpoint': endpoint}, config_file, default_flow_style=False)
 
             study_config = vz.StudyConfig.from_problem(self.problem)

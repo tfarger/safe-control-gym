@@ -199,6 +199,7 @@ class BaseExperiment:
         if sf_data is not None and self.safety_filter is not None:
             for data_key, data_val in self.safety_filter.results_dict.items():
                 sf_data[data_key].append(np.array(deepcopy(data_val)))
+        self.ctrl.reset()
         self.ctrl.reset_before_run(obs, info, env=self.env)
         if self.safety_filter is not None:
             self.safety_filter.reset_before_run(env=self.env)

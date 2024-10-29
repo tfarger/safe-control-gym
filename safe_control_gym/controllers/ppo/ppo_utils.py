@@ -134,6 +134,7 @@ class PPOAgent:
                 self.critic_opt.zero_grad()
                 value_loss.backward()
                 self.critic_opt.step()
+                # logging
                 p_loss_epoch += policy_loss.item()
                 v_loss_epoch += value_loss.item()
                 e_loss_epoch += entropy_loss.item()

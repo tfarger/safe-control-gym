@@ -5,6 +5,7 @@ import pytest
 
 from examples.hpo.hpo_experiment import hpo
 from safe_control_gym.utils.configuration import ConfigFactory
+from safe_control_gym.hyperparameters.hpo_search_space import HYPERPARAMS_DICT
 
 
 @pytest.mark.parametrize('SYS', ['cartpole'])
@@ -87,11 +88,11 @@ def test_hpo_cartpole(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
     # should belong to the distributions defined in the search space
     if 'optimization_iterations' in config.hpo_config.hps_config:
         d = len(config.hpo_config.hps_config.optimization_iterations)
-        config.hpo_config.hps_config.optimization_iterations = [2400] * d
+        config.hpo_config.hps_config.optimization_iterations = [HYPERPARAMS_DICT[ALGO]['optimization_iterations']['values'][0]] * d
     if 'num_epochs' in config.hpo_config.hps_config:
-        config.hpo_config.hps_config.num_epochs = 2
+        config.hpo_config.hps_config.num_epochs = HYPERPARAMS_DICT[ALGO]['num_epochs']['values'][0]
     if 'max_env_steps' in config.hpo_config.hps_config:
-        config.hpo_config.hps_config.max_env_steps = 30000
+        config.hpo_config.hps_config.max_env_steps = HYPERPARAMS_DICT[ALGO]['max_env_steps']['values'][0]
 
     hpo(config)
 
@@ -109,7 +110,7 @@ def test_hpo_cartpole(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
 
 @pytest.mark.parametrize('SYS', ['quadrotor_2D_attitude'])
 @pytest.mark.parametrize('TASK', ['tracking'])
-@pytest.mark.parametrize('ALGO', ['ilqr', 'gp_mpc', 'ppo'])
+@pytest.mark.parametrize('ALGO', ['ilqr', 'gp_mpc', 'gpmpc_acados', 'linear_mpc', 'mpc_acados', 'ppo', 'sac', 'dppo'])
 @pytest.mark.parametrize('PRIOR', [''])
 @pytest.mark.parametrize('SAFETY_FILTER', ['', 'linear_mpsc'])
 @pytest.mark.parametrize('SAMPLER', ['optuna', 'vizier'])
@@ -133,9 +134,9 @@ def test_hpo_quadrotor(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
 
     SYS_NAME = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
 
-    if ALGO == 'ilqr':
+    if ALGO == 'ilqr' or ALGO == 'gpmpc_acados' or ALGO == 'linear_mpc' or ALGO == 'mpc_acados':
         PRIOR = '100'
-    elif ALGO == 'gp_mpc' or ALGO == 'gpmpc_acados':
+    elif ALGO == 'gp_mpc':
         PRIOR = '200'
 
     # check if the config file exists
@@ -189,11 +190,11 @@ def test_hpo_quadrotor(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
     # should belong to the distributions defined in the search space
     if 'optimization_iterations' in config.hpo_config.hps_config:
         d = len(config.hpo_config.hps_config.optimization_iterations)
-        config.hpo_config.hps_config.optimization_iterations = [2400] * d
+        config.hpo_config.hps_config.optimization_iterations = [HYPERPARAMS_DICT[ALGO]['optimization_iterations']['values'][0]] * d
     if 'num_epochs' in config.hpo_config.hps_config:
-        config.hpo_config.hps_config.num_epochs = 2
+        config.hpo_config.hps_config.num_epochs = HYPERPARAMS_DICT[ALGO]['num_epochs']['values'][0]
     if 'max_env_steps' in config.hpo_config.hps_config:
-        config.hpo_config.hps_config.max_env_steps = 30000
+        config.hpo_config.hps_config.max_env_steps = HYPERPARAMS_DICT[ALGO]['max_env_steps']['values'][0]
 
     hpo(config)
 
@@ -205,5 +206,5 @@ def test_hpo_quadrotor(SYS, TASK, ALGO, PRIOR, SAFETY_FILTER, SAMPLER):
         os.system(f'rm {ALGO}_hpo_{SAMPLER}.db')
     if os.path.exists(f'{ALGO}_hpo_{SAMPLER}.db-journal'):
         os.system(f'rm {ALGO}_hpo_{SAMPLER}.db-journal')
-    if os.path.exists(f'{ALGO}_hpo_endpoint.yaml'):
-        os.system(f'rm {ALGO}_hpo_endpoint.yaml')
+    if os.path.exists(f'{ALGO}_hpo_{SAMPLER}_endpoint.yaml'):
+        os.system(f'rm {ALGO}_hpo_{SAMPLER}_endpoint.yaml')

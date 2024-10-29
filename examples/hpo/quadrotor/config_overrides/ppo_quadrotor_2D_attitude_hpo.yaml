@@ -33,6 +33,7 @@ hpo_config:
 
     # runner args
     max_env_steps: 216000
+    rollout_batch_size: 5
 
     # objective
     rew_state_weight: [10.0, 0.1, 10.0, 0.1, 0.1, 0.001]

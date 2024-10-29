@@ -106,7 +106,8 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
         ax3.plot(results['obs'][0][:, graph3_1], results['obs'][0][:, graph3_2], 'r--', label='RL Trajectory')
         if config.task_config.task == Task.TRAJ_TRACKING and config.task == Environment.QUADROTOR:
             ax3.plot(env.X_GOAL[:, graph3_1], env.X_GOAL[:, graph3_2], 'g--', label='Reference')
-        ax3.scatter(results['obs'][0][0, graph3_1], results['obs'][0][0, graph3_2], color='g', marker='o', s=100, label='Initial State')
+        ax3.scatter(results['obs'][0][0, graph3_1], results['obs'][0][0, graph3_2], color='g', marker='o', s=100,
+                    label='Initial State')
         ax3.set_xlabel(r'X')
         if config.task == Environment.CARTPOLE:
             ax3.set_ylabel(r'Vel')
@@ -119,6 +120,7 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
         # plt.savefig(f"{curr_path}/perf.png")
 
     return env.X_GOAL, results, metrics
+
 
 def post_analysis(state_stack, input_stack, env):
     '''Plots the input and states to determine iLQR's success.
@@ -163,6 +165,7 @@ def post_analysis(state_stack, input_stack, env):
     axs[-1].set(xlabel='time (sec)')
 
     plt.show()
+
 
 if __name__ == '__main__':
     run()

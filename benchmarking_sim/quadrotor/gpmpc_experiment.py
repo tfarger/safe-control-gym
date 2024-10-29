@@ -32,7 +32,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     '''
     # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
-    ALGO = 'gpmpc_acados'
+    # ALGO = 'gpmpc_acados'
+    ALGO = 'gpmpc_acados_TP'
     # ALGO = 'mpc'
     # ALGO = 'mpc_acados'
     # ALGO = 'linear_mpc'
@@ -41,8 +42,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     # ALGO = 'pid'
     SYS = 'quadrotor_2D_attitude'
     TASK = 'tracking'
-    PRIOR = '200'
-    # PRIOR = '100'
+    # PRIOR = '200_hpo_ilqr_norm'
+    PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
@@ -275,12 +276,39 @@ def wrap2pi_vec(angle_vec):
 
 
 if __name__ == '__main__':
+    # runtime_list = []
+    # num_seed = 3
+    # start_seed = 7
+    # for seed in range(start_seed, num_seed + start_seed):
+    # # for seed in [9, 10]:
+    #     run(seed=seed)
+    #     runtime_list.append(run.elapsed_time)
+    # print(f'Average runtime for {num_seed} runs: \
+    #       {np.mean(runtime_list):.3f} sec')
+
     runtime_list = []
-    num_seed = 4
-    start_seed = 3
-    for seed in range(start_seed, num_seed + start_seed):
-        run(seed=seed)
-        runtime_list.append(run.elapsed_time)
+    num_seed = 10
+    start_seed = 1 # [1, 5, 6, 8, 9, 11, 12]
+    suceeded = 0
+    seed = start_seed
+    while suceeded < num_seed:  
+        try:
+            run(seed=seed)
+            runtime_list.append(run.elapsed_time)
+            suceeded += 1
+        except Exception as e:
+            # log the error and complete trackback
+            print('Error:', e)
+            # the error and complete trackback
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            # dump the error to a file
+            with open(f'./error_{seed}.txt', 'w') as f:
+                f.write(f'Error: {e}\n')
+                f.write(f'{exc_type} {fname} {exc_tb.tb_lineno}\n')
+        seed += 1
+
     print(f'Average runtime for {num_seed} runs: \
           {np.mean(runtime_list):.3f} sec')
 

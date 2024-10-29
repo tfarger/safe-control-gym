@@ -45,9 +45,9 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
         # ALGO = 'pid'
     SYS = 'quadrotor_2D_attitude'
     TASK = 'tracking'
-    PRIOR = '200'
+    # PRIOR = '200'
     # PRIOR = '150'
-    # PRIOR = '100'
+    PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
@@ -61,7 +61,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
                         '--overrides',
                             f'./config_overrides/{SYS}_{TASK}.yaml',
                             f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
-                        '--seed', '2',
+                        '--seed', '9',
                         '--use_gpu', 'True',
                         '--output_dir', f'./{ALGO}/results',
                             ]
