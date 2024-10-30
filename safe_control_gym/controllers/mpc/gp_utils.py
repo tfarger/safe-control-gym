@@ -1224,6 +1224,7 @@ class GaussianProcess:
         if self.target_mask is not None:
             train_targets = train_targets[:, self.target_mask]
         device = torch.device('cpu')
+        print(colored(f'Loading hyperparameters from {path_to_statedict}', 'green'))
         state_dict = torch.load(path_to_statedict, map_location=device)
         self._init_model(train_inputs, train_targets)
         self.model.load_state_dict(state_dict)
@@ -1232,6 +1233,9 @@ class GaussianProcess:
         self.casadi_predict = self.make_casadi_prediction_func(train_inputs, train_targets)
         # self.casadi_linearized_predict = \
         #     self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
+        print(colored(f'outputscale: {self.model.covar_module.outputscale}', 'green'))
+        print(colored(f'lengthscale: {self.model.covar_module.base_kernel.lengthscale}', 'green'))
+        print(colored(f'noise: {self.model.likelihood.noise}', 'green'))
 
     def train(self,
               train_input_data,
@@ -1502,6 +1506,11 @@ class GaussianProcess:
             output_label (str): Label for the output. Usually the index of the output.
             output_dir (str): Directory to save the figure.
         '''
+        if isinstance(inputs, np.ndarray):
+            inputs = torch.from_numpy(inputs).double()
+        if isinstance(targets, np.ndarray):
+            targets = torch.from_numpy(targets).double()
+
         num_data = inputs.shape[0]
         residual_func = kwargs.get('residual_func', None)
         residual = np.zeros((num_data, targets.shape[1]))

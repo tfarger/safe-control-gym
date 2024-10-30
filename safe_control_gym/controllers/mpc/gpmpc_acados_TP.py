@@ -205,6 +205,7 @@ class GPMPC_ACADOS_TP(GPMPC):
         input_theta = np.concatenate([x_seq[:, 4].reshape(-1, 1), 
                                       x_seq[:, 5].reshape(-1, 1),
                                       u_seq[:, 1].reshape(-1, 1)], axis=1) 
+        
         train_input = np.concatenate([input_T, input_theta], axis=1)
         train_output = np.concatenate([targets_T, targets_theta], axis=1)
 
@@ -253,30 +254,17 @@ class GPMPC_ACADOS_TP(GPMPC):
         for epoch in range(1, self.num_epochs):
             # only take data from the last episode from the last epoch
             # if self.rand_data_selection:
+            episode_length = train_runs[epoch - 1][self.num_train_episodes_per_epoch - 1]['obs'].shape[0]
             if True:
                 x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples, train_envs[epoch - 1].np_random)
             else:
                 x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, self.num_samples)
-            train_inputs, train_outputs = self.preprocess_training_data(x_seq, actions, x_next_seq)
-            training_results = self.train_gp(input_data=train_inputs, target_data=train_outputs)
-            # plot training results
-            # if self.plot_trained_gp:
-            #     self.gaussian_process.plot_trained_gp(train_inputs, train_outputs,
-            #                                           output_dir=self.output_dir,
-            #                                           title=f'epoch_{epoch}',
-            #                                           residual_func=self.residual_func
-            #                                           )
-                
-            # max_steps = train_runs[epoch-1][0]['obs'].shape[0]
-            # x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(train_runs, epoch - 1, max_steps)
-            # input_T, input_theta, targets_T, targets_theta = self.preprocess_training_data(x_seq, actions, x_next_seq)
-            # # if self.plot_trained_gp:
-            # #     self.gaussian_process.plot_trained_gp(test_inputs, test_outputs,
-            # #                                           output_dir=self.output_dir,
-            # #                                           title=f'epoch_{epoch}_train',
-            # #                                           residual_func=self.residual_func
-            # #                                           )
-                
+            train_inputs, train_targets = self.preprocess_training_data(x_seq, actions, x_next_seq) # np.ndarray
+            training_results = self.train_gp(input_data=train_inputs, target_data=train_targets)
+            
+            if self.plot_trained_gp:
+                self.plot_gp_TP(train_inputs, train_targets, title=f'epoch_{epoch}_train', output_dir=self.output_dir)
+            
             # Test new policy.
             test_runs[epoch] = {}
             for test_ep in range(self.num_test_episodes_per_epoch):
@@ -286,6 +274,11 @@ class GPMPC_ACADOS_TP(GPMPC):
                 run_results = self.run(env=test_envs[epoch],
                                        terminate_run_on_done=self.terminate_test_on_done)
                 test_runs[epoch].update({test_ep: munch.munchify(run_results)})
+
+            x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(test_runs, epoch - 1, episode_length)
+            train_inputs, train_targets = self.preprocess_training_data(x_seq, actions, x_next_seq) # np.ndarray
+            if self.plot_trained_gp:
+                self.plot_gp_TP(train_inputs, train_targets, title=f'epoch_{epoch}_test', output_dir=self.output_dir)
             # max_steps = test_runs[epoch][0]['obs'].shape[0]
             # x_seq, actions, x_next_seq, x_dot_seq = self.gather_training_samples(test_runs, epoch - 1, max_steps)
             # input_T, input_theta, targets_T, targets_theta = self.preprocess_training_data(x_seq, actions, x_next_seq)
@@ -447,9 +440,9 @@ class GPMPC_ACADOS_TP(GPMPC):
         )
 
         if gp_model:
+            print(colored(f'Loaded pretrained model from {self.gp_model_path}', 'green'))
             GP_T.init_with_hyperparam(train_input_T, train_target_T, gp_model[0])
             GP_P.init_with_hyperparam(train_input_P, train_target_P, gp_model[1])
-            print(colored(f'Loaded pretrained model from {self.gp_model_path}', 'green'))
         else:
             GP_T.train(train_input_T, train_target_T, test_inputs_T, test_targets_T,
                     n_train=self.optimization_iterations[0], learning_rate=self.learning_rate[0], 
@@ -613,15 +606,18 @@ class GPMPC_ACADOS_TP(GPMPC):
         acados_model.t_label = 'time'
 
         self.acados_model = acados_model
-
+        T_cmd = cs.MX.sym('T_cmd')
+        theta_cmd = cs.MX.sym('theta_cmd')
+        theta = cs.MX.sym('theta')
+        theta_dot = cs.MX.sym('theta_dot')
         T_true_func = self.env.T_mapping_func
         T_prior_func = self.prior_ctrl.env.T_mapping_func
-        T_res = T_true_func(z[6]) - T_prior_func(z[6])
-        self.T_res_func = cs.Function('T_res_func', [z], [T_res])
+        T_res = T_true_func(T_cmd) - T_prior_func(T_cmd)
+        self.T_res_func = cs.Function('T_res_func', [T_cmd], [T_res])
         P_true_func = self.env.P_mapping_func
         P_prior_func = self.prior_ctrl.env.P_mapping_func
-        P_res = P_true_func(z[4], z[5], z[7]) - P_prior_func(z[4], z[5], z[7])
-        self.P_res_func = cs.Function('P_res_func', [z], [P_res])
+        P_res = P_true_func(theta, theta_dot, theta_cmd) - P_prior_func(theta, theta_dot, theta_cmd)
+        self.P_res_func = cs.Function('P_res_func', [theta, theta_dot, theta_cmd], [P_res])
 
     def setup_acados_optimizer(self, n_ind_points):
         print('=================Setting up acados optimizer=================')
@@ -1517,3 +1513,60 @@ class GPMPC_ACADOS_TP(GPMPC):
 
         self.x_guess = None
         self.u_guess = None
+
+    def plot_gp_TP(self, train_inputs, train_targets, title=None, output_dir=None):
+        num_data = train_inputs.shape[0]
+        mean_T, _, preds_T = self.gaussian_process[0].predict(train_inputs[:, 0].reshape(-1, 1))
+        mean_P, _, preds_P = self.gaussian_process[1].predict(train_inputs[:, 1:].reshape(-1, 3))
+        t = np.arange(num_data)
+        lower_T, upper_T = preds_T.confidence_region()
+        lower_P, upper_P = preds_P.confidence_region()
+        mean_T = mean_T.numpy()
+        mean_P = mean_P.numpy()
+        lower_T = lower_T.numpy()
+        upper_T = upper_T.numpy()
+        lower_P = lower_P.numpy()
+        upper_P = upper_P.numpy()
+        residual_T = self.T_res_func(train_inputs[:, 0].reshape(-1, 1)).full().flatten()
+        residual_P = self.P_res_func(train_inputs[:, 1].reshape(-1, 1),
+                                        train_inputs[:, 2].reshape(-1, 1),
+                                        train_inputs[:, 3].reshape(-1, 1)).full().flatten()
+        num_within_2std_T = np.sum((train_targets[:, 0] > lower_T) & (train_targets[:, 0] < upper_T))
+        percentage_within_2std_T = num_within_2std_T / num_data * 100
+        num_within_2std_P = np.sum((train_targets[:, 1] > lower_P) & (train_targets[:, 1] < upper_P))
+        percentage_within_2std_P = num_within_2std_P / num_data * 100
+
+        fig, ax = plt.subplots(3, 1, figsize=(10, 10))
+        ax[0].scatter(t, train_targets[:, 0], label='Target', color='gray')
+        ax[0].plot(t, mean_T, label='GP mean', color='blue')
+        ax[0].fill_between(t, lower_T, upper_T, alpha=0.5, color='skyblue', label='2-$\sigma$')
+        ax[0].plot(t, residual_T, label='Residual (analytical)', color='green')
+        ax[0].set_ylabel('T residual [$m/s^2$]')
+        ax[0].set_xlabel('data points')
+        ax[0].set_title(f'T residual, {percentage_within_2std_T:.2f}% within 2-$\sigma$')
+        ax[0].legend()
+
+        ax[1].scatter(train_inputs[:, 0], train_targets[:, 0], label='Target', color='gray')
+        ax[1].plot(train_inputs[:, 0], mean_T, label='GP mean', color='blue')
+        # ax[1].fill_between(train_inputs[:, 0], lower_T, upper_T, alpha=0.5, color='skyblue', label='2-$\sigma$')
+        ax[1].plot(train_inputs[:, 0], residual_T, label='Residual (analytical)', color='green')
+        ax[1].legend()
+        ax[1].set_ylabel('T residual [$m/s^2$]')
+        ax[1].set_xlabel('$T_c$ [$N$]')
+        ax[1].set_title(f'Acc residual vs $T_c$')
+
+        ax[2].scatter(t, train_targets[:, 1], label='Target', color='gray')
+        ax[2].plot(t, mean_P, label='GP mean', color='blue')
+        ax[2].fill_between(t, lower_P, upper_P, alpha=0.5, color='skyblue', label='2-$\sigma$')
+        ax[2].plot(t, residual_P, label='Residual (analytical)', color='green')
+        ax[2].set_title('P')
+        ax[2].legend()
+        ax[2].set_ylabel('P residual [$rad/s^2$]')
+        ax[2].set_xlabel('data points')
+        ax[2].set_title(f'P residual, {percentage_within_2std_P:.2f}% within 2-$\sigma$')
+        plt_title = f'GP_validation_{title}'
+        plt.suptitle(plt_title)
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, f'{plt_title}.png'))
+        print(f'Plot saved at {os.path.join(output_dir, f"{plt_title}.png")}')
+        plt.close()
