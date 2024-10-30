@@ -285,15 +285,15 @@ class BaseAviary(BenchmarkEnv):
                 self._update_and_store_kinematic_information()
             # Step the simulation using the desired physics update.
             for i in range(self.NUM_DRONES):
-                rpm = self._preprocess_control(clipped_action[i, :])
+                executable_action = self._preprocess_control(clipped_action[i, :])
                 if self.PHYSICS == Physics.PYB:
-                    self._physics(rpm, i)
+                    self._physics(executable_action, i)
                 elif self.PHYSICS == Physics.DYN:
                     self._dynamics(clipped_action[i, :], i)
                 elif self.PHYSICS == Physics.DYN_2D:
-                    self._dynamics_2d(rpm, i)
+                    self._dynamics_2d(executable_action, i)
                 elif self.PHYSICS == Physics.DYN_SI:
-                    self._dynamics_si(clipped_action[i, :], i, disturbance_force)
+                    self._dynamics_si(executable_action, i, disturbance_force)
                 elif self.PHYSICS == Physics.RK4:
                     self._dynamics_rk4(clipped_action[i, :], i)
                 elif self.PHYSICS == Physics.DYN_SI_3D:

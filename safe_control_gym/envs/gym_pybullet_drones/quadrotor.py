@@ -719,7 +719,7 @@ class Quadrotor(BaseAviary):
             theta = cs.MX.sym('theta')  # pitch angle [rad]
             X = cs.vertcat(x, x_dot, z, z_dot, theta)
             # Define input collective thrust and theta.
-            T = cs.MX.sym('T_c')  # normlized thrust [N]
+            T = cs.MX.sym('T_c')  # normalized thrust [N]
             P = cs.MX.sym('P_c')  # desired pitch angle [rad]
             U = cs.vertcat(T, P)
             # The thrust in PWM is converted from the normalized thrust.
@@ -940,6 +940,9 @@ class Quadrotor(BaseAviary):
                 self.hover_thrust = self.GRAVITY_ACC * self.MASS
             else:
                 self.hover_thrust = self.GRAVITY_ACC * self.MASS / action_dim
+
+            self.action_scale = (self.physical_action_bounds[1]-self.physical_action_bounds[0])/2
+            self.action_bias = (self.physical_action_bounds[1]+self.physical_action_bounds[0])/2
             self.action_space = spaces.Box(low=-np.ones(action_dim),
                                            high=np.ones(action_dim),
                                            dtype=np.float32)
@@ -1070,10 +1073,11 @@ class Quadrotor(BaseAviary):
         # Identified dynamics model works with collective thrust and pitch directly
         # No need to compute RPMs, (save compute)
         self.current_clipped_action = np.clip(self.current_noisy_physical_action,
-                                              self.physical_action_bounds[0],
-                                              self.physical_action_bounds[1])[0]
+                                              self.action_space.low,
+                                              self.action_space.high)
+
         if self.PHYSICS == Physics.DYN_SI or self.PHYSICS == Physics.DYN_SI_3D:
-            return None
+            return self.current_clipped_action
 
         # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
         if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
@@ -1110,10 +1114,12 @@ class Quadrotor(BaseAviary):
         """
         if self.NORMALIZED_RL_ACTION_SPACE:
             # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
-            if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
-                action = np.array([(action[0] / self.hover_thrust - 1) / self.norm_act_scale, action[1]])
-            else:
-                action = (action / self.hover_thrust - 1) / self.norm_act_scale
+            # if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
+            #     action = np.array([(action[0] / self.hover_thrust - 1) / self.norm_act_scale, action[1]])
+            # else:
+            #     action = (action / self.hover_thrust - 1) / self.norm_act_scale
+
+            action = (action - self.action_bias)/self.action_scale
 
         return action
 
@@ -1126,23 +1132,25 @@ class Quadrotor(BaseAviary):
         Returns:
             physical_action (ndarray): The physical action.
         """
-
         if self.NORMALIZED_RL_ACTION_SPACE:
             # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
-            if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
-                # # divided by 4 as action[0] is a collective thrust
-                # thrust = action[0] / 4
-                # hover_pwm = (self.HOVER_RPM - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE
-                # thrust = np.where(thrust <= 0, self.MIN_PWM + (thrust + 1) * (hover_pwm - self.MIN_PWM),
-                #                    hover_pwm + (self.MAX_PWM - hover_pwm) * thrust)
+            # if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
+            #     # # divided by 4 as action[0] is a collective thrust
+            #     # thrust = action[0] / 4
+            #     # hover_pwm = (self.HOVER_RPM - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE
+            #     # thrust = np.where(thrust <= 0, self.MIN_PWM + (thrust + 1) * (hover_pwm - self.MIN_PWM),
+            #     #                    hover_pwm + (self.MAX_PWM - hover_pwm) * thrust)
+            #
+            #     thrust = (1 + self.norm_act_scale * action[0]) * self.hover_thrust
+            #     # thrust = self.attitude_control.thrust2pwm(thrust)
+            #     # thrust = self.HOVER_RPM * (1+0.05*action[0])
+            #
+            #     action = np.array([thrust, action[1]])
+            # else:
+            #     action = (1 + self.norm_act_scale * action) * self.hover_thrust
 
-                thrust = (1 + self.norm_act_scale * action[0]) * self.hover_thrust
-                # thrust = self.attitude_control.thrust2pwm(thrust)
-                # thrust = self.HOVER_RPM * (1+0.05*action[0])
-
-                action = np.array([thrust, action[1]])
-            else:
-                action = (1 + self.norm_act_scale * action) * self.hover_thrust
+            action = action*self.action_scale + self.action_bias
+            # action = np.clip(action, self.action_space.low, self.action_space.high)
 
         return action
 
