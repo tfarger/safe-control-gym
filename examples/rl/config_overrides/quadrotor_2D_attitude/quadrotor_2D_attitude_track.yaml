@@ -5,6 +5,7 @@ task_config:
   pyb_freq: 60
   physics: dyn_si
   quad_type: 4
+  normalized_rl_action_space: True
 
   init_state:
     init_x: 0
@@ -49,8 +50,6 @@ task_config:
     trajectory_plane: 'xz'
     trajectory_position_offset: [0, 1.]
     trajectory_scale: 1.0
-    ilqr_ref: False
-    ilqr_traj_data: '../lqr/ilqr_ref_traj.npy'
 
   inertial_prop:
     M: 0.033
@@ -63,8 +62,6 @@ task_config:
   # RL Reward
   rew_state_weight: [10., .1, 10., .1, .1, 0.001]
   rew_act_weight: [.1, .1]
-#  rew_state_weight: [ 8.45, .48, 9.18, .81, .49, 0.001]
-#  rew_act_weight: [ .855, 1.194]
   rew_exponential: True
 
   disturbances:
@@ -75,14 +72,14 @@ task_config:
   constraints:
     - constraint_form: default_constraint
       constrained_variable: state
-#      upper_bounds: [2, 1, 2, 1, 0.2, 2.5]
-#      lower_bounds: [-2, -1, 0, -1, -0.2, -2.5]
+      # upper_bounds: [2, 1, 2, 1, 0.2, 2.5]
+      # lower_bounds: [-2, -1, 0, -1, -0.2, -2.5]
     - constraint_form: default_constraint
       constrained_variable: input
-      upper_bounds: [0.58212, 0.7]
-      lower_bounds: [0.09702, -0.7]
-#      upper_bounds: [0.47628, 0.4]
-#      lower_bounds: [0.079, -0.4]
+      # upper_bounds: [0.58212, 0.7]
+      # lower_bounds: [0.09702, -0.7]
+      # upper_bounds: [0.47628, 0.4]
+      # lower_bounds: [0.079, -0.4]
 
   done_on_out_of_bound: True
   done_on_violation: False
