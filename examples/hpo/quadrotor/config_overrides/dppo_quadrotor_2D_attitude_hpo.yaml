@@ -15,15 +15,15 @@ hpo_config:
   # hyperparameters
   hps_config:
     # model args
-    hidden_dim: 128
-    activation: tanh
+    hidden_dim: 64
+    activation: relu
 
     # loss args
     gamma: 0.98
     gae_lambda: 0.92
     clip_param: 0.2
     target_kl: 0.01
-    entropy_coef: 0.01
+    entropy_coef: 0.005
     quantile_count: 256
 
     # optim args

@@ -221,7 +221,7 @@ class QuantileNetwork(MLP):
 
         # self._init(self._quantile_layers, fade=init_fade, gain=init_gain)
 
-        measure_func = risk_measure_neutral if measure is None else self.measures[measure]
+        measure_func = risk_measure_cvar if measure is None else self.measures[measure]
         self._measure_func = measure_func
         self._measure = measure_func(self, **measure_kwargs)
 
