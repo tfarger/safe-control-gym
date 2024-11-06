@@ -235,8 +235,9 @@ stop_index = 901
 x_real_traj = states_all[start_index:stop_index, :]
 u_real_traj = actions_all[start_index:stop_index, :]
 
-plot_x_trajectory(x_real_traj.transpose(), times)
-# plot_u_trajectory(u_real_traj.transpose(), times)
+#plot_x_trajectory(x_real_traj.transpose(), times)
+#plot_u_trajectory(u_real_traj.transpose(), times)
+#print(u_real_traj[0, :])
 
 # approximate u_dot with finite differences
 u_tmp = actions_all[start_index:stop_index+1, :]
@@ -244,14 +245,16 @@ u_dot = np.zeros(np.shape(u_real_traj))
 for i in range(np.shape(u_real_traj)[0]):
     u_dot[i, :] = (u_tmp[i+1, :] - u_tmp[i, :])/traj_sample_time
 
-#plot_u_trajectory(u_dot.transpose(), times)
+# plot_u_trajectory(u_dot.transpose(), times)
+# print(u_dot[0, :])
+# print(u_dot[0, 0]+ u_dot[0, 1])
 
 # build z vector from this
 z_real_traj = np.zeros((8, np.shape(x_real_traj)[0]))
 for i in range(np.shape(x_real_traj)[0]):
     z_real_traj[:, i] = get_z_from_regular_states(x_real_traj[i, :].transpose(), u_real_traj[i, :].transpose(), u_dot[i, 0]+ u_dot[i, 1])
 
-plot_z_trajectory(z_real_traj, times)
+#plot_z_trajectory(z_real_traj, times)
 
 # double check, transform back to x
 
@@ -259,8 +262,19 @@ x_traj_recovered = np.zeros((6,len(times)))
 for index in range(len(times)):
     x_traj_recovered[:, index] = get_x_from_flat_states(z_real_traj[:, index])
 
-plot_x_trajectory(x_traj_recovered, times)
-print(max(x_real_traj.transpose()-x_traj_recovered))
+#plot_x_trajectory(x_traj_recovered, times)
+#rint(x_traj[:, 0])
 
+# compare total thrust dot estimation
+dot_thrust_num = np.zeros([len(u_dot), 1])
+dot_thrust_from_z = np.zeros([len(u_dot), 1])
+for i in range(np.shape(u_dot)[0]):
+    dot_thrust_num[i] = u_dot[i,0]+u_dot[i,1]
+    dot_thrust_from_z[i] = get_total_thrust_dot_from_flat_states(z_real_traj[:, i])
+
+#plot_u_trajectory(np.array([dot_thrust_num, dot_thrust_from_z]), times)
+
+
+plot_z_trajectory(z_traj-z_real_traj, times)
 plt.show()
 
