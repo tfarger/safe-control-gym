@@ -32,12 +32,13 @@ task_config:
       distrib: 'uniform'
       low: -0.1
       high: 0.1
-  randomized_init: True
+  randomized_init: False
   randomized_inertial_prop: False
+  init_state: {'init_x': 0.75, 'init_x_dot': 0, 'init_z': 1, 'init_z_dot': 0.7853981634, 'init_theta': -0.08364404, 'init_theta_dot': -0.00730946}
 
   task: traj_tracking
   task_info:
-    trajectory_type: figure8
+    trajectory_type: circle
     num_cycles: 1
     trajectory_plane: 'xz'
     trajectory_position_offset: [0, 1]
