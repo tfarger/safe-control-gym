@@ -34,7 +34,7 @@ task_config:
       high: 0.1
   randomized_init: False
   randomized_inertial_prop: False
-  init_state: {'init_x': 0.75, 'init_x_dot': 0, 'init_z': 1, 'init_z_dot': 0.7853981634, 'init_theta': -0.08364404, 'init_theta_dot': -0.00730946}
+  init_state: {'init_x': 0.76064872, 'init_x_dot': 0.00134571, 'init_z': 1.00054597, 'init_z_dot': 0.78610752, 'init_theta': -0.08474714, 'init_theta_dot': -0.01689589}
 
   task: traj_tracking
   task_info:

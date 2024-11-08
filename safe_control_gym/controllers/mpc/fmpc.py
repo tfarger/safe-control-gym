@@ -26,6 +26,7 @@ from safe_control_gym.envs.benchmark_env import Task
 
 from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
 
+from plottingUtils import *
 
 class FlatMPC(LinearMPC):
     '''Flatness based MPC.'''
@@ -97,9 +98,9 @@ class FlatMPC(LinearMPC):
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
         self.R = get_cost_weight_matrix([0.1], self.model.nu)
 
-        self.total_thrust_dot = -0.02324102518216492  # set initial value for circle trajectory
-        self.u_prev_tmp = np.array([0.13338195, 0.13342839])
-        self.u_prev_prev_tmp = np.array([0, 0])
+        self.total_thrust_dot = -0.023205976475618867  # set initial value for circle trajectory
+        self.u_prev_tmp = np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
+        self.u_prev_prev_tmp = np.array([0, 0]) #np.array([0.13338195, 0.13342839])
 
         # temporarily use a LQR for testing        
         self.gain = compute_lqr_gain(self.model, self.model.X_EQ, self.model.U_EQ,
@@ -196,6 +197,35 @@ class FlatMPC(LinearMPC):
 
         self.setup_results_dict()
 
+    def setup_results_dict(self):
+        '''Setup the results dictionary to store run information.'''
+        self.results_dict = {'obs': [],
+                             'reward': [],
+                             'done': [],
+                             'info': [],
+                             'action': [],
+                             'horizon_inputs': [],
+                             'horizon_states': [],
+                             'goal_states': [],
+                             'frames': [],
+                             'state_mse': [],
+                             'common_cost': [],
+                             'state': [],
+                             'state_error': [],
+                             't_wall': [],
+                             # addition for flat MPC
+                             'obs_x': [],
+                             'obs_z': [],
+                             'v': [],
+                             'u': [],
+                             'T_dot': [],
+                             'u_ref': [],
+                             'horizon_v': [],
+                             'horizon_z': [],
+                             'horizon_u': [],
+                             }
+
+
     def select_action(self,
                       obs,
                       info=None
@@ -215,12 +245,48 @@ class FlatMPC(LinearMPC):
         m = 0.027
         g=9.81
 
+        # NMPC input reference
+        with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
+            data_dict = pickle.load(file)
+        u_nmpc = data_dict['u_ref'].transpose()
+        v_nmpc = data_dict['v_ref'].transpose()
+        z_nmpc = data_dict['z_ref'].transpose()
+        u_dot_nmpc = data_dict['u_dot_ref'].transpose()
+        
+        start = min(self.traj_step, self.traj.shape[-1])
+        end = min(self.traj_step + self.T , self.traj.shape[-1])
+        remain = max(0, self.T - (end - start))
+        u_nmpc_horizon = np.concatenate([
+            u_nmpc[:, start:end],
+            np.tile(u_nmpc[:, -1:], (1, remain))
+        ], -1)   
+        v_nmpc_horizon = np.concatenate([
+            v_nmpc[:, start:end],
+            np.tile(v_nmpc[:, -1:], (1, remain))
+        ], -1)  
+        z_nmpc_horizon = np.concatenate([
+            z_nmpc[:, start:end],
+            np.tile(z_nmpc[:, -1:], (1, remain))
+        ], -1)  
+        u_dot_nmpc_horizon = np.concatenate([
+            u_dot_nmpc[:, start:end],
+            np.tile(u_dot_nmpc[:, -1:], (1, remain))
+        ], -1) 
+
+
         nz, nv = self.model.nx, self.model.nu 
         # determine flat state from observation      
-        
+        u_ref_nmpc_prev = u_nmpc[:, start-1] # careful, this is wrong at time step 0
         # transform real states to flat states
-        z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, self.total_thrust_dot)
-
+        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, self.total_thrust_dot) # does not work
+        # z_obs = _get_z_from_regular_states(obs, u_nmpc_horizon[:,0], u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0]) # works with drift!
+        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # does not work
+        z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # works with drift, is the actual correct u that needs to be used
+        
+        # debugging vars
+        u_ref_nmpc = u_nmpc_horizon[:, 0]
+        u_prev = self.u_prev_tmp
+        u_difference = u_prev - u_ref_nmpc
 
         # do controller 
         # LQR
@@ -228,19 +294,24 @@ class FlatMPC(LinearMPC):
         # v =  -self.gain @ (z_obs - self.traj.T[step])
 
         # MPC
-        v = super().select_action(z_obs)
+        v = super().select_action(z_obs) # don't comment out, needed for trajectory stepping
         z_horizon = self.x_prev # set in linearMPC #8xN
         v_horizon = self.u_prev #2xN
-        
-        v = v_horizon[:, 1]
 
+        # Feedforward everything from NMPC - overwrite old stuff
+        v = v_nmpc_horizon[:, 0]
+        z_horizon = z_nmpc_horizon
+        v_horizon = v_nmpc_horizon
+        
+        
         # transform z and v to input u
-        action = _get_u_from_flat_states(z_horizon[:,0], v)
+        # flat_action = _get_u_from_flat_states(z_horizon[:,0], v)
+        flat_action = _get_u_from_flat_states(z_obs, v)
 
 
         # keep track of past actions
         self.u_prev_prev_tmp = deepcopy(self.u_prev_tmp)
-        self.u_prev_tmp = deepcopy(action)
+        self.u_prev_tmp = deepcopy(flat_action)
 
        
        # estimate total thrust derivative
@@ -248,42 +319,46 @@ class FlatMPC(LinearMPC):
 
         T_dot_FD = (u_dot[0]+u_dot[1])
         T_dot_fromZ = (_get_total_thrust_dot_from_flat_states(z_horizon[:,1]))
-        thrust = action[0]+action[1]
+        thrust = flat_action[0]+flat_action[1]
         thrust_prev = self.u_prev_prev_tmp[0] + self.u_prev_prev_tmp[1]
         T_dot_FD_thrust = ((thrust-thrust_prev)/self.dt)
 
         u_horizon = np.zeros(np.shape(v_horizon))
         for i in range(self.T):
             u_horizon[:, i] = _get_u_from_flat_states(z_horizon[:,i], v_horizon[:,i])
-        u_dot_central = (u_horizon[:, 0] - 2*u_horizon[:, 1] + u_horizon[:, 2])/self.dt**2
+        u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
         T_dot_FD_central = u_dot_central[0]+ u_dot_central[1]
 
           
-        self.total_thrust_dot = T_dot_FD #fromZ #T_dot_FD_central
+        self.total_thrust_dot = T_dot_FD_central #fromZ #T_dot_FD_central
 
+        # action = u_nmpc_horizon[:, 0]
+        action = flat_action
+
+        # data logging
+        self.results_dict['obs_x'].append(obs)
+        self.results_dict['obs_z'].append(z_obs)
+        self.results_dict['v'].append(v)
+        self.results_dict['u'].append(flat_action)
+        self.results_dict['T_dot'].append(self.total_thrust_dot)
+        self.results_dict['u_ref'].append(u_nmpc_horizon[:, 0])
+        self.results_dict['horizon_v'].append(v_horizon)
+        self.results_dict['horizon_z'].append(z_horizon)
+        self.results_dict['horizon_u'].append(u_horizon)
 
         self.counter -=1
         if False: #self.counter <= 0:
             self.counter = 10
             # Plot states
-            fig, axs = plt.subplots(10)
-            for k in range(8):
-                axs[k].plot(range(self.T+1),z_horizon[k, :].transpose(), color='b', label='MPC_Horizon')
-                axs[k].plot(range(self.T+1), self.get_references().transpose()[:, k], color='r', label='desired')
-                
-            axs[0].set_title('Flat State Trajectories')
-            axs[-1].legend(ncol=3, bbox_transform=fig.transFigure, bbox_to_anchor=(1, 0), loc='lower right')
-            axs[-1].set(xlabel='horizon steps')
 
-            axs[8].set_title('Flat Input Trajectories') 
-            axs[8].plot(range(self.T),v_horizon[0, :].transpose(), color='b', label='MPC_Horizon')
-            #axs[k].plot(range(self.T+1), self.get_references().transpose()[:, k], color='r', label='desired')
-            axs[9].plot(range(self.T),v_horizon[1, :].transpose(), color='b', label='MPC_Horizon')
-            #axs[k].plot(range(self.T+1), self.get_references().transpose()[:, k], color='r', label='desired')           
+            plot_data_comparison(z_horizon.transpose(), self.get_references().transpose(), range(self.T+1), 'Flat states over MPC horizon', 'Horizon time step')  
+
+            plot_data_comparison(u_horizon.transpose(), u_nmpc_horizon.transpose(), range(self.T), 'Inputs U against NMPC reference', 'Horizon time step')  
 
             plt.show()
 
         return action
+    
     
 def _get_u_from_flat_states(z, v):
     Iyy = 1.4e-5
@@ -299,29 +374,7 @@ def _get_u_from_flat_states(z, v):
     t2 = 0.5*(m*np.sqrt(alpha) + theta_ddot*Iyy*np.sqrt(2)/l)
     return np.array([t1, t2])
 
-def _get_z_from_regular_states(x, u, t_tot_dot):
-    Iyy = 1.4e-5
-    l = 0.0397
-    m = 0.027
-    g=9.81
-
-
-    z = np.zeros(8)
-    total_thrust = u[0]+u[1]
-    total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
-    z[0] = x[0] # x
-    z[1] = x[1] # x_dot
-    z[2] = (1/m)*(np.sin(x[4])*total_thrust) # x_ddot
-    z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
-    z[4] = x[2] # z
-    z[5] = x[3] # z_dot
-    z[6] = (1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
-    z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
-    return z
-
 def _get_total_thrust_dot_from_flat_states(z):
-    Iyy = 1.4e-5
-    l = 0.0397
     m = 0.027
     g=9.81
 
@@ -329,9 +382,7 @@ def _get_total_thrust_dot_from_flat_states(z):
     t_dot = m*(z[2]*z[3] + (z[6]+g)*z[7])/np.sqrt(alpha)
     return t_dot
 
-def get_z_from_regular_states(x, u, t_tot_dot):
-    Iyy = 1.4e-5
-    l = 0.0397
+def _get_z_from_regular_states(x, u, t_tot_dot):
     m = 0.027
     g=9.81
 
@@ -395,36 +446,9 @@ def _create_flat_trajectory_circle():
     return z_traj
 
 def _load_flat_trajectory_circle(): # from NMPC
-    traj_sample_time = 0.02
-
-
-
-    with open('./examples/mpc/temp-data/mpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
+    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
         data_dict = pickle.load(file)
-        data_dict = data_dict['trajs_data']
-        #print(data_dict.keys())
+    z_ref = data_dict['z_ref']
 
-    states_all = data_dict['state'][0]
-    actions_all = data_dict['action'][0]
-    #print(np.shape(actions))
-
-    # get the third circle at 50Hz sampling frequency
-    start_index = 600 
-    stop_index = 901
-
-    x_real_traj = states_all[start_index:stop_index, :]
-    u_real_traj = actions_all[start_index:stop_index, :]
-
-    # approximate u_dot with finite differences
-    u_tmp = actions_all[start_index:stop_index+1, :]
-    u_dot = np.zeros(np.shape(u_real_traj))
-    for i in range(np.shape(u_real_traj)[0]):
-        u_dot[i, :] = (u_tmp[i+1, :] - u_tmp[i, :])/traj_sample_time
-
-    # build z vector from this
-    z_real_traj = np.zeros((8, np.shape(x_real_traj)[0]))
-    for i in range(np.shape(x_real_traj)[0]):
-        z_real_traj[:, i] = get_z_from_regular_states(x_real_traj[i, :].transpose(), u_real_traj[i, :].transpose(), u_dot[i, 0]+ u_dot[i, 1])
-
-    return z_real_traj
+    return z_ref.transpose()
 

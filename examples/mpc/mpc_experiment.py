@@ -148,4 +148,4 @@ def wrap2pi_vec(angle_vec):
 
 
 if __name__ == '__main__':
-    run()
+    run(save_data=True)
