@@ -96,17 +96,16 @@ class FlatMPC(LinearMPC):
 
         # overwrite definitions in parent init function to fit flat model
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
-        self.R = get_cost_weight_matrix([0.1], self.model.nu)
+        self.R = get_cost_weight_matrix([0.00001], self.model.nu)
 
-        self.total_thrust_dot = -0.015464565135003827 #-0.023205976475618867  # set initial value for circle trajectory
-        self.u_prev_tmp = np.array([0.13293651, 0.1329665 ]) #np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
-        self.u_prev_prev_tmp = np.array([0, 0]) #np.array([0.13338195, 0.13342839])
-
-        self.x_prev_fmpc = np.array([0.76046276,  0.01807867,  0.98482524,  0.78595726, -0.08439172, -0.01873777])
+        self.u0_dot = -0.03174012 
+        self.u0_prev = 0.33837254
+        
+        # self.x_prev_fmpc = np.array([0.76046276,  0.01807867,  0.98482524,  0.78595726, -0.08439172, -0.01873777])
 
         # temporarily use a LQR for testing        
-        self.gain = compute_lqr_gain(self.model, self.model.X_EQ, self.model.U_EQ,
-                                     self.Q, self.R, True)
+        # self.gain = compute_lqr_gain(self.model, self.model.X_EQ, self.model.U_EQ,
+        #                              self.Q, self.R, True)
         
         self.counter =0
         
@@ -241,12 +240,6 @@ class FlatMPC(LinearMPC):
         Returns:
             action (ndarray): Input/action to the task/env.
         '''
-        # variables, get from env later
-        Iyy = 1.4e-5
-        l = 0.0397
-        m = 0.027
-        g=9.81
-
         # NMPC input reference
         with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
             data_dict = pickle.load(file)
@@ -280,22 +273,19 @@ class FlatMPC(LinearMPC):
         # determine flat state from observation      
         u_ref_nmpc_prev = u_nmpc[:, start-1] # careful, this is wrong at time step 0
         # transform real states to flat states
-        z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, self.total_thrust_dot) # does not work
-        # z_obs = _get_z_from_regular_states(obs, u_nmpc_horizon[:,0], u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0]) # works with drift!
-        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # does not work
-        # z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # works with drift, is the actual correct u that needs to be used
-        # z_obs = _get_z_from_regular_states_FD(obs, self.x_prev_fmpc, self.dt, self.u_prev_tmp, self.total_thrust_dot) # u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0] )
-        self.x_prev_fmpc = obs
+        z_obs = _get_z_from_regular_states(obs, self.u0_prev, self.u0_dot) # does not work
+        # z_obs = _get_z_from_regular_states(obs, u_nmpc_horizon[:,0], u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0]) 
+        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  
+        # z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  
+        # z_obs = _get_z_from_regular_states_FD(obs, self.x_prev_fmpc, self.dt, self.u_prev_tmp, self.total_thrust_dot) 
+        # self.x_prev_fmpc = obs
 
         # debugging vars
-        u_ref_nmpc = u_nmpc_horizon[:, 0]
-        u_prev = self.u_prev_tmp
-        u_difference = u_prev - u_ref_nmpc
+        # u_ref_nmpc = u_nmpc_horizon[:, 0]
+        # u_prev = self.u0_prev
+        # u_difference = u_prev - u_ref_nmpc
 
         # do controller 
-        # LQR
-        # step = self.extract_step(info)
-        # v =  -self.gain @ (z_obs - self.traj.T[step])
 
         # MPC
         v = super().select_action(z_obs) # don't comment out, needed for trajectory stepping
@@ -311,32 +301,26 @@ class FlatMPC(LinearMPC):
         
         
         # transform z and v to input u
-        # flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
-        flat_action = _get_u_from_flat_states(z_obs, v)
+        flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1]) # works
+        # flat_action = _get_u_from_flat_states(z_horizon[:, 1], v) # also works but why???
+        # flat_action = _get_u_from_flat_states(z_obs, v) # does not work
 
 
         # keep track of past actions
-        self.u_prev_prev_tmp = deepcopy(self.u_prev_tmp)
-        self.u_prev_tmp = deepcopy(flat_action)
+        self.u0_prev_prev = deepcopy(self.u0_prev)
+        self.u0_prev = deepcopy(flat_action[0])
 
        
        # estimate total thrust derivative
-        u_dot = (self.u_prev_tmp - self.u_prev_prev_tmp)/self.dt
-
-        T_dot_FD = (u_dot[0]+u_dot[1])
-        T_dot_fromZ = (_get_total_thrust_dot_from_flat_states(z_horizon[:,1]))
-        thrust = flat_action[0]+flat_action[1]
-        thrust_prev = self.u_prev_prev_tmp[0] + self.u_prev_prev_tmp[1]
-        T_dot_FD_thrust = ((thrust-thrust_prev)/self.dt)
+        u0_dot = (self.u0_prev - self.u0_prev_prev)/self.dt
 
         u_horizon = np.zeros(np.shape(v_horizon))
         for i in range(self.T):
             u_horizon[:, i] = _get_u_from_flat_states(z_horizon[:,i], v_horizon[:,i])
         u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
-        T_dot_FD_central = u_dot_central[0]+ u_dot_central[1]
-
+       
           
-        self.total_thrust_dot = T_dot_FD_central #fromZ #T_dot_FD_central
+        self.u0_dot = u_dot_central[0] 
 
         # action = u_nmpc_horizon[:, 0]
         action = flat_action
@@ -346,7 +330,7 @@ class FlatMPC(LinearMPC):
         self.results_dict['obs_z'].append(z_obs)
         self.results_dict['v'].append(v)
         self.results_dict['u'].append(flat_action)
-        self.results_dict['T_dot'].append(self.total_thrust_dot)
+        self.results_dict['T_dot'].append(self.u0_dot)
         self.results_dict['u_ref'].append(u_nmpc_horizon[:, 0])
         self.results_dict['horizon_v'].append(v_horizon)
         self.results_dict['horizon_z'].append(z_horizon)
@@ -367,47 +351,68 @@ class FlatMPC(LinearMPC):
     
     
 def _get_u_from_flat_states(z, v):
-    Iyy = 1.4e-5
-    l = 0.0397
-    m = 0.027
+    beta_1 = 18.112984649321753
+    beta_2 = 3.6800
+    alpha_1 =  -140.8
+    alpha_2 =  -13.4
+    alpha_3 =  124.8
     g=9.81
+
 
 
     alpha = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
+    theta = np.arctan2(z[2], (z[6]+g))
+    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/alpha
     theta_ddot = 1/alpha * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/np.square(alpha)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
 
-    t1 = 0.5*(m*np.sqrt(alpha) - theta_ddot*Iyy*np.sqrt(2)/l)
-    t2 = 0.5*(m*np.sqrt(alpha) + theta_ddot*Iyy*np.sqrt(2)/l)
-    return np.array([t1, t2])
+    t = -(beta_2/beta_1) + np.sqrt(alpha)/beta_1
+    p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
+    return np.array([t, p])
 
 def _get_total_thrust_dot_from_flat_states(z):
-    m = 0.027
-    g=9.81
+    # currently not needed
+    raise NotImplementedError
 
     alpha = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
     t_dot = m*(z[2]*z[3] + (z[6]+g)*z[7])/np.sqrt(alpha)
     return t_dot
 
-def _get_z_from_regular_states(x, u, t_tot_dot):
-    m = 0.027
+def _get_z_from_regular_states(x, u0, u0_dot):
+    beta_1 = 18.112984649321753
+    beta_2 = 3.6800
     g=9.81
 
     z = np.zeros(8)
-    total_thrust = u[0]+u[1]
-    total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
     z[0] = x[0] # x
     z[1] = x[1] # x_dot
-    z[2] = (1/m)*(np.sin(x[4])*total_thrust) # x_ddot
-    z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
+    z[2] = np.sin(x[4])*(beta_2 + beta_1*u0) # x_ddot
+    z[3] = np.cos(x[4])*(beta_2 + beta_1*u0)*x[5] + np.sin(x[4])*beta_1*u0_dot # x_dddot
     z[4] = x[2] # z
     z[5] = x[3] # z_dot
-    z[6] = (1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
-    z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
+    z[6] = np.cos(x[4])*(beta_2 + beta_1*u0)- g # z_ddot
+    z[7] = -np.sin(x[4])*(beta_2 + beta_1*u0)*x[5] + np.cos(x[4])*beta_1*u0_dot# z_dddot
     return z
+
+# not needed in FMPC, just to double check transformations
+def _get_x_from_flat_states(z):
+    g = 9.81
+
+
+    x = np.zeros(6)
+    x[0] = z[0]
+    x[1] = z[1]
+    x[2] = z[4]
+    x[3] = z[5]
+    x[4] = np.arctan2(z[2], (z[6]+g))
+    x[5] = (z[3]*(z[6]+g)- z[2]*z[7])/((z[6]+g)**2 + z[2]**2)
+    return x
+
 
 def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
     m = 0.027
     g=9.81
+
+    raise NotImplementedError # currently not needed
 
     # compute states_dot with finite differences to get x_ddot and z_ddot
     states_dot = (x-x_prev)/dt
