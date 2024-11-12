@@ -96,7 +96,7 @@ class FlatMPC(LinearMPC):
 
         # overwrite definitions in parent init function to fit flat model
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
-        self.R = get_cost_weight_matrix([0.1], self.model.nu)
+        self.R = get_cost_weight_matrix([0.001], self.model.nu)
 
         self.total_thrust_dot = -0.015464565135003827 #-0.023205976475618867  # set initial value for circle trajectory
         self.u_prev_tmp = np.array([0.13293651, 0.1329665 ]) #np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
@@ -311,8 +311,8 @@ class FlatMPC(LinearMPC):
         
         
         # transform z and v to input u
-        # flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
-        flat_action = _get_u_from_flat_states(z_obs, v)
+        flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
+        # flat_action = _get_u_from_flat_states(z_obs, v)
 
 
         # keep track of past actions
