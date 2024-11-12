@@ -7,12 +7,12 @@ task_config:
   quad_type: 4
 
   init_state:
-    init_x: 0.5
-    init_x_dot: 0
-    init_z: 1.0
-    init_z_dot: 0
-    init_theta: 0
-    init_theta_dot: 0
+    init_x: 5.04694375e-01
+    init_x_dot: 1.28406284e-03
+    init_z: 2.00033515e+00
+    init_z_dot: 5.23847757e-01
+    init_theta: -5.56755544e-02
+    init_theta_dot: -3.76802416e-03
   randomized_init: False
   randomized_inertial_prop: False
 
@@ -45,16 +45,16 @@ task_config:
   task: traj_tracking
   task_info:
     trajectory_type: circle
-    num_cycles: 2
+    num_cycles: 1
     trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 1.]
+    trajectory_position_offset: [0, 2.]
     trajectory_scale: 0.5
 
   inertial_prop:
     M: 0.027
     Iyy: 1.4e-05
 
-  episode_len_sec: 9
+  episode_len_sec: 6
   cost: quadratic
   obs_goal_horizon: 0
 
