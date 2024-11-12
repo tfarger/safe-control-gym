@@ -98,9 +98,11 @@ class FlatMPC(LinearMPC):
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
         self.R = get_cost_weight_matrix([0.1], self.model.nu)
 
-        self.total_thrust_dot = -0.023205976475618867  # set initial value for circle trajectory
-        self.u_prev_tmp = np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
+        self.total_thrust_dot = -0.015474584531283142 #-0.023205976475618867  # set initial value for circle trajectory
+        self.u_prev_tmp = np.array([0.13284247, 0.13287274]) #np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
         self.u_prev_prev_tmp = np.array([0, 0]) #np.array([0.13338195, 0.13342839])
+
+        self.x_prev_fmpc = np.array([0.76046276,  0.01807867,  0.98482524,  0.78595726, -0.08439172, -0.01873777])
 
         # temporarily use a LQR for testing        
         self.gain = compute_lqr_gain(self.model, self.model.X_EQ, self.model.U_EQ,
@@ -278,11 +280,13 @@ class FlatMPC(LinearMPC):
         # determine flat state from observation      
         u_ref_nmpc_prev = u_nmpc[:, start-1] # careful, this is wrong at time step 0
         # transform real states to flat states
-        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, self.total_thrust_dot) # does not work
+        z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, self.total_thrust_dot) # does not work
         # z_obs = _get_z_from_regular_states(obs, u_nmpc_horizon[:,0], u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0]) # works with drift!
         # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # does not work
-        z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # works with drift, is the actual correct u that needs to be used
-        
+        # z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  # works with drift, is the actual correct u that needs to be used
+        # z_obs = _get_z_from_regular_states_FD(obs, self.x_prev_fmpc, self.dt, self.u_prev_tmp, self.total_thrust_dot) # u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0] )
+        self.x_prev_fmpc = obs
+
         # debugging vars
         u_ref_nmpc = u_nmpc_horizon[:, 0]
         u_prev = self.u_prev_tmp
@@ -299,14 +303,16 @@ class FlatMPC(LinearMPC):
         v_horizon = self.u_prev #2xN
 
         # Feedforward everything from NMPC - overwrite old stuff
-        v = v_nmpc_horizon[:, 0]
-        z_horizon = z_nmpc_horizon
-        v_horizon = v_nmpc_horizon
+        # v = v_nmpc_horizon[:, 0]
+        # z_horizon = z_nmpc_horizon
+        # v_horizon = v_nmpc_horizon
+
+        v = v_horizon[:, 1] # for logging
         
         
         # transform z and v to input u
-        # flat_action = _get_u_from_flat_states(z_horizon[:,0], v)
-        flat_action = _get_u_from_flat_states(z_obs, v)
+        flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
+        # flat_action = _get_u_from_flat_states(z_obs, v)
 
 
         # keep track of past actions
@@ -396,6 +402,26 @@ def _get_z_from_regular_states(x, u, t_tot_dot):
     z[4] = x[2] # z
     z[5] = x[3] # z_dot
     z[6] = (1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
+    z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
+    return z
+
+def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
+    m = 0.027
+    g=9.81
+
+    # compute states_dot with finite differences to get x_ddot and z_ddot
+    states_dot = (x-x_prev)/dt
+
+    z = np.zeros(8)
+    total_thrust = u[0]+u[1]
+    total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
+    z[0] = x[0] # x
+    z[1] = x[1] # x_dot
+    z[2] = states_dot[1] #(1/m)*(np.sin(x[4])*total_thrust) # x_ddot
+    z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
+    z[4] = x[2] # z
+    z[5] = x[3] # z_dot
+    z[6] = states_dot[3] #(1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
     z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
     return z
 

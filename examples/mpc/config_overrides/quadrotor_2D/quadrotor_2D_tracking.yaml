@@ -34,15 +34,15 @@ task_config:
       high: 0.1
   randomized_init: False
   randomized_inertial_prop: False
-  init_state: {'init_x': 0.76064872, 'init_x_dot': 0.00134571, 'init_z': 1.00054597, 'init_z_dot': 0.78610752, 'init_theta': -0.08474714, 'init_theta_dot': -0.01689589}
+  init_state: {'init_x': 5.07356178e-01, 'init_x_dot': -1.61760869e-03, 'init_z': 2.00028305e+00, 'init_z_dot': 5.23743135e-01, 'init_theta': -5.66227370e-02, 'init_theta_dot': -7.20782880e-03}
 
   task: traj_tracking
   task_info:
     trajectory_type: circle
     num_cycles: 1
     trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 1]
-    trajectory_scale: 0.75
+    trajectory_position_offset: [0, 2]
+    trajectory_scale: 0.5
 
   episode_len_sec: 6
   cost: quadratic

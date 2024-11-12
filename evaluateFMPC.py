@@ -3,6 +3,8 @@ import pickle
 
 from plottingUtils import *
 
+horizon = 40 # Horizon in NMPC, reference is longer than measurement by this amount
+
 with open('./examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
     data_dict_fmpc = pickle.load(file)
     data_dict_fmpc = data_dict_fmpc['trajs_data']
@@ -29,13 +31,13 @@ u_ref = data_dict['u_ref']
 u_dot_ref = data_dict['u_dot_ref']
 v_ref = data_dict['v_ref']
 
-plot_data_comparison(u, u_ref, range(np.shape(u)[0]), 'FMPC vs NMPC reference inputs', 'datapoint number')
+plot_data_comparison(u, u_ref[0:-horizon], range(np.shape(u)[0]), 'FMPC vs NMPC reference inputs', 'datapoint number')
 # plot_data(u, range(np.shape(u)[0]), 'FMPC inputs', 'datapoint number')
 
-plot_data_comparison(obs_x, x_ref, range(np.shape(u)[0]), 'FMPC vs NMPC reference states X', 'datapoint number')
-plot_data_comparison(obs_z, z_ref, range(np.shape(u)[0]), 'FMPC vs NMPC reference flat states Z', 'datapoint number')
+plot_data_comparison(obs_x, x_ref[0:-horizon], range(np.shape(u)[0]), 'FMPC vs NMPC reference states X', 'datapoint number')
+plot_data_comparison(obs_z, z_ref[0:-horizon], range(np.shape(u)[0]), 'FMPC vs NMPC reference flat states Z', 'datapoint number')
 
-plot_data_comparison(v, v_ref, range(np.shape(u)[0]), 'FMPC flat inputs V', 'datapoint number')
+plot_data_comparison(v, v_ref[0:-horizon], range(np.shape(u)[0]), 'FMPC flat inputs V', 'datapoint number')
 
 plt.show()
 
