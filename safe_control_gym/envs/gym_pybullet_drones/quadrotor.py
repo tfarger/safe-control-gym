@@ -677,7 +677,7 @@ class Quadrotor(BaseAviary):
             T_mapping = beta_1 * T + beta_2
             P_mapping = alpha_1 * (theta + pitch_bias) + alpha_2 * theta_dot + alpha_3 * P
             self.T_mapping_func = cs.Function('T_mapping', [T], [T_mapping])
-            self.P_mapping_func = cs.Function('P_mapping', [P, theta, theta_dot], [P_mapping])
+            self.P_mapping_func = cs.Function('P_mapping', [theta, theta_dot, P], [P_mapping])
         
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_BODY:
             nx, nu = 6, 2

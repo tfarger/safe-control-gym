@@ -159,13 +159,19 @@ class GPMPC_ACADOS_TP(GPMPC):
             self.prior_dynamics_func = self.prior_ctrl.linear_dynamics_func
         else:
             self.prior_dynamics_func = self.prior_ctrl.dynamics_func
-            self.prior_dynamcis_func_c = self.prior_ctrl.model.fc_func
+            self.prior_dynamics_func_c = self.prior_ctrl.model.fc_func
 
         self.x_guess = None
         self.u_guess = None
         self.x_prev = None
         self.u_prev = None
         print('prior_info[prior_prop]', prior_info['prior_prop'])
+        
+        # counter = 0
+        # while True:
+        #     self.reset()
+        #     counter += 1
+        #     print('counter:', counter)
 
 
     def preprocess_training_data(self,
@@ -191,19 +197,19 @@ class GPMPC_ACADOS_TP(GPMPC):
         # x_pred_seq = self.prior_dynamics_func(x0=x_seq.T, p=u_seq.T)['xf'].toarray()
         T_cmd = u_seq[:, 0]
         T_prior_data = self.prior_ctrl.env.T_mapping_func(T_cmd).full().flatten()
-
+        # numerical differentiation
         x_dot_seq = [(x_next_seq[i, :] - x_seq[i, :])/dt for i in range(x_seq.shape[0])]
         x_dot_seq = np.array(x_dot_seq)
+
         T_true_data = np.sqrt((x_dot_seq[:, 3] +  g) ** 2 + (x_dot_seq[:, 1] ** 2))
-        
         targets_T = (T_true_data - T_prior_data).reshape(-1, 1)
         input_T = u_seq[:, 0].reshape(-1, 1)
 
         theta_true = x_dot_seq[:, 5]
-        theta_prior = self.prior_dynamics_func(x0=x_seq.T, p=u_seq.T)['xf'].toarray()[5]
+        theta_prior = self.prior_dynamics_func_c(x=x_seq.T, u=u_seq.T)['f'].toarray()[5, :]
         targets_theta = (theta_true - theta_prior).reshape(-1, 1)
         input_theta = np.concatenate([x_seq[:, 4].reshape(-1, 1), 
-                                      x_seq[:, 5].reshape(-1, 1),
+                                      x_seq[:, 5].reshape(-1, 1), 
                                       u_seq[:, 1].reshape(-1, 1)], axis=1) 
         
         train_input = np.concatenate([input_T, input_theta], axis=1)
@@ -534,7 +540,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             P_pred_point = z[[4, 5, 7]]
             T_pred = cs.sum2(self.K_z_zind_func_T(z1=T_pred_point, z2=z_ind)['K'] * mean_post_factor[0, :])
             P_pred = cs.sum2(self.K_z_zind_func_P(z1=P_pred_point, z2=z_ind)['K'] * mean_post_factor[1, :])
-            f_cont = self.prior_dynamcis_func_c(x=acados_model.x, u=acados_model.u)['f']\
+            f_cont = self.prior_dynamics_func_c(x=acados_model.x, u=acados_model.u)['f']\
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*T_pred,
                                  0, cs.cos(acados_model.x[4])*T_pred,
                                  0, P_pred)
@@ -566,7 +572,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             T_pred = cs.sum2(self.K_z_zind_func_T(z1=T_pred_point, z2=z_ind)['K'] * mean_post_factor[0, :])
             P_pred = cs.sum2(self.K_z_zind_func_P(z1=P_pred_point, z2=z_ind)['K'] * mean_post_factor[1, :])
 
-            f_cont = self.prior_dynamcis_func_c(x=acados_model.x, u=acados_model.u)['f']\
+            f_cont = self.prior_dynamics_func_c(x=acados_model.x, u=acados_model.u)['f']\
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*T_pred,
                                  0, cs.cos(acados_model.x[4])*T_pred,
                                  0, P_pred)
@@ -923,9 +929,9 @@ class GPMPC_ACADOS_TP(GPMPC):
         goal_states = self.get_references()
         if self.mode == 'tracking':
             self.traj_step += 1
+        y_ref = np.concatenate((goal_states[:, :-1], np.repeat(self.U_EQ.reshape(-1, 1), self.T, axis=1)), axis=0)
         for idx in range(self.T):
-            y_ref = np.concatenate((goal_states[:, idx], np.zeros((nu,))))
-            self.acados_ocp_solver.set(idx, 'yref', y_ref)
+            self.acados_ocp_solver.set(idx, 'yref', y_ref[:, idx])
         y_ref_e = goal_states[:, -1]
         self.acados_ocp_solver.set(self.T, 'yref', y_ref_e)
 
@@ -1529,8 +1535,8 @@ class GPMPC_ACADOS_TP(GPMPC):
         upper_P = upper_P.numpy()
         residual_T = self.T_res_func(train_inputs[:, 0].reshape(-1, 1)).full().flatten()
         residual_P = self.P_res_func(train_inputs[:, 1].reshape(-1, 1),
-                                        train_inputs[:, 2].reshape(-1, 1),
-                                        train_inputs[:, 3].reshape(-1, 1)).full().flatten()
+                                     train_inputs[:, 2].reshape(-1, 1),
+                                     train_inputs[:, 3].reshape(-1, 1)).full().flatten()
         num_within_2std_T = np.sum((train_targets[:, 0] > lower_T) & (train_targets[:, 0] < upper_T))
         percentage_within_2std_T = num_within_2std_T / num_data * 100
         num_within_2std_P = np.sum((train_targets[:, 1] > lower_P) & (train_targets[:, 1] < upper_P))
@@ -1569,4 +1575,5 @@ class GPMPC_ACADOS_TP(GPMPC):
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, f'{plt_title}.png'))
         print(f'Plot saved at {os.path.join(output_dir, f"{plt_title}.png")}')
+        # plt.show()
         plt.close()

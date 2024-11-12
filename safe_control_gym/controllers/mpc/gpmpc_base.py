@@ -208,11 +208,11 @@ class GPMPC(MPC, ABC):
         x = cs.MX.sym('x', self.model.nx)
         u = cs.MX.sym('u', self.model.nu)
         z = cs.vertcat(x, u)
-        self.fd_func = self.env_func(gui=False).symbolic.fd_func
+        self.fd_func = self.model.fd_func
         residual = self.fd_func(x0=x, p=u)['xf'] \
                         - self.prior_dynamics_func(x0=x, p=u)['xf']
         self.residual_func = cs.Function('residual_func', [z], [residual])
-        self.fc_func = self.env_func(gui=False).symbolic.fc_func # argument x, u
+        self.fc_func = self.model.fc_func # argument x, u
         # self.residual_func_c = self.fc_func(x=x, u=u)['f'] \
         #                         - self.prior_dynamcis_func_c(x=x, u=u)['f']
 

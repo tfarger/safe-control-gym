@@ -339,7 +339,8 @@ class MPC_ACADOS(MPC):
         if self.mode == 'tracking':
             self.traj_step += 1
 
-        y_ref = np.concatenate((goal_states[:, :-1], np.zeros((nu, self.T))))
+        # y_ref = np.concatenate((goal_states[:, :-1], np.zeros((nu, self.T))))
+        y_ref = np.concatenate((goal_states[:, :-1], np.repeat(self.U_EQ.reshape(-1, 1), self.T, axis=1)), axis=0)
         for idx in range(self.T):
             self.acados_ocp_solver.set(idx, 'yref', y_ref[:, idx])
         y_ref_e = goal_states[:, -1]

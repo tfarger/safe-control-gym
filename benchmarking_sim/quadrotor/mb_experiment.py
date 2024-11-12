@@ -36,32 +36,36 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     else:
         # ALGO = 'ilqr'
         # ALGO = 'gp_mpc'
-        ALGO = 'gpmpc_acados'
+        # ALGO = 'gpmpc_acados'
+        # ALGO = 'gpmpc_acados_TP'
         # ALGO = 'mpc'
-        # ALGO = 'mpc_acados'
+        ALGO = 'mpc_acados'
         # ALGO = 'linear_mpc'
         # ALGO = 'lqr'
         # ALGO = 'lqr_c'
         # ALGO = 'pid'
     SYS = 'quadrotor_2D_attitude'
     TASK = 'tracking'
+    # TASK = 'stab'
     # PRIOR = '200'
     # PRIOR = '150'
+    ADDITIONAL = ''
+    # ADDITIONAL='_snap'
     PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
 
     # check if the config file exists
-    assert os.path.exists(f'./config_overrides/{SYS}_{TASK}.yaml'), f'./config_overrides/{SYS}_{TASK}.yaml does not exist'
+    assert os.path.exists(f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml'), f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml does not exist'
     assert os.path.exists(f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml'), f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml does not exist'
     if SAFETY_FILTER is None:
         sys.argv[1:] = ['--algo', ALGO,
                         '--task', agent,
                         '--overrides',
-                            f'./config_overrides/{SYS}_{TASK}.yaml',
+                            f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
                             f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
-                        '--seed', '9',
+                        '--seed', '1',
                         '--use_gpu', 'True',
                         '--output_dir', f'./{ALGO}/results',
                             ]
@@ -73,7 +77,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
                         '--task', agent,
                         '--safety_filter', SAFETY_FILTER,
                         '--overrides',
-                            f'./config_overrides/{SYS}_{TASK}.yaml',
+                            f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
                             f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
                             f'./config_overrides/{SAFETY_FILTER}_{SYS}_{TASK}_{PRIOR}.yaml',
                         '--kv_overrides', f'sf_config.cost_function={MPSC_COST}',
@@ -86,7 +90,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     fac.add_argument('--n_episodes', type=int, default=1, help='number of episodes to run.')
     # merge config and create output directory
     config = fac.merge()
-    if ALGO in ['gpmpc_acados', 'gp_mpc']:
+    if ALGO in ['gpmpc_acados', 'gp_mpc' , 'gpmpc_acados_TP']:
         num_data_max = config.algo_config.num_epochs * config.algo_config.num_samples
         config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max))
     print('output_dir',  config.algo_config.output_dir)
@@ -134,7 +138,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
 
         # Create experiment, train, and run evaluation
         if SAFETY_FILTER is None:  
-            if ALGO in ['gpmpc_acados', 'gp_mpc'] :
+            if ALGO in ['gpmpc_acados', 'gp_mpc' , 'gpmpc_acados_TP']:
                 experiment = BaseExperiment(env=static_env, ctrl=ctrl, train_env=static_train_env)
                 if config.algo_config.num_epochs == 1:
                     print('Evaluating prior controller')
@@ -162,7 +166,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
 
         # plotting training and evaluation results
         # training
-        if ALGO in ['gpmpc_acados', 'gp_mpc'] and \
+        if ALGO in ['gpmpc_acados', 'gp_mpc' , 'gpmpc_acados_TP'] and \
            config.algo_config.gp_model_path is None and \
            config.algo_config.num_epochs > 1:
                 if isinstance(static_env, Quadrotor):
@@ -170,7 +174,11 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
                                     train_runs=train_runs, 
                                     trajectory=ctrl.traj.T,
                                     dir=ctrl.output_dir)
-        plot_quad_eval(trajs_data['obs'][0], trajs_data['action'][0], ctrl.env, config.output_dir)
+        plot_quad_eval(trajs_data['obs'][0], 
+                       trajs_data['action'][0], 
+                    #    trajs_data['current_clipped_action'][0],
+                       ctrl.env, 
+                       config.output_dir)
 
 
         # Close environments
@@ -199,6 +207,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
 
 
+# def plot_quad_eval(state_stack, input_stack, clipped_action_stack, env, save_path=None):
 def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     '''Plots the input and states to determine iLQR's success.
 
@@ -238,6 +247,7 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
         axs = [axs]
     for k in range(model.nu):
         axs[k].plot(times, np.array(input_stack).transpose()[k, 0:plot_length])
+        # axs[k].plot(times, np.array(clipped_action_stack).transpose()[k, 0:plot_length], color='r')
         axs[k].set(ylabel=f'input {k}')
         axs[k].set(ylabel=env.ACTION_LABELS[k] + f'\n[{env.ACTION_UNITS[k]}]')
         axs[k].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
