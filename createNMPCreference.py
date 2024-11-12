@@ -7,16 +7,16 @@ from safe_control_gym.controllers.mpc.fmpc import _get_total_thrust_dot_from_fla
 from plottingUtils import *
 
 # parameters of NMPC run
-episode_len_sec = 24 # runtime in seconds
-num_cycles = 4  # number of circles
+episode_len_sec = 18 # runtime in seconds
+num_cycles = 3  # number of circles
 
-ctrl_freq = 50 # of controller
-horizon = 40 # MPC Horizon to exted reference trajectory
+ctrl_freq = 200 # of controller
+horizon = 80 # MPC Horizon to exted reference trajectory
 
 # write to file for loading in SCG
 SAVE_DATA = True
 PLOT_DATA = True
-use_cycle_num = 4
+use_cycle_num = 2
 #############################################
 traj_sample_time = 1/ctrl_freq
 
@@ -84,7 +84,7 @@ if PLOT_DATA:
     plot_data(u_traj, times, 'Input Trajectory U', 'time')
     plot_data(u_dot_traj, times, 'Input Derivative U_dot', 'time')
     plot_data_comparison(u_dot_traj, u_dot_backwards[start_index:stop_index, :], times, 'Input Derivative: central vs backwards FD', 'time')
-    plot_data_comparison(v_traj, v_traj2, times, ' Flat Input Trajectory V: dynamics vs FD computation', 'time')
+    plot_data_comparison(v_traj, v_traj2, times, ' Flat Input Trajectory V: from z vs from x computation', 'time')
 
     # plot_data_comparison(z_traj, z_alt_traj, times, 'Flat States Z - two ways of computing x/z_ddot', 'time')
     plt.show()

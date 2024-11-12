@@ -3,7 +3,7 @@ import pickle
 
 from plottingUtils import *
 
-horizon = 40 # Horizon in NMPC, reference is longer than measurement by this amount
+horizon = 80 # Horizon in NMPC, reference is longer than measurement by this amount
 
 with open('./examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
     data_dict_fmpc = pickle.load(file)

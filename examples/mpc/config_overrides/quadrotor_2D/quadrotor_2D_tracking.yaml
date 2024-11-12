@@ -1,8 +1,8 @@
 task_config:
   seed: 1337
   info_in_reset: True
-  ctrl_freq: 50
-  pyb_freq: 1000
+  ctrl_freq: 200
+  pyb_freq: 4000
   gui: False
   physics: pyb
   quad_type: 2
@@ -34,7 +34,7 @@ task_config:
       high: 0.1
   randomized_init: False
   randomized_inertial_prop: False
-  init_state: {'init_x': 5.07356178e-01, 'init_x_dot': -1.61760869e-03, 'init_z': 2.00028305e+00, 'init_z_dot': 5.23743135e-01, 'init_theta': -5.66227370e-02, 'init_theta_dot': -7.20782880e-03}
+  init_state: {'init_x': 5.06968013e-01, 'init_x_dot': -1.36767247e-03, 'init_z': 2.00030038e+00, 'init_z_dot': 5.23781226e-01, 'init_theta': -5.65503540e-02, 'init_theta_dot': -7.22967275e-03}
 
   task: traj_tracking
   task_info:

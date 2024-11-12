@@ -11,7 +11,7 @@ TASK='tracking'
 
 ALGO='fmpc'
 #ALGO='linear_mpc'
-#ALGO='mpc'
+# ALGO='mpc'
 
 if [ "$SYS" == 'cartpole' ]; then
     SYS_NAME=$SYS

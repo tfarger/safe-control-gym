@@ -98,8 +98,8 @@ class FlatMPC(LinearMPC):
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
         self.R = get_cost_weight_matrix([0.1], self.model.nu)
 
-        self.total_thrust_dot = -0.015474584531283142 #-0.023205976475618867  # set initial value for circle trajectory
-        self.u_prev_tmp = np.array([0.13284247, 0.13287274]) #np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
+        self.total_thrust_dot = -0.015464565135003827 #-0.023205976475618867  # set initial value for circle trajectory
+        self.u_prev_tmp = np.array([0.13293651, 0.1329665 ]) #np.array([0.13361404, 0.13365972]) # np.array([0.13338195, 0.13342839])
         self.u_prev_prev_tmp = np.array([0, 0]) #np.array([0.13338195, 0.13342839])
 
         self.x_prev_fmpc = np.array([0.76046276,  0.01807867,  0.98482524,  0.78595726, -0.08439172, -0.01873777])
@@ -307,12 +307,12 @@ class FlatMPC(LinearMPC):
         # z_horizon = z_nmpc_horizon
         # v_horizon = v_nmpc_horizon
 
-        v = v_horizon[:, 1] # for logging
+        # v = v_horizon[:, 1] # for logging
         
         
         # transform z and v to input u
-        flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
-        # flat_action = _get_u_from_flat_states(z_obs, v)
+        # flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1])
+        flat_action = _get_u_from_flat_states(z_obs, v)
 
 
         # keep track of past actions
