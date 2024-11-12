@@ -1,6 +1,6 @@
 algo: mpc
 algo_config:
-  horizon: 20
+  horizon: 80
   r_mpc:
     - 0.1
     - 0.1

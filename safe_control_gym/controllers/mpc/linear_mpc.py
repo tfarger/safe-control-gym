@@ -164,32 +164,32 @@ class LinearMPC(MPC):
             next_state = self.linear_dynamics_func(x0=x_var[:, i], p=u_var[:, i])['xf']
             opti.subject_to(x_var[:, i + 1] == next_state)
 
-            # State and input constraints
-            soft_con_coeff = 10
-            for sc_i, state_constraint in enumerate(self.state_constraints_sym):
-                if self.soft_constraints:
-                    opti.subject_to(state_constraint(x_var[:, i] + self.X_EQ.T) <= state_slack[sc_i])
-                    cost += soft_con_coeff * state_slack[sc_i]**2
-                    opti.subject_to(state_slack[sc_i] >= 0)
-                else:
-                    opti.subject_to(state_constraint(x_var[:, i] + self.X_EQ.T) <= -self.constraint_tol)
+        #     # State and input constraints
+        #     soft_con_coeff = 10
+        #     for sc_i, state_constraint in enumerate(self.state_constraints_sym):
+        #         if self.soft_constraints:
+        #             opti.subject_to(state_constraint(x_var[:, i] + self.X_EQ.T) <= state_slack[sc_i])
+        #             cost += soft_con_coeff * state_slack[sc_i]**2
+        #             opti.subject_to(state_slack[sc_i] >= 0)
+        #         else:
+        #             opti.subject_to(state_constraint(x_var[:, i] + self.X_EQ.T) <= -self.constraint_tol)
 
-            for ic_i, input_constraint in enumerate(self.input_constraints_sym):
-                if self.soft_constraints:
-                    opti.subject_to(input_constraint(u_var[:, i] + self.U_EQ.T) <= input_slack[ic_i])
-                    cost += soft_con_coeff * input_slack[ic_i]**2
-                    opti.subject_to(input_slack[ic_i] >= 0)
-                else:
-                    opti.subject_to(input_constraint(u_var[:, i] + self.U_EQ.T) <= -self.constraint_tol)
+        #     for ic_i, input_constraint in enumerate(self.input_constraints_sym):
+        #         if self.soft_constraints:
+        #             opti.subject_to(input_constraint(u_var[:, i] + self.U_EQ.T) <= input_slack[ic_i])
+        #             cost += soft_con_coeff * input_slack[ic_i]**2
+        #             opti.subject_to(input_slack[ic_i] >= 0)
+        #         else:
+        #             opti.subject_to(input_constraint(u_var[:, i] + self.U_EQ.T) <= -self.constraint_tol)
 
-        # final state constraints
-        for sc_i, state_constraint in enumerate(self.state_constraints_sym):
-            if self.soft_constraints:
-                opti.subject_to(state_constraint(x_var[:, -1] + self.X_EQ.T) <= state_slack[sc_i])
-                cost += soft_con_coeff * state_slack[sc_i] ** 2
-                opti.subject_to(state_slack[sc_i] >= 0)
-            else:
-                opti.subject_to(state_constraint(x_var[:, -1] + self.X_EQ.T) <= -self.constraint_tol)
+        # # final state constraints
+        # for sc_i, state_constraint in enumerate(self.state_constraints_sym):
+        #     if self.soft_constraints:
+        #         opti.subject_to(state_constraint(x_var[:, -1] + self.X_EQ.T) <= state_slack[sc_i])
+        #         cost += soft_con_coeff * state_slack[sc_i] ** 2
+        #         opti.subject_to(state_slack[sc_i] >= 0)
+        #     else:
+        #         opti.subject_to(state_constraint(x_var[:, -1] + self.X_EQ.T) <= -self.constraint_tol)
 
         # initial condition constraints
         opti.subject_to(x_var[:, 0] == x_init)

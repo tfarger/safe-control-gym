@@ -18,6 +18,10 @@ register(idx='linear_mpc',
          entry_point='safe_control_gym.controllers.mpc.linear_mpc:LinearMPC',
          config_entry_point='safe_control_gym.controllers.mpc:linear_mpc.yaml')
 
+register(idx='fmpc',
+         entry_point='safe_control_gym.controllers.mpc.fmpc:FlatMPC',
+         config_entry_point='safe_control_gym.controllers.mpc:fmpc.yaml')
+
 register(idx='gp_mpc',
          entry_point='safe_control_gym.controllers.mpc.gp_mpc:GPMPC',
          config_entry_point='safe_control_gym.controllers.mpc:gp_mpc.yaml')
