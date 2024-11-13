@@ -591,17 +591,6 @@ class Quadrotor(BaseAviary):
         m = prior_prop.get('M', self.MASS)
         Iyy = prior_prop.get('Iyy', self.J[1, 1])
 
-        # identified parameters for the 2D attitude interface
-        # NOTE: these parameters are not set in the prior_prop dict
-        # since they are specific to the 2D attitude model
-        beta_1 = prior_prop.get('beta_1', 18.112984649321753)
-        beta_2 = prior_prop.get('beta_2', 3.6800)
-        beta_3 = prior_prop.get('beta_3', 0)
-        alpha_1 = prior_prop.get('alpha_1', -140.8)
-        alpha_2 = prior_prop.get('alpha_2', -13.4)
-        alpha_3 = prior_prop.get('alpha_3', 124.8)
-        pitch_bias = prior_prop.get('pitch_bias', 0.0)
-
         g, length = self.GRAVITY_ACC, self.L
         dt = self.CTRL_TIMESTEP
         # Define states.
@@ -641,6 +630,17 @@ class Quadrotor(BaseAviary):
             # Define observation.
             Y = cs.vertcat(x, x_dot, z, z_dot, theta, theta_dot)
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+                # identified parameters for the 2D attitude interface
+            # NOTE: these parameters are not set in the prior_prop dict
+            # since they are specific to the 2D attitude model
+            beta_1 = prior_prop.get('beta_1', 18.112984649321753)
+            beta_2 = prior_prop.get('beta_2', 3.6800)
+            beta_3 = prior_prop.get('beta_3', 0)
+            alpha_1 = prior_prop.get('alpha_1', -140.8)
+            alpha_2 = prior_prop.get('alpha_2', -13.4)
+            alpha_3 = prior_prop.get('alpha_3', 124.8)
+            pitch_bias = prior_prop.get('pitch_bias', 0.0)
+
             nx, nu = 6, 2
             # Define states.
             x = cs.MX.sym('x')
@@ -831,8 +831,10 @@ class Quadrotor(BaseAviary):
         # Set the equilibrium values for linearizations.
         X_EQ = np.zeros(self.state_dim)
         # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
-        if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.THREE_D_ATTITUDE]:
+        if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S]:
             U_EQ = np.array([u_eq, 0])
+        elif self.QUAD_TYPE in [QuadType.THREE_D_ATTITUDE]:
+            U_EQ = np.array([u_eq, 0, 0, 0])
         else:
             U_EQ = np.ones(self.action_dim) * u_eq / self.action_dim
         # Define cost (quadratic form).
