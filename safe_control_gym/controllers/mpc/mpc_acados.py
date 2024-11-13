@@ -117,7 +117,9 @@ class MPC_ACADOS(MPC):
         self.setup_acados_model()
         # Acados optimizer.
         self.setup_acados_optimizer()
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
+        # get time in $ymd_HMS format
+        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/mpc_acados_ocp_solver_{current_time}.json')
 
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
