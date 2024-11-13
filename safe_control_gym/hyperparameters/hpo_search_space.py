@@ -92,6 +92,11 @@ MPC_dict = {
     'r_mpc': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
 
+LQR_dict = {
+    'q_lqr': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'r_lqr': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+}
+
 iLQR_dict = {
     'max_iterations': {'values': [5, 10, 15, 20], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
     'lamb_factor': {'values': [5, 10, 15, 20, 25], 'scale': 'uniform', 'type': int, 'cat': 'discrete'},
@@ -115,6 +120,15 @@ iLQR_SF_dict = {
     'r_lin': {'values': [0.0001, 15], 'scale': 'uniform', 'type': list, 'cat': 'float'},
 }
 
+PID_dict = {
+    'P_COEFF_FOR': {'values': [0.001, 5], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'I_COEFF_FOR': {'values': [0.001, 5], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'D_COEFF_FOR': {'values': [0.001, 5], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'P_COEFF_TOR': {'values': [50000, 80000], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'I_COEFF_TOR': {'values': [0, 700], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+    'D_COEFF_TOR': {'values': [10000, 15000], 'scale': 'uniform', 'type': list, 'cat': 'float'},
+}
+
 
 HYPERPARAMS_DICT = {
     'ppo': PPO_dict,
@@ -125,8 +139,10 @@ HYPERPARAMS_DICT = {
     'gpmpc_acados_TP': GPMPC_TP_dict,
     'linear_mpc': LMPC_dict,
     'mpc_acados': MPC_dict,
+    'lqr': LQR_dict,
     'ilqr': iLQR_dict,
     'ilqr_sf': iLQR_SF_dict,
+    'pid': PID_dict,
 }
 
 
