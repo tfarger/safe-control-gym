@@ -148,7 +148,14 @@ class GPMPC(MPC, ABC):
             seed=seed,
             **kwargs)
         # Setup environments.
-        self.env_func = env_func
+        self.env_func = env_func # only refer to this function
+        # TODO: This is a temporary fix
+        # the parent class creates a connection to the env
+        # but the same handle is overwritten here. Therefore,
+        # when call ctrl.close(), the env initialized in the 
+        # parent class would not be closed properly.
+        if hasattr(self, 'env'):
+            self.env.close()
         self.env = env_func(randomized_init=False, seed=seed)
         self.env_training = env_func(randomized_init=True, seed=seed)
         # No training data accumulated yet so keep the dynamics function as linear prior.
