@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 import optuna
 
-from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, LMPC_dict, MPC_dict, PPO_dict,
+from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, GPMPC_TP_dict, LMPC_dict, MPC_dict, PPO_dict,
                                                                DPPO_dict, SAC_dict, iLQR_dict, iLQR_SF_dict,
                                                                is_log_scale)
 
@@ -240,6 +240,47 @@ def gpmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[
 
     return hps_suggestion
 
+def gpmpc_tp_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for PPO hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    horizon = trial.suggest_categorical('horizon', GPMPC_TP_dict['horizon']['values'])
+    n_ind_points = trial.suggest_categorical('n_ind_points', GPMPC_TP_dict['n_ind_points']['values'])
+    num_epochs = trial.suggest_categorical('num_epochs', GPMPC_TP_dict['num_epochs']['values'])
+    num_samples = trial.suggest_categorical('num_samples', GPMPC_TP_dict['num_samples']['values'])
+
+    optimization_iterations = trial.suggest_categorical('optimization_iterations', GPMPC_TP_dict['optimization_iterations']['values'])
+    learning_rate = trial.suggest_float('learning_rate', GPMPC_TP_dict['learning_rate']['values'][0], GPMPC_TP_dict['learning_rate']['values'][1], log=is_log_scale(GPMPC_TP_dict['learning_rate']))
+
+    # objective
+    state_weight = [
+        trial.suggest_float(f'q_mpc_{i}', GPMPC_TP_dict['q_mpc']['values'][0], GPMPC_TP_dict['q_mpc']['values'][1], log=is_log_scale(GPMPC_TP_dict['q_mpc']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'r_mpc_{i}', GPMPC_TP_dict['r_mpc']['values'][0], GPMPC_TP_dict['r_mpc']['values'][1], log=is_log_scale(GPMPC_TP_dict['r_mpc']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'horizon': horizon,
+        'n_ind_points': n_ind_points,
+        'num_epochs': num_epochs,
+        'num_samples': num_samples,
+        'optimization_iterations': optimization_iterations,
+        'learning_rate': learning_rate,
+        'q_mpc': state_weight,
+        'r_mpc': action_weight,
+    }
+
+    return hps_suggestion
+
 
 def lmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
     """Sampler for LMPC hyperparameters.
@@ -402,6 +443,7 @@ HYPERPARAMS_SAMPLER = {
     'sac': sac_sampler,
     'gp_mpc': gpmpc_sampler,
     'gpmpc_acados': gpmpc_sampler,
+    'gpmpc_acados_TP': gpmpc_tp_sampler,
     'linear_mpc': lmpc_sampler,
     'mpc_acados': mpc_sampler,
     'ilqr': ilqr_sampler,

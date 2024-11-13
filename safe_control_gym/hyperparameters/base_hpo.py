@@ -97,7 +97,7 @@ class BaseHPO(ABC):
 
         # special cases: learning_rate and optimization_iterations for gp_mpc
         valid = False
-        if self.algo == 'gp_mpc' or self.algo == 'gpmpc_acados':
+        if self.algo == 'gp_mpc' or self.algo == 'gpmpc_acados' or self.algo == 'gpmpc_acados_TP':
             if param_name == 'learning_rate' or param_name == 'optimization_iterations':
                 if type(param_value) is not type(self.hps_config[param_name]):
                     param_value = len(self.hps_config[param_name]) * [type(self.hps_config[param_name][0])(param_value)]
