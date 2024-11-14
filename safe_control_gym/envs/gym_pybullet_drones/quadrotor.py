@@ -422,7 +422,7 @@ class Quadrotor(BaseAviary):
             self.attitude_control = AttitudeControl(self.CTRL_TIMESTEP, self.PYB_TIMESTEP)
 
         # Set prior/symbolic info.
-        self._setup_symbolic()
+        self._setup_symbolic(prior_prop=inertial_prop)
 
     def reset(self, seed=None):
         """(Re-)initializes the environment to start an episode.
