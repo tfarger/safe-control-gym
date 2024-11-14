@@ -149,3 +149,4 @@ def wrap2pi_vec(angle_vec):
 
 if __name__ == '__main__':
     run(save_data=True)
+    os.system("python3 ../../evaluateFMPC.py")
