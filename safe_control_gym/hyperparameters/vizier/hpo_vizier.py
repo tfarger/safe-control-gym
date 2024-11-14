@@ -187,6 +187,7 @@ class HPO_Vizier(BaseHPO):
             objective_value = np.mean(res)
             trial = vz.Trial(parameters=params, final_measurement=vz.Measurement({f'{self.hpo_config.objective[0]}': objective_value}))
             self.study_client._add_trial(trial)
+            self.warmstart_trial_value = objective_value
 
     def checkpoint(self):
         """
@@ -195,6 +196,9 @@ class HPO_Vizier(BaseHPO):
         output_dir = os.path.join(self.output_dir, 'hpo')
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
+        if hasattr(self, 'warmstart_trial_value'):
+            with open(f'{output_dir}/warmstart_trial_value.txt', 'w') as f:
+                f.write(str(self.warmstart_trial_value))
 
         completed_trial_filter = vz.TrialFilter(status=[vz.TrialStatus.COMPLETED])
         all_trials = [tc.materialize() for tc in self.study_client.trials(trial_filter=completed_trial_filter)]

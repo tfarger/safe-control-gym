@@ -139,6 +139,12 @@ class HPO_Optuna(BaseHPO):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        # check if initial trial is completed
+        if len(self.study.trials) > 0:
+            if self.study.trials[0].state == TrialState.COMPLETE:
+                with open(f'{output_dir}/warmstart_trial_value.txt', 'w') as f:
+                    f.write(str(self.study.trials[0].value))
+
         try:
             # save meta data
             self.study.trials_dataframe().to_csv(output_dir + '/trials.csv')
