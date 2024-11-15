@@ -187,7 +187,7 @@ class HPO_Vizier(BaseHPO):
             objective_value = np.mean(res)
             trial = vz.Trial(parameters=params, final_measurement=vz.Measurement({f'{self.hpo_config.objective[0]}': objective_value}))
             self.study_client._add_trial(trial)
-            self.warmstart_trial_value = objective_value
+            self.warmstart_trial_value = res
 
     def checkpoint(self):
         """
