@@ -14,5 +14,5 @@ hpo_config:
 
   # hyperparameters
   hps_config:
-    q_lqr: [1, 0.1, 1, 0.1, 1.0, 0.01]
+    q_lqr: [5, 0.1, 5, 0.1, 0.5, 0.01]
     r_lqr: [1.0, 1.0]
