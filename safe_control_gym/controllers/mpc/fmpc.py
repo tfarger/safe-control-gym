@@ -99,8 +99,8 @@ class FlatMPC(LinearMPC):
         self.solver = solver
 
         # overwrite definitions in parent init function to fit flat model
-        self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
-        self.R = get_cost_weight_matrix([0.00001], self.model.nu)
+        self.Q = get_cost_weight_matrix([50, 0.1, 0.1, 0.1, 50, 0.1, 0.1, 0.1], self.model.nx) 
+        self.R = get_cost_weight_matrix([1e-7], self.model.nu)
         
         self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt)
 
