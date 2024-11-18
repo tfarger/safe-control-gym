@@ -6,13 +6,13 @@ task_config:
   physics: dyn_si
   quad_type: 4
 
-  init_state:
-    init_x: 5.04694375e-01
-    init_x_dot: 1.28406284e-03
-    init_z: 2.00033515e+00
-    init_z_dot: 5.23847757e-01
-    init_theta: -5.56755544e-02
-    init_theta_dot: -3.76802416e-03
+  init_state: 
+    init_x: 0.5
+    init_x_dot: 0
+    init_z: 2.0
+    init_z_dot: 0.52359878
+    init_theta: -0.05589187
+    init_theta_dot: -0.00326794
   randomized_init: False
   randomized_inertial_prop: False
 
