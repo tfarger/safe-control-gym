@@ -302,10 +302,9 @@ class FlatMPC(LinearMPC):
         z_horizon = self.x_prev #8xN set in linearMPC
         v_horizon = self.u_prev #2xN       
         
-        # flat input transformation: z and v to action u
-        # action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1], self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) # works
-        action = _get_u_from_flat_states(z_horizon[:, 1], v, self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) # also works but why???
-        # action = _get_u_from_flat_states(z_nmpc_horizon[:, 1], v, self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) 
+        # flat input transformation: z and v to action u        
+        action = _get_u_from_flat_states(z_horizon[:, 1], v_horizon[:, 0], self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) 
+        
 
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
@@ -329,14 +328,6 @@ class FlatStateObserver():
         self.GRAVITY = g
         self.dt = dt
         
-        
-    def set_initial_values(self,):
-        # the stuff I currently copy into file from reference generation
-        # self.u0_dot = -0.03174012 
-        # self.u0_prev = 0.33837254
-        pass
-
-
     def input_FMPC_result(self, z_horizon, v_horizon, u):
         # just save them away
         self.z_horizon = z_horizon
@@ -412,7 +403,7 @@ def _get_z_from_regular_states(x, u0, u0_dot, dyn_pars, g):
     z[7] = -np.sin(x[4])*(beta_2 + beta_1*u0)*x[5] + np.cos(x[4])*beta_1*u0_dot# z_dddot
     return z
 
-# not needed in FMPC, just to double check transformations
+# not needed in FMPC, used for x_ini in trajectory generation
 def _get_x_from_flat_states(z, g):
     x = np.zeros(6)
     x[0] = z[0]
@@ -494,13 +485,21 @@ def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon,
     initial_vals['v_ini_hrzn'] = v_ini_horizon
     initial_vals['u_ini'] = u_ini
     initial_vals['x_ini'] = x_ini
+
+    # save reference trajectory for evaluation
+    data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
+    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
+        pickle.dump(data_dict, file_ref)
     
     return z_traj, initial_vals
 
 def _load_flat_trajectory_circle(): # from NMPC
+    raise NotImplementedError # initial values for state estimator not returned yeta
     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
         data_dict = pickle.load(file)
     z_ref = data_dict['z_ref']
+
+
 
     return z_ref.transpose()
 

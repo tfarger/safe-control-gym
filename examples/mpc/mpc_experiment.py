@@ -14,6 +14,7 @@ from safe_control_gym.experiments.base_experiment import BaseExperiment
 from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.registration import make
 
+from examples.mpc.evaluateFMPC import evaluateFMPC
 
 def run(gui=True, n_episodes=1, n_steps=None, save_data=False):
     '''The main function running MPC and Linear MPC experiments.
@@ -149,4 +150,4 @@ def wrap2pi_vec(angle_vec):
 
 if __name__ == '__main__':
     run(save_data=True)
-    os.system("python3 ../../evaluateFMPC.py")
+    evaluateFMPC(show_plots=False)
