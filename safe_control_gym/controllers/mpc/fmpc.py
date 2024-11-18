@@ -24,9 +24,13 @@ from safe_control_gym.controllers.mpc.linear_mpc import LinearMPC
 from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain_from_cont_linear_system, get_cost_weight_matrix
 from safe_control_gym.envs.benchmark_env import Task
 
+from termcolor import colored
+
 from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
 
 from plottingUtils import *
+
+import pybullet as p
 
 class FlatMPC(LinearMPC):
     '''Flatness based MPC.'''
@@ -97,18 +101,8 @@ class FlatMPC(LinearMPC):
         # overwrite definitions in parent init function to fit flat model
         self.Q = get_cost_weight_matrix([5, 0.1, 0.1, 0.1, 5, 0.1, 0.1, 0.1], self.model.nx) 
         self.R = get_cost_weight_matrix([0.00001], self.model.nu)
-
-        self.u0_dot = -0.03174012 
-        self.u0_prev = 0.33837254
         
-        # self.x_prev_fmpc = np.array([0.76046276,  0.01807867,  0.98482524,  0.78595726, -0.08439172, -0.01873777])
-
-        # temporarily use a LQR for testing        
-        # self.gain = compute_lqr_gain(self.model, self.model.X_EQ, self.model.U_EQ,
-        #                              self.Q, self.R, True)
-        
-        self.counter =0
-        
+        self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt)
 
 
     def _setup_flat_model_symbolic(self):
@@ -175,17 +169,19 @@ class FlatMPC(LinearMPC):
         return SymbolicModel(dynamics=dynamics, cost=cost, dt=dt, params=params)
 
 
-    # overwrite to input flat trajectory into reference
+    # overwrite to input flat trajectory into reference and initialize flat state observer
     def reset(self):
         '''Prepares for training or evaluation.'''
         # Setup reference input.
         if self.env.TASK == Task.STABILIZATION:
+            raise NotImplementedError
             self.mode = 'stabilization'
             self.x_goal = self.env.X_GOAL
         elif self.env.TASK == Task.TRAJ_TRACKING:
             self.mode = 'tracking'
             #self.traj = self.env.X_GOAL.T
-            self.traj = _load_flat_trajectory_circle()
+            # self.traj = _load_flat_trajectory_circle()
+            self.traj, initial_vals = _create_flat_trajectory_circle(self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T, self.env.INERTIAL_PROP, self.env.GRAVITY_ACC)
             # Step along the reference.
             self.traj_step = 0
         # Dynamics model.
@@ -197,6 +193,36 @@ class FlatMPC(LinearMPC):
         self.u_prev = None
 
         self.setup_results_dict()
+        
+        # initialize the flat state observer by inputing u and a z and v reference horizon starting at timestep -1
+        z_horizon = initial_vals['z_ini_hrzn']
+        v_horizon = initial_vals['v_ini_hrzn']
+        u = initial_vals['u_ini'] 
+        self.fs_obs.input_FMPC_result(z_horizon, v_horizon, u)
+
+        x_ini = initial_vals['x_ini']
+        print(x_ini)
+
+        # move drone to initial position on the trajectory
+        # code copied from quadrotor.py --> reset() (~ line 470)
+        #TODO: should be properly implemented in environment somewhere
+        #NOTE: Does not work like this
+        # x_ini = initial_vals['x_ini']
+        # INIT_XYZ = [x_ini[0], 0, x_ini[2]]
+        # INIT_VEL = [x_ini[1], 0, x_ini[3]]
+        # INIT_RPY = [0, x_ini[4], 0]
+        # INIT_ANG_VEL = [0, x_ini[5], 0]
+        # self.env.attitude_control.reset()
+        # p.resetBasePositionAndOrientation(1, INIT_XYZ,
+        #                                   p.getQuaternionFromEuler(INIT_RPY),
+        #                                   0)
+        # p.resetBaseVelocity(1, INIT_VEL, INIT_ANG_VEL,
+        #                     0)
+        # self.env._update_and_store_kinematic_information()
+        # obs, info = self.env._get_observation(), self.env._get_reset_info()
+        # obs, info = self.env.super().after_reset(obs, info)
+
+
 
     def setup_results_dict(self):
         '''Setup the results dictionary to store run information.'''
@@ -240,132 +266,121 @@ class FlatMPC(LinearMPC):
         Returns:
             action (ndarray): Input/action to the task/env.
         '''
-        # NMPC input reference
-        with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
-            data_dict = pickle.load(file)
-        u_nmpc = data_dict['u_ref'].transpose()
-        v_nmpc = data_dict['v_ref'].transpose()
-        z_nmpc = data_dict['z_ref'].transpose()
-        u_dot_nmpc = data_dict['u_dot_ref'].transpose()
+        # # NMPC input reference
+        # with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
+        #     data_dict = pickle.load(file)
+        # u_nmpc = data_dict['u_ref'].transpose()
+        # v_nmpc = data_dict['v_ref'].transpose()
+        # z_nmpc = data_dict['z_ref'].transpose()
+        # u_dot_nmpc = data_dict['u_dot_ref'].transpose()
         
-        start = min(self.traj_step, self.traj.shape[-1])
-        end = min(self.traj_step + self.T , self.traj.shape[-1])
-        remain = max(0, self.T - (end - start))
-        u_nmpc_horizon = np.concatenate([
-            u_nmpc[:, start:end],
-            np.tile(u_nmpc[:, -1:], (1, remain))
-        ], -1)   
-        v_nmpc_horizon = np.concatenate([
-            v_nmpc[:, start:end],
-            np.tile(v_nmpc[:, -1:], (1, remain))
-        ], -1)  
-        z_nmpc_horizon = np.concatenate([
-            z_nmpc[:, start:end],
-            np.tile(z_nmpc[:, -1:], (1, remain))
-        ], -1)  
-        u_dot_nmpc_horizon = np.concatenate([
-            u_dot_nmpc[:, start:end],
-            np.tile(u_dot_nmpc[:, -1:], (1, remain))
-        ], -1) 
-
-
-        nz, nv = self.model.nx, self.model.nu 
-        # determine flat state from observation      
-        u_ref_nmpc_prev = u_nmpc[:, start-1] # careful, this is wrong at time step 0
-        # transform real states to flat states
-        z_obs = _get_z_from_regular_states(obs, self.u0_prev, self.u0_dot) # does not work
-        # z_obs = _get_z_from_regular_states(obs, u_nmpc_horizon[:,0], u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0]) 
-        # z_obs = _get_z_from_regular_states(obs, self.u_prev_tmp, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  
-        # z_obs = _get_z_from_regular_states(obs, u_ref_nmpc_prev, u_dot_nmpc_horizon[0, 0]+u_dot_nmpc_horizon[1,0])  
-        # z_obs = _get_z_from_regular_states_FD(obs, self.x_prev_fmpc, self.dt, self.u_prev_tmp, self.total_thrust_dot) 
-        # self.x_prev_fmpc = obs
-
-        # debugging vars
-        # u_ref_nmpc = u_nmpc_horizon[:, 0]
-        # u_prev = self.u0_prev
-        # u_difference = u_prev - u_ref_nmpc
-
-        # do controller 
-
-        # MPC
-        v = super().select_action(z_obs) # don't comment out, needed for trajectory stepping
-        z_horizon = self.x_prev # set in linearMPC #8xN
-        v_horizon = self.u_prev #2xN
-
-        # Feedforward everything from NMPC - overwrite old stuff
-        # v = v_nmpc_horizon[:, 0]
-        # z_horizon = z_nmpc_horizon
-        # v_horizon = v_nmpc_horizon
-
-        # v = v_horizon[:, 1] # for logging
+        # start = min(self.traj_step, self.traj.shape[-1])
+        # end = min(self.traj_step + self.T , self.traj.shape[-1])
+        # remain = max(0, self.T - (end - start))
+        # u_nmpc_horizon = np.concatenate([
+        #     u_nmpc[:, start:end],
+        #     np.tile(u_nmpc[:, -1:], (1, remain))
+        # ], -1)   
+        # v_nmpc_horizon = np.concatenate([
+        #     v_nmpc[:, start:end],
+        #     np.tile(v_nmpc[:, -1:], (1, remain))
+        # ], -1)  
+        # z_nmpc_horizon = np.concatenate([
+        #     z_nmpc[:, start:end],
+        #     np.tile(z_nmpc[:, -1:], (1, remain))
+        # ], -1)  
+        # u_dot_nmpc_horizon = np.concatenate([
+        #     u_dot_nmpc[:, start:end],
+        #     np.tile(u_dot_nmpc[:, -1:], (1, remain))
+        # ], -1) 
         
+        # get flat state estimation from observer
+        z_obs = self.fs_obs.compute_observation(obs)
+
+        # run MPC controller 
+        v = super().select_action(z_obs) 
+        z_horizon = self.x_prev #8xN set in linearMPC
+        v_horizon = self.u_prev #2xN       
         
-        # transform z and v to input u
-        flat_action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1]) # works
-        # flat_action = _get_u_from_flat_states(z_horizon[:, 1], v) # also works but why???
-        # flat_action = _get_u_from_flat_states(z_obs, v) # does not work
+        # flat input transformation: z and v to action u
+        # action = _get_u_from_flat_states(z_horizon[:,1], v_horizon[:, 1], self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) # works
+        action = _get_u_from_flat_states(z_horizon[:, 1], v, self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) # also works but why???
+        # action = _get_u_from_flat_states(z_nmpc_horizon[:, 1], v, self.env.INERTIAL_PROP, g=self.env.GRAVITY_ACC) 
 
-
-        # keep track of past actions
-        self.u0_prev_prev = deepcopy(self.u0_prev)
-        self.u0_prev = deepcopy(flat_action[0])
-
-       
-       # estimate total thrust derivative
-        u0_dot = (self.u0_prev - self.u0_prev_prev)/self.dt
-
-        u_horizon = np.zeros(np.shape(v_horizon))
-        for i in range(self.T):
-            u_horizon[:, i] = _get_u_from_flat_states(z_horizon[:,i], v_horizon[:,i])
-        u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
-       
-          
-        self.u0_dot = u_dot_central[0] 
-
-        # action = u_nmpc_horizon[:, 0]
-        action = flat_action
+        # feed data into observer
+        self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
 
         # data logging
         self.results_dict['obs_x'].append(obs)
         self.results_dict['obs_z'].append(z_obs)
         self.results_dict['v'].append(v)
-        self.results_dict['u'].append(flat_action)
-        self.results_dict['T_dot'].append(self.u0_dot)
-        self.results_dict['u_ref'].append(u_nmpc_horizon[:, 0])
+        self.results_dict['u'].append(action)
+        # self.results_dict['T_dot'].append(self.u0_dot)
+        # self.results_dict['u_ref'].append(u_nmpc_horizon[:, 0])
         self.results_dict['horizon_v'].append(v_horizon)
         self.results_dict['horizon_z'].append(z_horizon)
-        self.results_dict['horizon_u'].append(u_horizon)
-
-        self.counter -=1
-        if False: #self.counter <= 0:
-            self.counter = 10
-            # Plot states
-
-            plot_data_comparison(z_horizon.transpose(), self.get_references().transpose(), range(self.T+1), 'Flat states over MPC horizon', 'Horizon time step')  
-
-            plot_data_comparison(u_horizon.transpose(), u_nmpc_horizon.transpose(), range(self.T), 'Inputs U against NMPC reference', 'Horizon time step')  
-
-            plt.show()
-
+        # self.results_dict['horizon_u'].append(u_horizon)
+        
         return action
     
+class FlatStateObserver():
+    def __init__(self,  inertial_prop, g, dt):
+        self.inertial_prop = inertial_prop # alpha beta of model from env (from config file)
+        self.GRAVITY = g
+        self.dt = dt
+        
+        
+    def set_initial_values(self,):
+        # the stuff I currently copy into file from reference generation
+        # self.u0_dot = -0.03174012 
+        # self.u0_prev = 0.33837254
+        pass
+
+
+    def input_FMPC_result(self, z_horizon, v_horizon, u):
+        # just save them away
+        self.z_horizon = z_horizon
+        self.v_horizon = v_horizon
+        self.u = u     
+
+              
+    def compute_observation(self, x_obs): 
+        # estimate u_dot at current time step, based on z_horizon and v_horizon set in last time step
+        u_comp_length = 3
+        u_horizon = np.zeros([2, u_comp_length])
+        for i in range(u_comp_length):
+            u_horizon[:, i] = _get_u_from_flat_states(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
+
+        u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
+       
+        u0_dot = u_dot_central[0]
+
+        # state estimation using system dynamics
+        z_obs = _get_z_from_regular_states(x_obs, self.u[0], u0_dot, self.inertial_prop, self.GRAVITY) 
+        return z_obs
+       
     
-def _get_u_from_flat_states(z, v):
-    beta_1 = 18.112984649321753
-    beta_2 = 3.6800
-    alpha_1 =  -140.8
-    alpha_2 =  -13.4
-    alpha_3 =  124.8
-    g=9.81
+def _get_u_from_flat_states(z, v, dyn_pars, g):
+    try: 
+        beta_1 = dyn_pars['beta_1']
+        beta_2 = dyn_pars['beta_2']
+        alpha_1 =  dyn_pars['alpha_1']
+        alpha_2 =  dyn_pars['alpha_2']
+        alpha_3 =  dyn_pars['alpha_3']
+    except: 
+        print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
+        beta_1 = 18.112984649321753
+        beta_2 = 3.6800
+        alpha_1 =  -140.8
+        alpha_2 =  -13.4
+        alpha_3 =  124.8
 
-
-
-    alpha = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
+    term_acc_sqrd = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
     theta = np.arctan2(z[2], (z[6]+g))
-    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/alpha
-    theta_ddot = 1/alpha * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/np.square(alpha)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
+    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/term_acc_sqrd
+    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/np.square(term_acc_sqrd)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
 
-    t = -(beta_2/beta_1) + np.sqrt(alpha)/beta_1
+    t = -(beta_2/beta_1) + np.sqrt(term_acc_sqrd)/beta_1
     p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
     return np.array([t, p])
 
@@ -377,11 +392,15 @@ def _get_total_thrust_dot_from_flat_states(z):
     t_dot = m*(z[2]*z[3] + (z[6]+g)*z[7])/np.sqrt(alpha)
     return t_dot
 
-def _get_z_from_regular_states(x, u0, u0_dot):
-    beta_1 = 18.112984649321753
-    beta_2 = 3.6800
-    g=9.81
-
+def _get_z_from_regular_states(x, u0, u0_dot, dyn_pars, g):    
+    try: 
+        beta_1 = dyn_pars['beta_1']
+        beta_2 = dyn_pars['beta_2']        
+    except: 
+        print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
+        beta_1 = 18.112984649321753
+        beta_2 = 3.6800
+        
     z = np.zeros(8)
     z[0] = x[0] # x
     z[1] = x[1] # x_dot
@@ -394,10 +413,7 @@ def _get_z_from_regular_states(x, u0, u0_dot):
     return z
 
 # not needed in FMPC, just to double check transformations
-def _get_x_from_flat_states(z):
-    g = 9.81
-
-
+def _get_x_from_flat_states(z, g):
     x = np.zeros(6)
     x[0] = z[0]
     x[1] = z[1]
@@ -430,51 +446,56 @@ def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
     z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
     return z
 
-def _create_flat_trajectory_circle():
-    # constants
-    scaling = 0.75
-    traj_length = 6 # seconds
-    sample_time = 0.02 # seconds, sampling time of trajectory, 50Hz
-    traj_period = traj_length # one circle, not multiple
-    z_offset = 1 # m above ground
+def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
+    # task info parameters from yaml file
+    traj_scaling = task_info.trajectory_scale
+    num_cycles = task_info.num_cycles
+    pos_offset = task_info.trajectory_position_offset
+
+    traj_period = traj_length/num_cycles     
 
     # create circle trajectory
-    times = np.arange(0, traj_length + sample_time, sample_time)  # sample time added to make reference one step longer than traj_length
-    ref_x = np.zeros((len(times)))
-    ref_z = np.zeros((len(times)))
-    ref_x_dot = np.zeros((len(times)))
-    ref_z_dot = np.zeros((len(times)))
-    ref_x_ddot = np.zeros((len(times)))
-    ref_z_ddot = np.zeros((len(times)))
-    ref_x_dddot = np.zeros((len(times)))
-    ref_z_dddot = np.zeros((len(times)))
-    ref_x_d4dot = np.zeros((len(times)))
-    ref_z_d4dot = np.zeros((len(times)))
+    times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  # sample time added to make reference one step longer than traj_length
+    z_traj = np.zeros((8,len(times)))
+    v_traj = np.zeros((2,len(times)))
+
+    def circle_traj_at_t(t, scaling, freq, offset):
+        z = np.zeros(8)
+        v = np.zeros(2)
+        z[0] = scaling * np.cos(freq * t) + offset[0] # x
+        z[1] = -scaling * freq * np.sin(freq * t) # x_dot
+        z[2] = -scaling * freq**2 * np.cos(freq * t) # x_ddot
+        z[3] = scaling * freq**3 * np.sin(freq * t) # x_dddot
+
+        v[0] = scaling * freq**4 * np.cos(freq * t) # x_d4dot = v0
+
+        z[4] = scaling * np.sin(freq * t) + offset[1]        
+        z[5] = scaling * freq * np.cos(freq * t)        
+        z[6] = -scaling * freq**2 * np.sin(freq * t)        
+        z[7] = -scaling * freq**3 * np.cos(freq * t)
+
+        v[1] = scaling * freq**4 * np.sin(freq * t)
+        return z, v
 
     traj_freq = 2.0 * np.pi / traj_period
     for index, t in enumerate(times):
-        ref_x[index] = scaling * np.cos(traj_freq * t)
-        ref_z[index] = scaling * np.sin(traj_freq * t) + z_offset
-        ref_x_dot[index] = -scaling * traj_freq * np.sin(traj_freq * t)
-        ref_z_dot[index] = scaling * traj_freq * np.cos(traj_freq * t)
-        ref_x_ddot[index] = -scaling * traj_freq**2 * np.cos(traj_freq * t)
-        ref_z_ddot[index] = -scaling * traj_freq**2 * np.sin(traj_freq * t)
-        ref_x_dddot[index] = scaling * traj_freq**3 * np.sin(traj_freq * t)
-        ref_z_dddot[index] = -scaling * traj_freq**3 * np.cos(traj_freq * t)
-        #ref_x_d4dot[index] = scaling * traj_freq**4 * np.cos(traj_freq * t)
-        #ref_z_d4dot[index] = scaling * traj_freq**4 * np.sin(traj_freq * t)
+        z_traj[:, index], v_traj[:, index] = circle_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
 
-    z_traj = np.zeros((8,len(times)))
-    z_traj[0, :] = ref_x[:]
-    z_traj[1, :] = ref_x_dot[:]
-    z_traj[2, :] = ref_x_ddot[:]
-    z_traj[3, :] = ref_x_dddot[:]
-    z_traj[4, :] = ref_z[:]
-    z_traj[5, :] = ref_z_dot[:]
-    z_traj[6, :] = ref_z_ddot[:]
-    z_traj[7, :] = ref_z_dddot[:]
+    # calculate initial values for x, u and u_dot for flat state observer
+    initial_vals = {}
+    z_minus1, v_minus1 = circle_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
+    z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
+    v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
 
-    return z_traj
+    u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
+    x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
+
+    initial_vals['z_ini_hrzn'] = z_ini_horizon
+    initial_vals['v_ini_hrzn'] = v_ini_horizon
+    initial_vals['u_ini'] = u_ini
+    initial_vals['x_ini'] = x_ini
+    
+    return z_traj, initial_vals
 
 def _load_flat_trajectory_circle(): # from NMPC
     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
