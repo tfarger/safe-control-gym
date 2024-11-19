@@ -232,10 +232,15 @@ class MLPActorCritic(nn.Module):
         return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
 
     def act(self,
-            obs
+            obs,
+            extra_info=False
             ):
         dist, _ = self.actor(obs)
         a = dist.mode()
+        logp_a = dist.log_prob(a)
+        v = self.critic(obs)
+        if extra_info:
+            return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
         return a.cpu().numpy()
 
 
