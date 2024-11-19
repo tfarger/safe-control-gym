@@ -182,6 +182,7 @@ class FlatMPC(LinearMPC):
             #self.traj = self.env.X_GOAL.T
             # self.traj = _load_flat_trajectory_circle()
             self.traj, initial_vals = _create_flat_trajectory_circle(self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T, self.env.INERTIAL_PROP, self.env.GRAVITY_ACC)
+            # self.traj, initial_vals = _create_flat_trajectory_figure8(self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T, self.env.INERTIAL_PROP, self.env.GRAVITY_ACC)
             # Step along the reference.
             self.traj_step = 0
         # Dynamics model.
@@ -493,8 +494,64 @@ def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon,
     
     return z_traj, initial_vals
 
+def _create_flat_trajectory_figure8(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
+    # task info parameters from yaml file
+    traj_scaling = task_info.trajectory_scale
+    num_cycles = task_info.num_cycles
+    pos_offset = task_info.trajectory_position_offset
+
+    traj_period = traj_length/num_cycles     
+
+    # create circle trajectory
+    times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  
+    z_traj = np.zeros((8,len(times)))
+    v_traj = np.zeros((2,len(times)))
+
+    def figure8_traj_at_t(t, scaling, freq, offset):
+        z = np.zeros(8)
+        v = np.zeros(2)
+        z[0] = scaling * np.sin(freq * t) + offset[0] # x
+        z[1] = scaling * freq * np.cos(freq * t) # x_dot
+        z[2] = -scaling * freq**2 * np.sin(freq * t) # x_ddot
+        z[3] = -scaling * freq**3 * np.cos(freq * t) # x_dddot
+
+        v[0] = scaling * freq**4 * np.sin(freq * t) # x_d4dot = v0
+
+        z[4] = scaling * np.sin(freq * t) *np.cos(freq * t) + offset[1]        
+        z[5] = scaling * freq * (np.cos(freq * t)**2 - np.sin(freq*t)**2)       
+        z[6] = -scaling * freq**2 * 4 * np.sin(freq * t) *np.cos(freq * t)        
+        z[7] = scaling * freq**3 * 4 * (np.sin(freq * t)**2 - np.cos(freq*t)**2)
+
+        v[1] = scaling * freq**4 * 16 * (np.sin(freq * t) *np.cos(freq * t))
+        return z, v
+
+    traj_freq = 2.0 * np.pi / traj_period
+    for index, t in enumerate(times):
+        z_traj[:, index], v_traj[:, index] = figure8_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
+
+    # calculate initial values for x, u and u_dot for flat state observer
+    initial_vals = {}
+    z_minus1, v_minus1 = figure8_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
+    z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
+    v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
+
+    u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
+    x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
+
+    initial_vals['z_ini_hrzn'] = z_ini_horizon
+    initial_vals['v_ini_hrzn'] = v_ini_horizon
+    initial_vals['u_ini'] = u_ini
+    initial_vals['x_ini'] = x_ini
+
+    # save reference trajectory for evaluation
+    data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
+    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
+        pickle.dump(data_dict, file_ref)
+    
+    return z_traj, initial_vals
+
 def _load_flat_trajectory_circle(): # from NMPC
-    raise NotImplementedError # initial values for state estimator not returned yeta
+    raise NotImplementedError # initial values for state estimator not returned yet
     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
         data_dict = pickle.load(file)
     z_ref = data_dict['z_ref']
