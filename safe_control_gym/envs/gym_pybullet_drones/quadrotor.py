@@ -808,23 +808,27 @@ class Quadrotor(BaseAviary):
             U = cs.vertcat(T, R, P, Y)
             # The thrust in PWM is converted from the normalized thrust.
             # With the formulat F_desired = b_F * T + a_F
+            params_acc = [20.907574256269616, 3.653687545690674]
+            params_roll_rate = [-130.3, -16.33, 119.3]
+            params_pitch_rate = [-99.94, -13.3, 84.73]
+            params_yaw_rate = [0, 0, 0]
 
             # Define dynamics equations.
             # TODO: create a parameter for the new quad model
             X_dot = cs.vertcat(x_dot,
-                               (20.763637147006943 * T + 3.1610208881218727) * (
+                               (params_acc[0] * T + params_acc[1]) * (
                                            cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
                                y_dot,
-                               (20.763637147006943 * T + 3.1610208881218727) * (
+                               (params_acc[0] * T + params_acc[1]) * (
                                            cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
                                z_dot,
-                               (20.763637147006943 * T + 3.1610208881218727) * cs.cos(phi) * cs.cos(theta) - g,
+                               (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
                                phi_dot,
                                theta_dot,
                                psi_dot,
-                               - 25.651473451232217 * phi - 2.5580262532002482 * phi_dot + 17.524089241776338 * R,
-                               - 61.62863740616216 * theta - 7.205874472066235 * theta_dot + 51.90335491067372 * P,
-                               - 12.544174350349687 * psi - 0.012945379372787613 * psi_dot + 43.839961280232046 * Y)
+                               params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+                               params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+                               params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y)
             # Define observation.
             Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
 
