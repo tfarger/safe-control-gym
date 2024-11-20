@@ -214,7 +214,7 @@ class LinearMPC(MPC):
             'cost': cost
         }
 
-    @timing
+    # @timing
     def select_action(self,
                       obs,
                       info=None

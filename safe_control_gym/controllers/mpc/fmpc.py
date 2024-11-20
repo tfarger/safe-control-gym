@@ -29,8 +29,7 @@ from termcolor import colored
 from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
 
 from plottingUtils import *
-
-import pybullet as p
+from safe_control_gym.utils.utils import timing
 
 class FlatMPC(LinearMPC):
     '''Flatness based MPC.'''
@@ -99,8 +98,8 @@ class FlatMPC(LinearMPC):
         self.solver = solver
 
         # overwrite definitions in parent init function to fit flat model
-        self.Q = get_cost_weight_matrix([50, 0.1, 0.1, 0.1, 50, 0.1, 0.1, 0.1], self.model.nx) 
-        self.R = get_cost_weight_matrix([1e-7], self.model.nu)
+        self.Q = get_cost_weight_matrix([50, 0.001, 0.1, 0.001, 50, 0.001, 0.1, 0.001], self.model.nx) 
+        self.R = get_cost_weight_matrix([1e-6], self.model.nu)
         
         self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt, self.T)
 
@@ -244,7 +243,7 @@ class FlatMPC(LinearMPC):
                              'horizon_u': [],
                              }
 
-
+    @timing
     def select_action(self,
                       obs,
                       info=None
