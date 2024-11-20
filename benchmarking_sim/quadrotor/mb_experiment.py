@@ -16,12 +16,13 @@ from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.registration import make
 from safe_control_gym.utils.utils import mkdirs, set_dir_from_config, timing
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor import Quadrotor
+from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
 from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 
 script_path = os.path.dirname(os.path.realpath(__file__))
 
 @timing
-def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
+def run(gui=True, n_episodes=1, n_steps=None, save_data=True):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -44,7 +45,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
         # ALGO = 'lqr'
         # ALGO = 'lqr_c'
         # ALGO = 'pid'
-    SYS = 'quadrotor_2D_attitude'
+    # SYS = 'quadrotor_2D_attitude'
+    SYS = 'quadrotor_3D_attitude'
     TASK = 'tracking'
     # TASK = 'stab'
     # PRIOR = '200'
@@ -52,7 +54,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     ADDITIONAL = ''
     # ADDITIONAL='_snap'
     PRIOR = '100'
-    agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
+    agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 'quadrotor_3D_attitude'] else SYS
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
 
@@ -205,17 +207,22 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
             print(f'Metrics saved to ./{config.output_dir}/metrics.txt')
 
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
-
+    print(f'pyb_client: {ctrl.env.PYB_CLIENT}')
 
 # def plot_quad_eval(state_stack, input_stack, clipped_action_stack, env, save_path=None):
 def plot_quad_eval(state_stack, input_stack, env, save_path=None):
-    '''Plots the input and states to determine iLQR's success.
+    '''Plots the input and states to determine success.
 
     Args:
-        state_stack (ndarray): The list of observations of iLQR in the latest run.
-        input_stack (ndarray): The list of inputs of iLQR in the latest run.
+        state_stack (ndarray): The list of observations in the latest run.
+        input_stack (ndarray): The list of inputs of in the latest run.
     '''
     model = env.symbolic
+    if env.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+        x_idx, z_idx = 0, 2
+    elif env.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
+        x_idx, z_idx = 0, 4
+
     stepsize = model.dt
 
     plot_length = np.min([np.shape(input_stack)[0], np.shape(state_stack)[0]])
@@ -226,7 +233,7 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
         reference = np.tile(reference.reshape(1, model.nx), (plot_length, 1))
 
     # Plot states
-    fig, axs = plt.subplots(model.nx)
+    fig, axs = plt.subplots(model.nx, figsize=(8, model.nx*1))
     for k in range(model.nx):
         axs[k].plot(times, np.array(state_stack).transpose()[k, 0:plot_length], label='actual')
         axs[k].plot(times, reference.transpose()[k, 0:plot_length], color='r', label='desired')
@@ -237,12 +244,13 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     axs[0].set_title('State Trajectories')
     axs[-1].legend(ncol=3, bbox_transform=fig.transFigure, bbox_to_anchor=(1, 0), loc='lower right')
     axs[-1].set(xlabel='time (sec)')
+    fig.tight_layout()
 
     if save_path is not None:
         plt.savefig(os.path.join(save_path, 'state_trajectories.png'))
 
     # Plot inputs
-    _, axs = plt.subplots(model.nu)
+    _, axs = plt.subplots(model.nu, figsize=(8, model.nu*1))
     if model.nu == 1:
         axs = [axs]
     for k in range(model.nu):
@@ -259,10 +267,10 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
 
     # plot the figure-eight
     _, axs = plt.subplots(1)
-    axs.plot(np.array(state_stack).transpose()[0, 0:plot_length], 
-             np.array(state_stack).transpose()[2, 0:plot_length], label='actual')
-    axs.plot(reference.transpose()[0, 0:plot_length], 
-             reference.transpose()[2, 0:plot_length], color='r', label='desired')
+    axs.plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
+             np.array(state_stack).transpose()[z_idx, 0:plot_length], label='actual')
+    axs.plot(reference.transpose()[x_idx, 0:plot_length], 
+             reference.transpose()[z_idx, 0:plot_length], color='r', label='desired')
     axs.set_xlabel('x [m]')
     axs.set_ylabel('z [m]')
     axs.set_title('State path in x-z plane')

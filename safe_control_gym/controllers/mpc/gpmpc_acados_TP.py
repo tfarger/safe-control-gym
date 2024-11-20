@@ -1166,12 +1166,20 @@ class GPMPC_ACADOS_TP(GPMPC):
                 z_ind = inputs[inds]
             else:
                 raise ValueError('[Error]: gp_mpc.precompute_sparse_gp_values: Only \'kmeans\' or \'random\' allowed.')
+        
+        use_pinv = True
+        # use_pinv = False
+        
         GP_T = self.gaussian_process[0]
         GP_P = self.gaussian_process[1]
         K_zind_zind_T = GP_T.model.covar_module(torch.from_numpy(z_ind[:,0]).double())
         K_zind_zind_P = GP_P.model.covar_module(torch.from_numpy(z_ind[:,1:]).double())
-        K_zind_zind_inv_T = K_zind_zind_T.inv_matmul(torch.eye(n_ind_points).double()).detach()
-        K_zind_zind_inv_P = K_zind_zind_P.inv_matmul(torch.eye(n_ind_points).double()).detach()
+        if use_pinv:
+            K_zind_zind_inv_T = torch.pinverse(K_zind_zind_T.evaluate().detach())
+            K_zind_zind_inv_P = torch.pinverse(K_zind_zind_P.evaluate().detach())
+        else:
+            K_zind_zind_inv_T = K_zind_zind_T.inv_matmul(torch.eye(n_ind_points).double()).detach()
+            K_zind_zind_inv_P = K_zind_zind_P.inv_matmul(torch.eye(n_ind_points).double()).detach()
         K_zind_zind_T = GP_T.model.covar_module(torch.from_numpy(z_ind[:,0]).double()).evaluate().detach()
         K_zind_zind_P = GP_P.model.covar_module(torch.from_numpy(z_ind[:,1:]).double()).evaluate().detach()
         K_zind_zind = torch.zeros((dim_gp_outputs, n_ind_points, n_ind_points))
@@ -1193,10 +1201,12 @@ class GPMPC_ACADOS_TP(GPMPC):
         K_plus_noise[0] = K_plus_noise_T
         K_plus_noise[1] = K_plus_noise_P
 
-        # Q_X_X_T = K_x_zind_T @ K_zind_zind_inv_T @ K_x_zind_T.T
-        # Q_X_X_P = K_x_zind_P @ K_zind_zind_inv_P @ K_x_zind_P.T
-        Q_X_X_T = K_x_zind_T @ torch.linalg.solve(K_zind_zind_T, K_x_zind_T.T)
-        Q_X_X_P = K_x_zind_P @ torch.linalg.solve(K_zind_zind_P, K_x_zind_P.T)
+        if use_pinv:
+            Q_X_X_T = K_x_zind_T @ K_zind_zind_inv_T @ K_x_zind_T.T
+            Q_X_X_P = K_x_zind_P @ K_zind_zind_inv_P @ K_x_zind_P.T
+        else:
+            Q_X_X_T = K_x_zind_T @ torch.linalg.solve(K_zind_zind_T, K_x_zind_T.T)
+            Q_X_X_P = K_x_zind_P @ torch.linalg.solve(K_zind_zind_P, K_x_zind_P.T)
 
         Gamma_T = torch.diagonal(K_plus_noise_T - Q_X_X_T)
         Gamma_inv_T = torch.diag_embed(1 / Gamma_T)
@@ -1209,12 +1219,14 @@ class GPMPC_ACADOS_TP(GPMPC):
         Sigma_inv[0] = Sigma_inv_T
         Sigma_inv[1] = Sigma_inv_P
 
-        # Sigma_T = torch.pinverse(K_zind_zind_T + K_x_zind_T.T @ Gamma_inv_T @ K_x_zind_T)
-
-        # mean_post_factor_T_m = Sigma_T @ K_x_zind_T.T @ Gamma_inv_T @ torch.from_numpy(targets[:,0]).double()
-
-        mean_post_factor_T = torch.linalg.solve(Sigma_inv_T, K_x_zind_T.T @ Gamma_inv_T @ torch.from_numpy(targets[:,0]).double())
-        mean_post_factor_P = torch.linalg.solve(Sigma_inv_P, K_x_zind_P.T @ Gamma_inv_P @ torch.from_numpy(targets[:,1]).double())
+        if use_pinv:
+            Sigma_T = torch.pinverse(Sigma_inv_T)
+            Sigma_P = torch.pinverse(Sigma_inv_P)
+            mean_post_factor_T = Sigma_T @ K_x_zind_T.T @ Gamma_inv_T @ torch.from_numpy(targets[:,0]).double()
+            mean_post_factor_P = Sigma_P @ K_x_zind_P.T @ Gamma_inv_P @ torch.from_numpy(targets[:,1]).double()
+        else:
+            mean_post_factor_T = torch.linalg.solve(Sigma_inv_T, K_x_zind_T.T @ Gamma_inv_T @ torch.from_numpy(targets[:,0]).double())
+            mean_post_factor_P = torch.linalg.solve(Sigma_inv_P, K_x_zind_P.T @ Gamma_inv_P @ torch.from_numpy(targets[:,1]).double())
 
         mean_post_factor = torch.zeros((dim_gp_outputs, n_ind_points))
         mean_post_factor[0] = mean_post_factor_T
@@ -1509,7 +1521,9 @@ class GPMPC_ACADOS_TP(GPMPC):
             # reinitialize the acados model and solver
             self.setup_acados_model(n_ind_points)
             self.setup_acados_optimizer(n_ind_points)
-            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/gpmpc_acados_ocp_solver.json')
+            # get time in $ymd_HMS format
+            current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/gpmpc_acados_ocp_solver_{current_time}.json')
 
         self.prior_ctrl.reset()
         self.setup_results_dict()

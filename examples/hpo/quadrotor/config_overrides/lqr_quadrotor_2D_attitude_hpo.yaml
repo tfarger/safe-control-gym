@@ -14,6 +14,5 @@ hpo_config:
 
   # hyperparameters
   hps_config:
-    horizon: 40
-    q_mpc: [5.0, 0.1, 5.0, 0.1, 0.5, 0.001]
-    r_mpc: [0.8, 0.8]
+    q_lqr: [5, 0.1, 5, 0.1, 0.5, 0.01]
+    r_lqr: [1.0, 1.0]

@@ -4,9 +4,9 @@ from typing import Any, Dict
 
 import optuna
 
-from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, LMPC_dict, MPC_dict, PPO_dict,
-                                                               DPPO_dict, SAC_dict, iLQR_dict, iLQR_SF_dict,
-                                                               is_log_scale)
+from safe_control_gym.hyperparameters.hpo_search_space import (GPMPC_dict, GPMPC_TP_dict, LMPC_dict, MPC_dict, PPO_dict,
+                                                               DPPO_dict, SAC_dict, LQR_dict, iLQR_dict, iLQR_SF_dict,
+                                                               PID_dict, is_log_scale)
 
 
 def ppo_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
@@ -240,6 +240,47 @@ def gpmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[
 
     return hps_suggestion
 
+def gpmpc_tp_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for PPO hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    horizon = trial.suggest_categorical('horizon', GPMPC_TP_dict['horizon']['values'])
+    n_ind_points = trial.suggest_categorical('n_ind_points', GPMPC_TP_dict['n_ind_points']['values'])
+    num_epochs = trial.suggest_categorical('num_epochs', GPMPC_TP_dict['num_epochs']['values'])
+    num_samples = trial.suggest_categorical('num_samples', GPMPC_TP_dict['num_samples']['values'])
+
+    optimization_iterations = trial.suggest_categorical('optimization_iterations', GPMPC_TP_dict['optimization_iterations']['values'])
+    learning_rate = trial.suggest_float('learning_rate', GPMPC_TP_dict['learning_rate']['values'][0], GPMPC_TP_dict['learning_rate']['values'][1], log=is_log_scale(GPMPC_TP_dict['learning_rate']))
+
+    # objective
+    state_weight = [
+        trial.suggest_float(f'q_mpc_{i}', GPMPC_TP_dict['q_mpc']['values'][0], GPMPC_TP_dict['q_mpc']['values'][1], log=is_log_scale(GPMPC_TP_dict['q_mpc']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'r_mpc_{i}', GPMPC_TP_dict['r_mpc']['values'][0], GPMPC_TP_dict['r_mpc']['values'][1], log=is_log_scale(GPMPC_TP_dict['r_mpc']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'horizon': horizon,
+        'n_ind_points': n_ind_points,
+        'num_epochs': num_epochs,
+        'num_samples': num_samples,
+        'optimization_iterations': optimization_iterations,
+        'learning_rate': learning_rate,
+        'q_mpc': state_weight,
+        'r_mpc': action_weight,
+    }
+
+    return hps_suggestion
+
 
 def lmpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
     """Sampler for LMPC hyperparameters.
@@ -298,6 +339,33 @@ def mpc_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[st
         'horizon': horizon,
         'q_mpc': state_weight,
         'r_mpc': action_weight,
+    }
+
+    return hps_suggestion
+
+def lqr_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for LQR hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    # cost parameters
+    state_weight = [
+        trial.suggest_float(f'q_lqr_{i}', LQR_dict['q_lqr']['values'][0], LQR_dict['q_lqr']['values'][1], log=is_log_scale(LQR_dict['q_lqr']))
+        for i in range(state_dim)
+    ]
+    action_weight = [
+        trial.suggest_float(f'r_lqr_{i}', LQR_dict['r_lqr']['values'][0], LQR_dict['r_lqr']['values'][1], log=is_log_scale(LQR_dict['r_lqr']))
+        for i in range(action_dim)
+    ]
+
+    hps_suggestion = {
+        'q_lqr': state_weight,
+        'r_lqr': action_weight,
     }
 
     return hps_suggestion
@@ -395,6 +463,52 @@ def ilqr_sf_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dic
 
     return hps_suggestion
 
+def pid_sampler(trial: optuna.Trial, state_dim: int, action_dim: int) -> Dict[str, Any]:
+    """Sampler for PID hyperparameters.
+
+    args:
+        hps_dict: the dict of hyperparameters that will be optimized over
+        trial: budget variable
+        state_dim: dimension of the state space
+        action_dim: dimension of the action space
+    """
+
+    p_coeff_for = [
+        trial.suggest_float(f'P_COEFF_FOR_{i}', PID_dict['P_COEFF_FOR']['values'][0], PID_dict['P_COEFF_FOR']['values'][1], log=is_log_scale(PID_dict['P_COEFF_FOR']))
+        for i in range(3)
+    ]
+    i_coeff_for = [
+        trial.suggest_float(f'I_COEFF_FOR_{i}', PID_dict['I_COEFF_FOR']['values'][0], PID_dict['I_COEFF_FOR']['values'][1], log=is_log_scale(PID_dict['I_COEFF_FOR']))
+        for i in range(3)
+    ]
+    d_coeff_for = [
+        trial.suggest_float(f'D_COEFF_FOR_{i}', PID_dict['D_COEFF_FOR']['values'][0], PID_dict['D_COEFF_FOR']['values'][1], log=is_log_scale(PID_dict['D_COEFF_FOR']))
+        for i in range(3)
+    ]
+    p_coeff_tor = [
+        trial.suggest_float(f'P_COEFF_TOR_{i}', PID_dict['P_COEFF_TOR']['values'][0], PID_dict['P_COEFF_TOR']['values'][1], log=is_log_scale(PID_dict['P_COEFF_TOR']))
+        for i in range(3)
+    ]
+    i_coeff_tor = [
+        trial.suggest_float(f'I_COEFF_TOR_{i}', PID_dict['I_COEFF_TOR']['values'][0], PID_dict['I_COEFF_TOR']['values'][1], log=is_log_scale(PID_dict['I_COEFF_TOR']))
+        for i in range(3)
+    ]
+    d_coeff_tor = [
+        trial.suggest_float(f'D_COEFF_TOR_{i}', PID_dict['D_COEFF_TOR']['values'][0], PID_dict['D_COEFF_TOR']['values'][1], log=is_log_scale(PID_dict['D_COEFF_TOR']))
+        for i in range(3)
+    ]
+
+    hps_suggestion = {
+        'P_COEFF_FOR': p_coeff_for,
+        'I_COEFF_FOR': i_coeff_for,
+        'D_COEFF_FOR': d_coeff_for,
+        'P_COEFF_TOR': p_coeff_tor,
+        'I_COEFF_TOR': i_coeff_tor,
+        'D_COEFF_TOR': d_coeff_tor,
+    }
+
+    return hps_suggestion
+
 
 HYPERPARAMS_SAMPLER = {
     'ppo': ppo_sampler,
@@ -402,8 +516,11 @@ HYPERPARAMS_SAMPLER = {
     'sac': sac_sampler,
     'gp_mpc': gpmpc_sampler,
     'gpmpc_acados': gpmpc_sampler,
+    'gpmpc_acados_TP': gpmpc_tp_sampler,
     'linear_mpc': lmpc_sampler,
     'mpc_acados': mpc_sampler,
+    'lqr': lqr_sampler,
     'ilqr': ilqr_sampler,
     'ilqr_sf': ilqr_sf_sampler,
+    'pid': pid_sampler,
 }

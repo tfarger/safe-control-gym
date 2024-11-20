@@ -24,12 +24,12 @@ def hpo(config):
                 config.task_config.disturbances.observation[0]['std'] += [0, 0, 0, 0, 0, 0]
         config.algo_config.log_interval = 10000000
         config.algo_config.eval_interval = 10000000
-    elif config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'linear_mpc' or config.algo == 'mpc_acados':
+    elif config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'gpmpc_acados_TP' or config.algo == 'linear_mpc' or config.algo == 'mpc_acados':
         pass
-    elif config.algo == 'ilqr':
+    elif config.algo == 'pid' or config.algo == 'lqr' or config.algo == 'ilqr':
         pass
     else:
-        raise ValueError('Only ppo, sac, dppo, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr are supported for now.')
+        raise ValueError('Only ppo, sac, dppo, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr, lqr, pid are supported for now.')
 
     # Experiment setup.
     set_dir_from_config(config)

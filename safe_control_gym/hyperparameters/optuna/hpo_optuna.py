@@ -72,6 +72,9 @@ class HPO_Optuna(BaseHPO):
         returns = self.evaluate(sampled_hyperparams)
         Gss = np.array(returns).mean()
 
+        if trial.number == 0:
+            self.warmstart_trial_value = returns
+
         self.logger.info('Returns: {}'.format(Gss))
 
         if len(self.study.trials) > 0:
@@ -138,6 +141,12 @@ class HPO_Optuna(BaseHPO):
         output_dir = os.path.join(self.output_dir, 'hpo')
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
+
+        # check if initial trial is completed
+        if len(self.study.trials) > 0:
+            if self.study.trials[0].state == TrialState.COMPLETE:
+                with open(f'{output_dir}/warmstart_trial_value.txt', 'w') as f:
+                    f.write(str(self.warmstart_trial_value))
 
         try:
             # save meta data
