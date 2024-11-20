@@ -7,12 +7,12 @@ task_config:
   quad_type: 4
 
   init_state: 
-    init_x: 0 #0.5
-    init_x_dot: 0 #0.52359878 # 0
-    init_z: 2.0
-    init_z_dot: 0 #0.52359878
-    init_theta: 0 # -0.05589187
-    init_theta_dot: 0 # -0.05859085 #-0.00326794
+    init_x: 2
+    init_x_dot: 0
+    init_z: 2
+    init_z_dot: 0
+    init_theta: 0 
+    init_theta_dot: 0
   randomized_init: False
   randomized_inertial_prop: False
 
@@ -42,13 +42,10 @@ task_config:
       low: -0.05
       high: 0.05
 
-  task: traj_tracking
+  task: stabilization
   task_info:
-    trajectory_type: figure8 #circle
-    num_cycles: 2
-    trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 2.]
-    trajectory_scale: 0.5
+    stabilization_goal: [0, 1]
+    stabilization_goal_tolerance: 0.0
 
   inertial_prop:
     M: 0.027
@@ -61,7 +58,7 @@ task_config:
     alpha_3: 124.8
     pitch_bias: 0.0 # in radian
 
-  episode_len_sec: 12
+  episode_len_sec: 6
   cost: quadratic
   obs_goal_horizon: 0
 

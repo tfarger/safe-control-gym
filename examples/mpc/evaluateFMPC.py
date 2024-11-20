@@ -8,7 +8,8 @@ from plottingUtils import *
 
 def evaluateFMPC(show_plots = False):
 
-    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
+    # with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
+    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_stabilization.pkl', 'rb') as file:
         data_dict_fmpc = pickle.load(file)
         data_dict_fmpc = data_dict_fmpc['trajs_data']
 
