@@ -1,8 +1,8 @@
-algo: mpc
+algo: fmpc
 algo_config:
-  horizon: 30
+  horizon: 40
   r_mpc:
-    - 1.0
+    - 1.0 # are overwritten in fmpc.py for flat system
     - 1.0
   q_mpc:
     - 5.0
@@ -17,6 +17,7 @@ algo_config:
     randomize_prior_prop: False
     prior_prop_rand_info: null
   warmstart: True
-  output_dir: ./mpc/results
+  output_dir: ./fmpc/results
+  solver: qrqp
 
 
