@@ -3,9 +3,9 @@
 # for STARTSEED in 1 21 41 61 81
 for STARTSEED in 40
 do 
-    for ADDITIOANL in '_11' # '_10' '_12' '_13' '_14'
+    for ADDITIOANL in  'none' # '_11' # '_10' '_12' '_13' '_14'
     do
-        python3 mb_experiment_rollout.py $STARTSEED 20 $ADDITIOANL 'gpmpc_acados'
+        python3 mb_experiment_rollout.py $STARTSEED 2 $ADDITIOANL 'fmpc'
     done
 done
 

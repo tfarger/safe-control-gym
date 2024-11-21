@@ -32,6 +32,7 @@ plot_colors = {
     'Nonlinear MPC': 'cadetblue',
     'MAX': 'none',
     'MIN': 'none',
+    'FMPC': 'purple'
 }
 
 axis_label_fontsize = 30
@@ -148,101 +149,109 @@ def spider(df, *, id_column, title=None, subtitle=None, max_values=None, padding
 
 
 radar = spider
+    
+def run():
 
-num_axis = 6
-gen_performance = [0.07240253210609013, 0.031425261835490235,  # GP-MPC
-                   0.10363015782869267, 0.03574250675445726,  # Linear-MPC
-                   0.06669989755434953, 0.023313325828377546,  # MPC
-                   0.049631400535807925, 0.047894774207991445,  # PPO
-                   0.12754716185055215, 0.08743083392874743,  # SAC
-                   0.050426782816096215, 0.04861203156962396,  # DPPO
-                   ]
-performance = [0.049872511450839645, 0.049872511450839645,  # GP-MPC
-               0.06556989411791102, 0.06556989411791102,  # Linear-MPC
-               0.04421752503119518, 0.04421752503119518,  # MPC
-               0.01746153113470009, 0.01746153113470009,  # PPO
-               0.0764178745409007, 0.0764178745409007,  # SAC
-               0.01931011838369746, 0.01931011838369746,  # DPPO
-               ]
-inference_time = [0.0090775150246974736, 0.0090775150246974736,
-                  0.0011251235, 0.0011251235,
-                  0.0061547613, 0.0061547613,
-                  0.00020738168999000832, 0.00020738168999000832,
-                  0.00024354409288477016, 0.00024354409288477016,
-                  0.0001976909460844817, 0.0001976909460844817,
-                  ]
-model_complexity = [80, 80,
-                    40, 40,
-                    80, 80,
-                    1, 1,
-                    1, 1,
-                    1, 1]
-sampling_complexity = [int(660), int(660),
-                       int(1), int(1),
-                       int(1), int(1),
-                       int(2.8 * 1e5), int(2.8 * 1e5),
-                       int(2 * 1e5), int(2 * 1e5),
-                       int(2.5 * 1e5), int(2.5 * 1e5)]
-robustness = [120, 120,
-              90, 90,
-              90, 90,
-              10, 10,
-              30, 30,
-              20, 20]
-data = [gen_performance, performance, inference_time, model_complexity, sampling_complexity, robustness]
-max_values = [0.01, 0.01, 1e-5, 1, 1, 120]
-min_values = [0.2, 0.2, 1e-2, 80, 3.e5, 1]
+    radar = spider
 
-for i, d in enumerate(data):
-    data[i].append(max_values[i])
-    data[i].append(min_values[i])
+    num_axis = 6
+    gen_performance = [0.07240253210609013, 0.031425261835490235,  # GP-MPC
+                    0.10363015782869267, 0.03574250675445726,  # Linear-MPC
+                    0.06669989755434953, 0.023313325828377546,  # MPC
+                    0.049631400535807925, 0.047894774207991445,  # PPO
+                    0.12754716185055215, 0.08743083392874743,  # SAC
+                    0.050426782816096215, 0.04861203156962396,  # DPPO
+                    ]
+    performance = [0.049872511450839645, 0.049872511450839645,  # GP-MPC
+                0.06556989411791102, 0.06556989411791102,  # Linear-MPC
+                0.04421752503119518, 0.04421752503119518,  # MPC
+                0.01746153113470009, 0.01746153113470009,  # PPO
+                0.0764178745409007, 0.0764178745409007,  # SAC
+                0.01931011838369746, 0.01931011838369746,  # DPPO
+                ]
+    inference_time = [0.0090775150246974736, 0.0090775150246974736,
+                    0.0011251235, 0.0011251235,
+                    0.0061547613, 0.0061547613,
+                    0.00020738168999000832, 0.00020738168999000832,
+                    0.00024354409288477016, 0.00024354409288477016,
+                    0.0001976909460844817, 0.0001976909460844817,
+                    ]
+    model_complexity = [80, 80,
+                        40, 40,
+                        80, 80,
+                        1, 1,
+                        1, 1,
+                        1, 1]
+    sampling_complexity = [int(660), int(660),
+                        int(1), int(1),
+                        int(1), int(1),
+                        int(2.8 * 1e5), int(2.8 * 1e5),
+                        int(2 * 1e5), int(2 * 1e5),
+                        int(2.5 * 1e5), int(2.5 * 1e5)]
+    robustness = [120, 120,
+                90, 90,
+                90, 90,
+                10, 10,
+                30, 30,
+                20, 20]
+    data = [gen_performance, performance, inference_time, model_complexity, sampling_complexity, robustness]
+    max_values = [0.01, 0.01, 1e-5, 1, 1, 120]
+    min_values = [0.2, 0.2, 1e-2, 80, 3.e5, 1]
 
-# append the max and min values to the data
-algos = ['GP-MPC', 'GP-MPC',
-         'Linear MPC', 'Linear MPC',
-         'Nonlinear MPC', 'Nonlinear MPC',
-         'PPO', 'PPO',
-         'SAC', 'SAC',
-         'DPPO', 'DPPO',
-         'MAX', 'MIN']
+    for i, d in enumerate(data):
+        data[i].append(max_values[i])
+        data[i].append(min_values[i])
 
-# read the argv
-if len(sys.argv) > 1:
-    masks_algo = [int(i) for i in sys.argv[1:]]
-    masks_algo.append(6)
-    masks_algo.append(7)
-else:
-    masks_algo = [8, 9, -2, -1]
-data = np.array(data)[:, masks_algo]
-data = data.tolist()
-algos = [algos[i] for i in masks_algo]
-print(algos)
+    # append the max and min values to the data
+    algos = ['GP-MPC', 'GP-MPC',
+            'Linear MPC', 'Linear MPC',
+            'Nonlinear MPC', 'Nonlinear MPC',
+            'PPO', 'PPO',
+            'SAC', 'SAC',
+            'DPPO', 'DPPO',
+            'MAX', 'MIN']
+        # apppend the max and min values to the data
 
-spider(
-    pd.DataFrame({
-        # 'x': [*'ab'],
-        'x': algos,
-        '$\qquad\qquad\qquad\quad$  Generalization\n $\qquad\qquad\qquad\quad$ performance\n\n':
-            data[0],
-        '$\qquad\qquad\qquad\quad$ Performance\n':
-            data[1],
-        # '$\quad\quad\quad\quad\quad\qquad$(Figure-8 tracking)': [3.94646538e-02, 0.03],
-        'Inference\ntime\n\n':
-            data[2],
-        'Model                \nknowledge                ':
-            [int(data[3][i]) for i in range(len(data[3]))],
-        '\n\n\nSampling\ncomplexity':
-            data[4],
-        '\n\nRobustness':
-            [int(data[5][i]) for i in range(len(data[5]))],
-    }),
+    # read the argv
+    if len(sys.argv) > 1:
+        masks_algo = [int(i) for i in sys.argv[1:]]
+        masks_algo.append(6)
+        masks_algo.append(7)
+    else:
+        masks_algo = [8, 9, -2, -1]
+    data = np.array(data)[:, masks_algo]
+    data = data.tolist()
+    algos = [algos[i] for i in masks_algo]
+    print(algos)
 
-    id_column='x',
-    # title='   Overall Comparison',
-    # title = algos[0],
-    title=None,
-    # subtitle='(Normalized linear scale)',
-    padding=1.1,
-    # padding=1,
-    plt_name=algos[0],
-)
+    spider(
+        pd.DataFrame({
+            # 'x': [*'ab'],
+            'x': algos,
+            '$\qquad\qquad\qquad\quad$  Generalization\n $\qquad\qquad\qquad\quad$ performance\n\n':
+                data[0],
+            '$\qquad\qquad\qquad\quad$ Performance\n':
+                data[1],
+            # '$\quad\quad\quad\quad\quad\qquad$(Figure-8 tracking)': [3.94646538e-02, 0.03],
+            'Inference\ntime\n\n':
+                data[2],
+            'Model                \nknowledge                ':
+                [int(data[3][i]) for i in range(len(data[3]))],
+            '\n\n\nSampling\ncomplexity':
+                data[4],
+            '\n\nRobustness':
+                [int(data[5][i]) for i in range(len(data[5]))],
+        }),
+
+        id_column='x',
+        # title='   Overall Comparison',
+        # title = algos[0],
+        title=None,
+        # subtitle='(Normalized linear scale)',
+        padding=1.1,
+        # padding=1,
+        plt_name=algos[0],
+    )
+
+if __name__ == '__main__':
+    run()

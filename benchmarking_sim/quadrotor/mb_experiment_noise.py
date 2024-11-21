@@ -27,7 +27,7 @@ script_path = os.path.dirname(os.path.realpath(__file__))
 # gp_model_dirs = sorted(gp_model_dirs, key=lambda x: int(x.split('seed')[1].split('_')[0]))
 
 @timing
-def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
+def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2, noise_factor=1):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -38,8 +38,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     '''
     # read the additional arguments
     # if len(sys.argv) > 1:
-    noise_factor = eval(sys.argv[1])
-    seed = eval(sys.argv[2])
+    # noise_factor = eval(sys.argv[1])
+    # seed = eval(sys.argv[2])
     # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
     # ALGO = 'gpmpc_acados'
@@ -97,8 +97,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
         num_data_max = config.algo_config.num_epochs * config.algo_config.num_samples
         config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max) + '_noise/' + f'seed_{seed}')
     else:
-        config.output_dir = config.output_dir + '_rollout'
-    print('output_dir',  config.algo_config.output_dir)
+        config.output_dir =  f'./{ALGO}/results_noise/seed_{seed}'
+    print('output_dir',  config.output_dir)
     set_dir_from_config(config)
     config.algo_config.output_dir = config.output_dir
     # mkdirs(config.output_dir)

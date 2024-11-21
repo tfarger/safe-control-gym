@@ -38,7 +38,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2, Additiona
     # ALGO = 'gp_mpc'
     # ALGO = 'gpmpc_acados'
     # ALGO = 'mpc'
-    ALGO = 'fmpc'
+    # ALGO = 'fmpc'
     # ALGO = 'mpc_acados'
     ALGO = ALGO
     # ALGO = 'linear_mpc'
