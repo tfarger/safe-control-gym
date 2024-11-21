@@ -19,10 +19,10 @@ from safe_control_gym.envs.gym_pybullet_drones.quadrotor import Quadrotor
 from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 
 script_path = os.path.dirname(os.path.realpath(__file__))
-gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
-# get all directories in the gp_model_path
-gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
-gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
+# gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
+# # get all directories in the gp_model_path
+# gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
+# gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
 
 @timing
 def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
@@ -34,10 +34,11 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
-    ALGO = 'ilqr'
+    # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
     # ALGO = 'gpmpc_acados'
     # ALGO = 'mpc'
+    ALGO = 'fmpc'
     # ALGO = 'mpc_acados'
     # ALGO = 'linear_mpc'
     # ALGO = 'lqr'

@@ -19,12 +19,12 @@ from safe_control_gym.envs.gym_pybullet_drones.quadrotor import Quadrotor
 from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 
 script_path = os.path.dirname(os.path.realpath(__file__))
-gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
-# get all directories in the gp_model_path
-gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
-gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
-# sort the directories by the seed after seed string
-gp_model_dirs = sorted(gp_model_dirs, key=lambda x: int(x.split('seed')[1].split('_')[0]))
+# gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
+# # get all directories in the gp_model_path
+# gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
+# gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
+# # sort the directories by the seed after seed string
+# gp_model_dirs = sorted(gp_model_dirs, key=lambda x: int(x.split('seed')[1].split('_')[0]))
 
 @timing
 def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
@@ -42,8 +42,9 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     seed = eval(sys.argv[2])
     # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
-    ALGO = 'gpmpc_acados'
+    # ALGO = 'gpmpc_acados'
     # ALGO = 'mpc'
+    ALGO = 'fmpc'
     # ALGO = 'mpc_acados'
     # ALGO = 'linear_mpc'
     # ALGO = 'lqr'
@@ -51,9 +52,9 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     # ALGO = 'pid'
     SYS = 'quadrotor_2D_attitude'
     TASK = 'tracking'
-    PRIOR = '200'
+    # PRIOR = '200'
     # PRIOR = '150'
-    # PRIOR = '100'
+    PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
