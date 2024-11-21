@@ -19,13 +19,13 @@ from safe_control_gym.envs.gym_pybullet_drones.quadrotor import Quadrotor
 from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 
 script_path = os.path.dirname(os.path.realpath(__file__))
-gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
+gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_aggresive'
 # get all directories in the gp_model_path
 gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
 gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
 
 @timing
-def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
+def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2, Additional='', ALGO='gpmpc_acados'):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -34,11 +34,12 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
-    ALGO = 'ilqr'
+    # ALGO = 'ilqr'
     # ALGO = 'gp_mpc'
     # ALGO = 'gpmpc_acados'
     # ALGO = 'mpc'
     # ALGO = 'mpc_acados'
+    ALGO = ALGO
     # ALGO = 'linear_mpc'
     # ALGO = 'lqr'
     # ALGO = 'lqr_c'
@@ -48,17 +49,20 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     # PRIOR = '200'
     PRIOR = '100'
     agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
+    # ADDITIONAL = '_fast'
+    ADDITIONAL = Additional
+    # ADDITIONAL = ''
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
 
     # check if the config file exists
-    assert os.path.exists(f'./config_overrides/{SYS}_{TASK}_slow.yaml'), f'./config_overrides/{SYS}_{TASK}_slow.yaml does not exist'
+    assert os.path.exists(f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml'), f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml does not exist'
     assert os.path.exists(f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml'), f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml does not exist'
     if SAFETY_FILTER is None:
         sys.argv[1:] = ['--algo', ALGO,
                         '--task', agent,
                         '--overrides',
-                            f'./config_overrides/{SYS}_{TASK}_slow.yaml',
+                            f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
                             f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
                         '--seed', repr(seed),
                         '--use_gpu', 'True',
@@ -72,7 +76,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
                         '--task', agent,
                         '--safety_filter', SAFETY_FILTER,
                         '--overrides',
-                            f'./config_overrides/{SYS}_{TASK}_slow.yaml',
+                            f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
                             f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
                             f'./config_overrides/{SAFETY_FILTER}_{SYS}_{TASK}_{PRIOR}.yaml',
                         '--kv_overrides', f'sf_config.cost_function={MPSC_COST}',
@@ -87,14 +91,18 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2):
     config = fac.merge()
     if ALGO in ['gpmpc_acados', 'gp_mpc']:
         num_data_max = config.algo_config.num_epochs * config.algo_config.num_samples
-        config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max) + '_rti_rollout')
+        config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max) + f'_rollout{ADDITIONAL}')
     else:
-        config.output_dir = config.output_dir + '_rollout'
+        config.output_dir = config.output_dir + f'_rollout{ADDITIONAL}'
     print('output_dir',  config.algo_config.output_dir)
     set_dir_from_config(config)
     config.algo_config.output_dir = config.output_dir
     mkdirs(config.output_dir)
-    config.algo_config.gp_model_path = gp_model_dirs[seed-1] if ALGO == 'gpmpc_acados' else None
+    if seed%10 == 0:
+        config.algo_config.gp_model_path = gp_model_dirs[10-1] if ALGO == 'gpmpc_acados' else None
+    else:
+        config.algo_config.gp_model_path = gp_model_dirs[seed%10-1] if ALGO == 'gpmpc_acados' else None
+    
 
     # Create an environment
     env_func = partial(make,
@@ -282,10 +290,20 @@ def wrap2pi_vec(angle_vec):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        start_seed = int(sys.argv[1])
+        num_seed = int(sys.argv[2])
+        additional = sys.argv[3]
+        if additional == 'none':
+            additional = ''
+        algo = sys.argv[4]
+
+    else:
+        start_seed = 1
     runtime_list = []
-    num_seed = 10
-    for seed in range(1, num_seed + 1):
-        run(seed=seed)
+    # num_seed = 100
+    for seed in range(start_seed, num_seed + start_seed):
+        run(seed=seed, Additional=additional, ALGO=algo)
         runtime_list.append(run.elapsed_time)
     print(f'Average runtime for {num_seed} runs: \
           {np.mean(runtime_list):.3f} sec')
