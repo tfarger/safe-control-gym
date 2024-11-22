@@ -10,7 +10,7 @@ import yaml
 from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.plotting import plot_from_logs
 from safe_control_gym.utils.registration import make
-from safe_control_gym.utils.utils import mkdirs, set_device_from_config, set_seed_from_config
+from safe_control_gym.utils.utils import mkdirs, set_device_from_config, set_seed_from_config, set_dir_from_config
 
 
 def train():
@@ -26,6 +26,7 @@ def train():
 
     shutil.rmtree(config.output_dir, ignore_errors=True)
 
+    set_dir_from_config(config)
     set_seed_from_config(config)
     set_device_from_config(config)
 
