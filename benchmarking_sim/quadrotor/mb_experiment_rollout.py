@@ -208,6 +208,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=2, Additiona
                 f.write(f'{key}: {value}\n')
             print(f'Metrics saved to ./{config.output_dir}/metrics.txt')
 
+        # save execution time to file
+        exec_times = (all_trajs['controller_data'][0]['ctrl_run_time'])
+        np.save(f'./{config.output_dir}/exec_times', exec_times)
+
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
 
 

@@ -143,7 +143,8 @@ def spider(df, *, id_column, title=None, subtitle=None, max_values=None, padding
     if title is not None: plt.suptitle(title, fontsize=supertitle_fontsize)
     if subtitle is not None: plt.title(subtitle, fontsize=subtitle_fontsize)
     plt.show()
-    fig_save_path = os.path.join(script_dir, f'{plt_name}_radar.pdf')
+    # fig_save_path = os.path.join(script_dir, f'{plt_name}_radar.pdf')
+    fig_save_path = os.path.join(script_dir, f'{plt_name}_radar.png')
     fig.savefig(fig_save_path, dpi=300, bbox_inches='tight')
     print(f'figure saved as {fig_save_path}')
 

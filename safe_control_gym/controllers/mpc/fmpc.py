@@ -31,6 +31,8 @@ from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
 from plottingUtils import *
 from safe_control_gym.utils.utils import timing
 
+import time
+
 class FlatMPC(LinearMPC):
     '''Flatness based MPC.'''
 
@@ -102,6 +104,10 @@ class FlatMPC(LinearMPC):
         self.R = get_cost_weight_matrix([1e-6], self.model.nu)
         
         self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt, self.T)
+
+        # open a csv file for controller time logging
+        # self._time_log_file =  open(f'./{self.output_dir}/timing-data.csv', 'w+')
+        # self._time_log_file =  open(f'./temp-data/timing-data.csv', 'w+')
 
 
     def _setup_flat_model_symbolic(self):
@@ -210,7 +216,9 @@ class FlatMPC(LinearMPC):
         self.u_prev = None
 
         self.setup_results_dict()
-        
+
+
+           
 
 
 
@@ -241,6 +249,7 @@ class FlatMPC(LinearMPC):
                              'horizon_v': [],
                              'horizon_z': [],
                              'horizon_u': [],
+                             'ctrl_run_time': [],
                              }
 
     @timing
@@ -257,7 +266,7 @@ class FlatMPC(LinearMPC):
         Returns:
             action (ndarray): Input/action to the task/env.
         '''
-               
+        ts = time.time()    
         # get flat state estimation from observer
         z_obs = self.fs_obs.compute_observation(obs)
         
@@ -285,6 +294,10 @@ class FlatMPC(LinearMPC):
         self.results_dict['horizon_v'].append(v_horizon)
         self.results_dict['horizon_z'].append(z_horizon)
         # self.results_dict['horizon_u'].append(u_horizon)
+
+        # log execution time                
+        te = time.time()
+        self.results_dict['ctrl_run_time'].append(te-ts)
         
         return action
     
