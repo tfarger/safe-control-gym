@@ -64,6 +64,31 @@ class Quadrotor(BaseAviary):
             'distrib': 'uniform',
             'low': 2.07e-5,
             'high': 2.27e-5
+        },
+        'beta_1': {  # Nominal: 18.11
+            'distrib': 'uniform',
+            'low': -4,
+            'high': 4
+        },
+        'beta_2': {  # Nominal: 3.68
+            'distrib': 'uniform',
+            'low': -0.7,
+            'high': 0.7
+        },
+        'alpha_1': {  # Nominal: -140.8
+            'distrib': 'uniform',
+            'low': -5,
+            'high': 10
+        },
+        'alpha_2': {  # Nominal: -13.4
+            'distrib': 'uniform',
+            'low': -3,
+            'high': 3
+        },
+        'alpha_3': {  # Nominal: 124.8
+            'distrib': 'uniform',
+            'low': -5,
+            'high': 5
         }
     }
 
@@ -447,13 +472,27 @@ class Quadrotor(BaseAviary):
             'Iyy': self.J[1, 1],
             'Izz': self.J[2, 2]
         }
+        if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            prop_values['beta_1'] = self.beta_1
+            prop_values['beta_2'] = self.beta_2
+            prop_values['alpha_1'] = self.alpha_1
+            prop_values['alpha_2'] = self.alpha_2
+            prop_values['alpha_3'] = self.alpha_3
         if self.RANDOMIZED_INERTIAL_PROP:
             prop_values = self._randomize_values_by_info(
                 prop_values, self.INERTIAL_PROP_RAND_INFO)
             if any(phy_quantity < 0 for phy_quantity in prop_values.values()):
-                raise ValueError('[ERROR] in Quadrotor.reset(), negative randomized inertial properties.')
+                if self.QUAD_TYPE != QuadType.TWO_D_ATTITUDE:
+                    raise ValueError('[ERROR] in Quadrotor.reset(), negative randomized inertial properties.')
         self.OVERRIDDEN_QUAD_MASS = prop_values['M']
         self.OVERRIDDEN_QUAD_INERTIA = [prop_values['Ixx'], prop_values['Iyy'], prop_values['Izz']]
+        if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            self.beta_1 = prop_values['beta_1']
+            self.beta_2 = prop_values['beta_2']
+            self.alpha_1 = prop_values['alpha_1']
+            self.alpha_2 = prop_values['alpha_2']
+            self.alpha_3 = prop_values['alpha_3']
+            self._setup_symbolic()
 
         # Override inertial properties.
         p.changeDynamics(
@@ -633,13 +672,13 @@ class Quadrotor(BaseAviary):
                 # identified parameters for the 2D attitude interface
             # NOTE: these parameters are not set in the prior_prop dict
             # since they are specific to the 2D attitude model
-            beta_1 = prior_prop.get('beta_1', 18.112984649321753)
-            beta_2 = prior_prop.get('beta_2', 3.6800)
-            beta_3 = prior_prop.get('beta_3', 0)
-            alpha_1 = prior_prop.get('alpha_1', -140.8)
-            alpha_2 = prior_prop.get('alpha_2', -13.4)
-            alpha_3 = prior_prop.get('alpha_3', 124.8)
-            pitch_bias = prior_prop.get('pitch_bias', 0.0)
+            self.beta_1 = prior_prop.get('beta_1', 18.112984649321753)
+            self.beta_2 = prior_prop.get('beta_2', 3.6800)
+            self.beta_3 = prior_prop.get('beta_3', 0)
+            self.alpha_1 = prior_prop.get('alpha_1', -140.8)
+            self.alpha_2 = prior_prop.get('alpha_2', -13.4)
+            self.alpha_3 = prior_prop.get('alpha_3', 124.8)
+            self.pitch_bias = prior_prop.get('pitch_bias', 0.0)
 
             nx, nu = 6, 2
             # Define states.
@@ -666,16 +705,16 @@ class Quadrotor(BaseAviary):
             #                    -143.9 * theta - 13.02 * theta_dot + 122.5 * P
             #                    )
             X_dot = cs.vertcat(x_dot,
-                               (beta_1 * T + beta_2) * cs.sin(theta + pitch_bias) + beta_3,
+                               (self.beta_1 * T + self.beta_2) * cs.sin(theta + self.pitch_bias) + self.beta_3,
                                z_dot,
-                               (beta_1 * T + beta_2) * cs.cos(theta + pitch_bias) - g,
+                               (self.beta_1 * T + self.beta_2) * cs.cos(theta + self.pitch_bias) - g,
                                theta_dot,
-                               alpha_1 * (theta + pitch_bias) + alpha_2 * theta_dot + alpha_3 * P)
+                               self.alpha_1 * (theta + self.pitch_bias) + self.alpha_2 * theta_dot + self.alpha_3 * P)
             # Define observation.
             Y = cs.vertcat(x, x_dot, z, z_dot, theta, theta_dot)
 
-            T_mapping = beta_1 * T + beta_2
-            P_mapping = alpha_1 * (theta + pitch_bias) + alpha_2 * theta_dot + alpha_3 * P
+            T_mapping = self.beta_1 * T + self.beta_2
+            P_mapping = self.alpha_1 * (theta + self.pitch_bias) + self.alpha_2 * theta_dot + self.alpha_3 * P
             self.T_mapping_func = cs.Function('T_mapping', [T], [T_mapping])
             self.P_mapping_func = cs.Function('P_mapping', [theta, theta_dot, P], [P_mapping])
         

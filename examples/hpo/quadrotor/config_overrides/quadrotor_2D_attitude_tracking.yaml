@@ -14,7 +14,29 @@ task_config:
     init_theta: 0
     init_theta_dot: 0
   randomized_init: True
-  randomized_inertial_prop: False
+  randomized_inertial_prop: True
+
+  inertial_prop_randomization_info:
+    beta_1: # Nominal: 18.11
+      distrib: 'uniform'
+      low: -4
+      high: 4
+    beta_2: # Nominal: 3.68
+      distrib: 'uniform'
+      low: -0.7
+      high: 0.7
+    alpha_1:  # Nominal: -140.8
+      distrib: 'uniform'
+      low: -5
+      high: 10
+    alpha_2: # Nominal: -13.4
+      distrib: 'uniform'
+      low: -3
+      high: 3
+    alpha_3:  # Nominal: 124.8
+      distrib: 'uniform'
+      low: -5
+      high: 5
 
   init_state_randomization_info:
     init_x:
@@ -74,17 +96,22 @@ task_config:
       constrained_variable: state
     - constraint_form: default_constraint
       constrained_variable: input
-      # upper_bounds: [0.47628, 0.4]
-      # lower_bounds: [0.079, -0.4]
+      upper_bounds: [0.58212, 0.7]
+      lower_bounds: [0.09702, -0.7]
 
   done_on_out_of_bound: True
   done_on_violation: False
+
   disturbances:
-    # dynamics: # disturbance force in newton
-    #   - disturbance_func: uniform
-    #     low:  1.
-    #     high: 1.
-    #     mask: [1, 0, 0, 0]
+    dynamics:
+      - disturbance_func: white_noise
+        std: 0.05
     observation:
       - disturbance_func: white_noise
         std: [5.6e-05, 1.5e-02, 2.9e-05, 8.0e-03, 1.3e-03, 3.6e-01]
+    action:
+      - disturbance_func: impulse
+        magnitude: 0.01
+        step_offset: 2
+        duration: 1
+        decary_rate: 1

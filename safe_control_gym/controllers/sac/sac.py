@@ -170,7 +170,7 @@ class SAC(BaseController):
             # checkpoint
             if self.total_steps >= self.max_env_steps or (self.save_interval and self.total_steps % self.save_interval == 0):
                 # latest/final checkpoint
-                self.save(self.checkpoint_path, save_buffer=False)
+                self.save(self.checkpoint_path, save_buffer=True)
                 self.logger.info(f'Checkpoint | {self.checkpoint_path}')
                 path = os.path.join(self.output_dir, 'checkpoints', 'model_{}.pt'.format(self.total_steps))
                 self.save(path)
