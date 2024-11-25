@@ -252,7 +252,7 @@ class FlatMPC(LinearMPC):
                              'ctrl_run_time': [],
                              }
 
-    @timing
+    # @timing
     def select_action(self,
                       obs,
                       info=None
@@ -367,24 +367,23 @@ class FlatStateObserver():
        
     
 def _get_u_from_flat_states(z, v, dyn_pars, g):
-    try: 
-        beta_1 = dyn_pars['beta_1']
-        beta_2 = dyn_pars['beta_2']
-        alpha_1 =  dyn_pars['alpha_1']
-        alpha_2 =  dyn_pars['alpha_2']
-        alpha_3 =  dyn_pars['alpha_3']
-    except: 
-        print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
-        beta_1 = 18.112984649321753
-        beta_2 = 3.6800
-        alpha_1 =  -140.8
-        alpha_2 =  -13.4
-        alpha_3 =  124.8
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']
+    alpha_1 =  dyn_pars['alpha_1']
+    alpha_2 =  dyn_pars['alpha_2']
+    alpha_3 =  dyn_pars['alpha_3']
 
-    term_acc_sqrd = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
+    # print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
+    # beta_1 = 18.112984649321753
+    # beta_2 = 3.6800
+    # alpha_1 =  -140.8
+    # alpha_2 =  -13.4
+    # alpha_3 =  124.8
+
+    term_acc_sqrd = (z[2])**2 + (z[6]+g)**2 # x_ddot^2 + (z_ddot+g)^2
     theta = np.arctan2(z[2], (z[6]+g))
     theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/term_acc_sqrd
-    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/np.square(term_acc_sqrd)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
+    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/(term_acc_sqrd**2)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
 
     t = -(beta_2/beta_1) + np.sqrt(term_acc_sqrd)/beta_1
     p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
@@ -399,23 +398,26 @@ def _get_total_thrust_dot_from_flat_states(z):
     return t_dot
 
 def _get_z_from_regular_states(x, u0, u0_dot, dyn_pars, g):    
-    try: 
-        beta_1 = dyn_pars['beta_1']
-        beta_2 = dyn_pars['beta_2']        
-    except: 
-        print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
-        beta_1 = 18.112984649321753
-        beta_2 = 3.6800
+   
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']        
+
+    # print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
+    # beta_1 = 18.112984649321753
+    # beta_2 = 3.6800
         
     z = np.zeros(8)
+    sin_theta = np.sin(x[4])
+    cos_theta = np.cos(x[4])
+
     z[0] = x[0] # x
     z[1] = x[1] # x_dot
-    z[2] = np.sin(x[4])*(beta_2 + beta_1*u0) # x_ddot
-    z[3] = np.cos(x[4])*(beta_2 + beta_1*u0)*x[5] + np.sin(x[4])*beta_1*u0_dot # x_dddot
+    z[2] = sin_theta*(beta_2 + beta_1*u0) # x_ddot    
+    z[3] = cos_theta*(beta_2 + beta_1*u0)*x[5] + sin_theta*beta_1*u0_dot # x_dddot
     z[4] = x[2] # z
     z[5] = x[3] # z_dot
-    z[6] = np.cos(x[4])*(beta_2 + beta_1*u0)- g # z_ddot
-    z[7] = -np.sin(x[4])*(beta_2 + beta_1*u0)*x[5] + np.cos(x[4])*beta_1*u0_dot# z_dddot
+    z[6] = cos_theta*(beta_2 + beta_1*u0)- g # z_ddot
+    z[7] = -sin_theta*(beta_2 + beta_1*u0)*x[5] + cos_theta*beta_1*u0_dot# z_dddot
     return z
 
 # not needed in FMPC, used for x_ini in trajectory generation
