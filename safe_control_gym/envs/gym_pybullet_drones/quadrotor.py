@@ -907,11 +907,13 @@ class Quadrotor(BaseAviary):
             self.ACTION_UNITS = ['N', 'rad', 'rad', 'rad'] if not self.NORMALIZED_RL_ACTION_SPACE else ['-', '-', '-', '-']
 
         # Defining physical bounds for actions
-        max_roll_deg = 25
-        max_roll_rad = max_roll_deg * math.pi / 180
-        max_pitch_deg = 25
-        max_pitch_rad = max_pitch_deg * math.pi / 180
+        # NOTE: update 25.11.24: set roll and pitch action bounds to 1 rad (57 deg) to allow more
+        #       aggressive maneuvers. No update in yaw since no yaw dynamics yet.
+        max_roll_deg = 57
+        max_pitch_deg = 57
         max_yaw_deg = 25
+        max_roll_rad = max_roll_deg * math.pi / 180
+        max_pitch_rad = max_pitch_deg * math.pi / 180
         max_yaw_rad = max_yaw_deg * math.pi / 180
         # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
         if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
