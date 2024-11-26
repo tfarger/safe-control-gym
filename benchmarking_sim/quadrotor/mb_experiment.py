@@ -22,7 +22,7 @@ from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 script_path = os.path.dirname(os.path.realpath(__file__))
 
 @timing
-def run(gui=True, n_episodes=1, n_steps=None, save_data=True):
+def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -40,13 +40,14 @@ def run(gui=True, n_episodes=1, n_steps=None, save_data=True):
         # ALGO = 'gpmpc_acados'
         # ALGO = 'gpmpc_acados_TP'
         # ALGO = 'mpc'
-        ALGO = 'mpc_acados'
+        # ALGO = 'mpc_acados'
+        ALGO = 'linear_mpc_acados'
         # ALGO = 'linear_mpc'
         # ALGO = 'lqr'
         # ALGO = 'lqr_c'
         # ALGO = 'pid'
-    # SYS = 'quadrotor_2D_attitude'
-    SYS = 'quadrotor_3D_attitude'
+    SYS = 'quadrotor_2D_attitude'
+    # SYS = 'quadrotor_3D_attitude'
     TASK = 'tracking'
     # TASK = 'stab'
     # PRIOR = '200'
@@ -261,12 +262,13 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
         axs[k].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     axs[0].set_title('Input Trajectories')
     axs[-1].set(xlabel='time (sec)')
+    fig.tight_layout()
 
     if save_path is not None:
         plt.savefig(os.path.join(save_path, 'input_trajectories.png'))
 
     # plot the figure-eight
-    _, axs = plt.subplots(1)
+    fig, axs = plt.subplots(1)
     axs.plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
              np.array(state_stack).transpose()[z_idx, 0:plot_length], label='actual')
     axs.plot(reference.transpose()[x_idx, 0:plot_length], 
@@ -275,11 +277,12 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     axs.set_ylabel('z [m]')
     axs.set_title('State path in x-z plane')
     axs.legend()
+    fig.tight_layout()
     
     if save_path is not None:
         plt.savefig(os.path.join(save_path, 'state_path.png'))
         print(f'Plots saved to {save_path}')
-
+    # plt.show()
 
 def wrap2pi_vec(angle_vec):
     '''Wraps a vector of angles between -pi and pi.
