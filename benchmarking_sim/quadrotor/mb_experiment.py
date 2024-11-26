@@ -221,7 +221,7 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     if env.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
         x_idx, z_idx = 0, 2
     elif env.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
-        x_idx, z_idx = 0, 5
+        x_idx, z_idx = 0, 4
 
     stepsize = model.dt
 
@@ -267,10 +267,10 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
 
     # plot the figure-eight
     _, axs = plt.subplots(1)
-    axs.plot(np.array(state_stack).transpose()[0, 0:plot_length], 
-             np.array(state_stack).transpose()[5, 0:plot_length], label='actual')
-    axs.plot(reference.transpose()[0, 0:plot_length], 
-             reference.transpose()[5, 0:plot_length], color='r', label='desired')
+    axs.plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
+             np.array(state_stack).transpose()[z_idx, 0:plot_length], label='actual')
+    axs.plot(reference.transpose()[x_idx, 0:plot_length], 
+             reference.transpose()[z_idx, 0:plot_length], color='r', label='desired')
     axs.set_xlabel('x [m]')
     axs.set_ylabel('z [m]')
     axs.set_title('State path in x-z plane')

@@ -200,7 +200,7 @@ class PPO(BaseController):
             if self.log_interval and self.total_steps % self.log_interval == 0:
                 self.log_step(results)
 
-    def select_action(self, obs, info=None):
+    def select_action(self, obs, info=None, extra_info=False):
         """Determine the action to take at the current timestep.
 
         Args:
@@ -213,7 +213,9 @@ class PPO(BaseController):
 
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
-            action = self.agent.ac.act(obs)
+            action, v, logp = self.agent.ac.act(obs, True)
+        if extra_info:
+            return action, v, logp
         return action
 
     def train_step(self):
@@ -289,7 +291,7 @@ class PPO(BaseController):
         while len(ep_returns) < n_episodes:
             action = self.select_action(obs=obs, info=info)
             obs, _, done, info = env.step(action)
-            mse.append(info["mse"])
+            mse.append(info['mse'])
             if render:
                 env.render()
                 frames.append(env.render('rgb_array'))
