@@ -41,13 +41,13 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
         # ALGO = 'gpmpc_acados_TP'
         # ALGO = 'mpc'
         # ALGO = 'mpc_acados'
-        ALGO = 'linear_mpc_acados'
+        # ALGO = 'linear_mpc_acados'
         # ALGO = 'linear_mpc'
-        # ALGO = 'lqr'
+        ALGO = 'lqr'
         # ALGO = 'lqr_c'
         # ALGO = 'pid'
-    SYS = 'quadrotor_2D_attitude'
-    # SYS = 'quadrotor_3D_attitude'
+    # SYS = 'quadrotor_2D_attitude'
+    SYS = 'quadrotor_3D_attitude'
     TASK = 'tracking'
     # TASK = 'stab'
     # PRIOR = '200'
@@ -221,8 +221,9 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     model = env.symbolic
     if env.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
         x_idx, z_idx = 0, 2
-    elif env.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
-        x_idx, z_idx = 0, 4
+    # elif env.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
+    elif env.QUAD_TYPE in [QuadType.THREE_D_ATTITUDE, QuadType.THREE_D_ATTITUDE_10]:
+        x_idx, y_idx, z_idx = 0, 2, 4
 
     stepsize = model.dt
 
@@ -278,10 +279,25 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     axs.set_title('State path in x-z plane')
     axs.legend()
     fig.tight_layout()
-    
+
     if save_path is not None:
-        plt.savefig(os.path.join(save_path, 'state_path.png'))
+        plt.savefig(os.path.join(save_path, 'state_xz_path.png'))
         print(f'Plots saved to {save_path}')
+
+    fig, axs = plt.subplots(1)
+    axs.plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
+             np.array(state_stack).transpose()[y_idx, 0:plot_length], label='actual')
+    axs.plot(reference.transpose()[x_idx, 0:plot_length],
+                reference.transpose()[y_idx, 0:plot_length], color='r', label='desired')
+    axs.set_xlabel('x [m]')
+    axs.set_ylabel('y [m]')
+    axs.set_title('State path in x-y plane')
+    axs.legend()
+    fig.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, 'state_xy_path.png'))
+        
     # plt.show()
 
 def wrap2pi_vec(angle_vec):
