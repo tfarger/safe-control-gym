@@ -9,7 +9,7 @@ task_config:
   init_state: 
     init_x: 0 #0.5
     init_x_dot: 0 #0.52359878 # 0
-    init_z: 2.0
+    init_z: 1.0
     init_z_dot: 0 #0.52359878
     init_theta: 0 # -0.05589187
     init_theta_dot: 0 # -0.05859085 #-0.00326794
@@ -47,8 +47,8 @@ task_config:
     trajectory_type: figure8 #circle
     num_cycles: 2
     trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 2.]
-    trajectory_scale: 0.5
+    trajectory_position_offset: [0, 1.]
+    trajectory_scale: 1
 
   inertial_prop:
     M: 0.027

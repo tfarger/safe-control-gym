@@ -4,9 +4,7 @@ Based on:
     Linear MPC 
 '''
 #TODO s
-# get Q and R matrices from config files
 # reenable state constraints in linearMPC
-# fix X_GOAL
 
 
 from copy import deepcopy
@@ -75,8 +73,8 @@ class FlatMPC(LinearMPC):
         super().__init__(
             env_func,
             horizon=horizon,
-            q_mpc=q_mpc,
-            r_mpc=r_mpc,
+            q_mpc=[1],
+            r_mpc=[1],
             warmstart=warmstart,
             soft_constraints=soft_constraints,
             terminate_run_on_done=terminate_run_on_done,
@@ -100,14 +98,10 @@ class FlatMPC(LinearMPC):
         self.solver = solver
 
         # overwrite definitions in parent init function to fit flat model
-        self.Q = get_cost_weight_matrix([50, 0.001, 0.1, 0.001, 50, 0.001, 0.1, 0.001], self.model.nx) 
-        self.R = get_cost_weight_matrix([1e-6], self.model.nu)
+        self.Q = get_cost_weight_matrix(q_mpc, self.model.nx) 
+        self.R = get_cost_weight_matrix(r_mpc, self.model.nu)
         
         self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt, self.T)
-
-        # open a csv file for controller time logging
-        # self._time_log_file =  open(f'./{self.output_dir}/timing-data.csv', 'w+')
-        # self._time_log_file =  open(f'./temp-data/timing-data.csv', 'w+')
 
 
     def _setup_flat_model_symbolic(self):
