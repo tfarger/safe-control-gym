@@ -8,8 +8,8 @@ from plottingUtils import *
 
 def evaluateFMPC(show_plots = False):
 
-    # with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
-    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_stabilization.pkl', 'rb') as file:
+    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
+    # with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_stabilization.pkl', 'rb') as file:
         data_dict_fmpc = pickle.load(file)
         data_dict_fmpc = data_dict_fmpc['trajs_data']
 
@@ -38,13 +38,15 @@ def evaluateFMPC(show_plots = False):
     
     delta_rms = np.zeros([np.shape(delta_z)[0], 1])
     for i in range(np.shape(delta_z)[0]):
-        delta_rms[i] = np.sqrt(delta_z[i, 0]**2 + delta_z[i, 4]**2)
+        delta_rms[i] = np.sqrt(delta_z[i, 0]**2 + delta_z[i, 4]**2 + delta_z[i, 8]**2)
 
     max_error = np.max(np.abs(delta_z), axis=0)
     max_rms_error = np.max(np.abs(delta_rms))
+    mean_rms_error = np.mean(np.abs(delta_rms))
 
-    print('State Variable: maximal tracking error')
-    print('rms : {:10.3f}mm'.format(max_rms_error*1000))
+    print('State Variable: tracking error')
+    print('rms(mean) : {:10.3f}mm'.format(mean_rms_error*1000))
+    print('rms(max) : {:10.3f}mm'.format(max_rms_error*1000))
     print('x   : {:10.3f}mm'.format(max_error[0]*1000))
     print('z   : {:10.3f}mm'.format(max_error[4]*1000))
 
