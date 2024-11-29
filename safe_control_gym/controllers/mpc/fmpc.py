@@ -21,6 +21,7 @@ from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.linear_mpc import LinearMPC
 from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain_from_cont_linear_system, get_cost_weight_matrix
 from safe_control_gym.envs.benchmark_env import Task
+from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
 
 from termcolor import colored
 
@@ -85,6 +86,8 @@ class FlatMPC(LinearMPC):
             **kwargs
         )
 
+        self.QUAD_TYPE = self.env.QUAD_TYPE
+
         # replace dynamics model with symbolic flat model
         self.model = self._setup_flat_model_symbolic()
 
@@ -98,10 +101,6 @@ class FlatMPC(LinearMPC):
         self.inertial_prop['gamma_1'] = -13.3
         self.inertial_prop['gamma_2'] = 84.73
 
-        # TODO: setup environment equilibrium
-        # self.X_EQ = np.atleast_2d(self.env.X_GOAL)[0,:].T
-        # self.U_EQ = np.atleast_2d(self.env.U_GOAL)[0,:]
-
         self.X_EQ = np.atleast_2d(self.model.X_EQ)[0, :].T
         self.U_EQ = np.atleast_2d(self.model.U_EQ)[0, :].T 
         assert solver in ['qpoases', 'qrqp', 'sqpmethod', 'ipopt'], '[Error]. MPC Solver not supported.'
@@ -112,7 +111,14 @@ class FlatMPC(LinearMPC):
         self.R = get_cost_weight_matrix(r_mpc, self.model.nu)
         
         # self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt, self.T)
-        self.fs_obs = FlatStateObserver(self.inertial_prop, self.env.GRAVITY_ACC, self.dt, self.T)
+        self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.env.GRAVITY_ACC, self.dt, self.T)
+
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
 
 
 
@@ -201,26 +207,14 @@ class FlatMPC(LinearMPC):
         elif self.env.TASK == Task.TRAJ_TRACKING:
             self.mode = 'tracking'
             #self.traj = self.env.X_GOAL.T
-            # self.traj = _load_flat_trajectory_circle()
-            # self.traj, initial_vals = _create_flat_trajectory_circle(self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T, self.env.INERTIAL_PROP, self.env.GRAVITY_ACC)
-            self.traj, initial_vals = _create_flat_trajectory_figure8(self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T, self.inertial_prop, self.env.GRAVITY_ACC)
+            self.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt).T
             # Step along the reference.
             self.traj_step = 0
-
             # initialize flat state observer in hovering
             x_ini = self.env.__dict__['init_x'.upper()]
             y_ini = self.env.__dict__['init_y'.upper()]
             z_ini = self.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
-
-            # # initialize the flat state observer by inputing u and a z and v reference horizon starting at timestep -1
-            # z_horizon = initial_vals['z_ini_hrzn']
-            # v_horizon = initial_vals['v_ini_hrzn']
-            # u = initial_vals['u_ini'] 
-            # self.fs_obs.input_FMPC_result(z_horizon, v_horizon, u)
-
-            # x_ini = initial_vals['x_ini']
-            # print(x_ini)
 
         # Dynamics model.
         self.set_dynamics_func()
@@ -293,7 +287,7 @@ class FlatMPC(LinearMPC):
         v_horizon = self.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        action = _get_u_from_flat_states(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.env.GRAVITY_ACC) 
+        action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.env.GRAVITY_ACC) 
         
 
         # feed data into observer
@@ -336,11 +330,20 @@ class FlatMPC(LinearMPC):
         return goal_states  # (nx, T+1).
     
 class FlatStateObserver():
-    def __init__(self,  inertial_prop, g, dt, horizon):
+    def __init__(self,  QUAD_TYPE, inertial_prop, g, dt, horizon):
+        self.QUAD_TYPE = QUAD_TYPE
         self.inertial_prop = inertial_prop # alpha beta of model from env (from config file)
         self.GRAVITY = g
         self.dt = dt
         self.fmpc_horizon = horizon
+
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
+            self.flat_states_from_reg_func = _get_z_from_regular_states_3D_SI_10State
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
 
 
     def set_initial_hovering(self, x_pos, y_pos, z_pos):
@@ -371,18 +374,18 @@ class FlatStateObserver():
         u_comp_length = 3
         u_horizon = np.zeros([3, u_comp_length])
         for i in range(u_comp_length):
-            u_horizon[:, i] = _get_u_from_flat_states(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
+            u_horizon[:, i] = self.action_from_flat_states_func(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
 
         u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
        
         u0_dot = u_dot_central[0]
 
         # state estimation using system dynamics
-        z_obs = _get_z_from_regular_states(x_obs, self.u[0], u0_dot, self.inertial_prop, self.GRAVITY) 
+        z_obs = self.flat_states_from_reg_func(x_obs, self.u[0], u0_dot, self.inertial_prop, self.GRAVITY) 
         return z_obs
        
     
-def _get_u_from_flat_states(z, v, dyn_pars, g):
+def _get_u_from_flat_states_3D_SI_10State(z, v, dyn_pars, g):
     
     alpha_0 = dyn_pars['alpha_0'] 
     alpha_1 = dyn_pars['alpha_1'] 
@@ -416,7 +419,7 @@ def _get_total_thrust_dot_from_flat_states(z):
     t_dot = m*(z[2]*z[3] + (z[6]+g)*z[7])/np.sqrt(alpha)
     return t_dot
 
-def _get_z_from_regular_states(x, u0, u0_dot, dyn_pars, g):    
+def _get_z_from_regular_states_3D_SI_10State(x, u0, u0_dot, dyn_pars, g):    
    
     alpha_0 = dyn_pars['alpha_0'] 
     alpha_1 = dyn_pars['alpha_1'] 
@@ -452,8 +455,8 @@ def _get_z_from_regular_states(x, u0, u0_dot, dyn_pars, g):
     z[11] = -sin_phi*cos_theta*(alpha_0*u0 + alpha_1)*x[8] - cos_phi*sin_theta*(alpha_0*u0 + alpha_1)*x[9] + cos_phi*cos_theta*alpha_0*u0_dot # z_dddot
     return z
 
-# not needed in FMPC, used for x_ini in trajectory generation
-def _get_x_from_flat_states(z, g):
+# not needed in FMPC, used to double check transformations
+def _get_x_from_flat_states_3D_SI_10State(z, g):
     # raise NotImplementedError
     term_xz_acc_sqrd = (z[2])**2 + (z[10]+g)**2 # x_ddot^2 + (z_ddot+g)^2
     theta = np.arctan2(z[2], (z[10]+g))
@@ -476,27 +479,27 @@ def _get_x_from_flat_states(z, g):
     return x
 
 
-def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
-    m = 0.027
-    g=9.81
+# def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
+#     m = 0.027
+#     g=9.81
 
-    raise NotImplementedError # currently not needed
+#     raise NotImplementedError # currently not needed
 
-    # compute states_dot with finite differences to get x_ddot and z_ddot
-    states_dot = (x-x_prev)/dt
+#     # compute states_dot with finite differences to get x_ddot and z_ddot
+#     states_dot = (x-x_prev)/dt
 
-    z = np.zeros(8)
-    total_thrust = u[0]+u[1]
-    total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
-    z[0] = x[0] # x
-    z[1] = x[1] # x_dot
-    z[2] = states_dot[1] #(1/m)*(np.sin(x[4])*total_thrust) # x_ddot
-    z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
-    z[4] = x[2] # z
-    z[5] = x[3] # z_dot
-    z[6] = states_dot[3] #(1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
-    z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
-    return z
+#     z = np.zeros(8)
+#     total_thrust = u[0]+u[1]
+#     total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
+#     z[0] = x[0] # x
+#     z[1] = x[1] # x_dot
+#     z[2] = states_dot[1] #(1/m)*(np.sin(x[4])*total_thrust) # x_ddot
+#     z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
+#     z[4] = x[2] # z
+#     z[5] = x[3] # z_dot
+#     z[6] = states_dot[3] #(1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
+#     z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
+#     return z
 
 def _get_flat_stabilization_goal(x_stab):
     z = np.zeros(8)
@@ -508,130 +511,354 @@ def _get_flat_stabilization_goal(x_stab):
     # z[9] = x_stab[5]
     return z
 
-def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
-    raise NotImplementedError
-    # task info parameters from yaml file
-    traj_scaling = task_info.trajectory_scale
-    num_cycles = task_info.num_cycles
-    pos_offset = task_info.trajectory_position_offset
+# def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
+#     raise NotImplementedError
+#     # task info parameters from yaml file
+#     traj_scaling = task_info.trajectory_scale
+#     num_cycles = task_info.num_cycles
+#     pos_offset = task_info.trajectory_position_offset
 
-    traj_period = traj_length/num_cycles     
+#     traj_period = traj_length/num_cycles     
 
-    # create circle trajectory
-    times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  # sample time added to make reference one step longer than traj_length
-    z_traj = np.zeros((8,len(times)))
-    v_traj = np.zeros((2,len(times)))
+#     # create circle trajectory
+#     times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  # sample time added to make reference one step longer than traj_length
+#     z_traj = np.zeros((8,len(times)))
+#     v_traj = np.zeros((2,len(times)))
 
-    def circle_traj_at_t(t, scaling, freq, offset):
-        z = np.zeros(8)
-        v = np.zeros(2)
-        z[0] = scaling * np.cos(freq * t) + offset[0] # x
-        z[1] = -scaling * freq * np.sin(freq * t) # x_dot
-        z[2] = -scaling * freq**2 * np.cos(freq * t) # x_ddot
-        z[3] = scaling * freq**3 * np.sin(freq * t) # x_dddot
+#     def circle_traj_at_t(t, scaling, freq, offset):
+#         z = np.zeros(8)
+#         v = np.zeros(2)
+#         z[0] = scaling * np.cos(freq * t) + offset[0] # x
+#         z[1] = -scaling * freq * np.sin(freq * t) # x_dot
+#         z[2] = -scaling * freq**2 * np.cos(freq * t) # x_ddot
+#         z[3] = scaling * freq**3 * np.sin(freq * t) # x_dddot
 
-        v[0] = scaling * freq**4 * np.cos(freq * t) # x_d4dot = v0
+#         v[0] = scaling * freq**4 * np.cos(freq * t) # x_d4dot = v0
 
-        z[4] = scaling * np.sin(freq * t) + offset[1]        
-        z[5] = scaling * freq * np.cos(freq * t)        
-        z[6] = -scaling * freq**2 * np.sin(freq * t)        
-        z[7] = -scaling * freq**3 * np.cos(freq * t)
+#         z[4] = scaling * np.sin(freq * t) + offset[1]        
+#         z[5] = scaling * freq * np.cos(freq * t)        
+#         z[6] = -scaling * freq**2 * np.sin(freq * t)        
+#         z[7] = -scaling * freq**3 * np.cos(freq * t)
 
-        v[1] = scaling * freq**4 * np.sin(freq * t)
-        return z, v
+#         v[1] = scaling * freq**4 * np.sin(freq * t)
+#         return z, v
 
-    traj_freq = 2.0 * np.pi / traj_period
-    for index, t in enumerate(times):
-        z_traj[:, index], v_traj[:, index] = circle_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
+#     traj_freq = 2.0 * np.pi / traj_period
+#     for index, t in enumerate(times):
+#         z_traj[:, index], v_traj[:, index] = circle_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
 
-    # calculate initial values for x, u and u_dot for flat state observer
-    initial_vals = {}
-    z_minus1, v_minus1 = circle_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
-    z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
-    v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
+#     # calculate initial values for x, u and u_dot for flat state observer
+#     initial_vals = {}
+#     z_minus1, v_minus1 = circle_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
+#     z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
+#     v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
 
-    u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
-    x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
+#     u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
+#     x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
 
-    initial_vals['z_ini_hrzn'] = z_ini_horizon
-    initial_vals['v_ini_hrzn'] = v_ini_horizon
-    initial_vals['u_ini'] = u_ini
-    initial_vals['x_ini'] = x_ini
+#     initial_vals['z_ini_hrzn'] = z_ini_horizon
+#     initial_vals['v_ini_hrzn'] = v_ini_horizon
+#     initial_vals['u_ini'] = u_ini
+#     initial_vals['x_ini'] = x_ini
 
-    # save reference trajectory for evaluation
-    data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
-    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
-        pickle.dump(data_dict, file_ref)
+#     # save reference trajectory for evaluation
+#     data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
+#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
+#         pickle.dump(data_dict, file_ref)
     
-    return z_traj, initial_vals
+#     return z_traj, initial_vals
 
-def _create_flat_trajectory_figure8(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
-    # task info parameters from yaml file
-    traj_scaling = task_info.trajectory_scale
-    num_cycles = task_info.num_cycles
-    pos_offset = task_info.trajectory_position_offset
+# def _create_flat_trajectory_figure8(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
+#     # task info parameters from yaml file
+#     traj_scaling = task_info.trajectory_scale
+#     num_cycles = task_info.num_cycles
+#     pos_offset = task_info.trajectory_position_offset
 
-    traj_period = traj_length/num_cycles     
+#     traj_period = traj_length/num_cycles     
 
-    # create circle trajectory
-    times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  
-    z_traj = np.zeros((12,len(times)))
-    v_traj = np.zeros((3,len(times)))
+#     # create circle trajectory
+#     times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  
+#     z_traj = np.zeros((12,len(times)))
+#     v_traj = np.zeros((3,len(times)))
 
-    def figure8_traj_at_t(t, scaling, freq, offset):
-        z = np.zeros(12)
-        v = np.zeros(3)
-        z[0] = scaling * np.sin(freq * t) + offset[0] # x
-        z[1] = scaling * freq * np.cos(freq * t) # x_dot
-        z[2] = -scaling * freq**2 * np.sin(freq * t) # x_ddot
-        z[3] = -scaling * freq**3 * np.cos(freq * t) # x_dddot
+#     def figure8_traj_at_t(t, scaling, freq, offset):
+#         z = np.zeros(12)
+#         v = np.zeros(3)
+#         z[0] = scaling * np.sin(freq * t) + offset[0] # x
+#         z[1] = scaling * freq * np.cos(freq * t) # x_dot
+#         z[2] = -scaling * freq**2 * np.sin(freq * t) # x_ddot
+#         z[3] = -scaling * freq**3 * np.cos(freq * t) # x_dddot
 
-        v[0] = scaling * freq**4 * np.sin(freq * t) # x_d4dot = v0
+#         v[0] = scaling * freq**4 * np.sin(freq * t) # x_d4dot = v0
 
-        z[4] = scaling * np.sin(freq * t) *np.cos(freq * t) + offset[1]        
-        z[5] = scaling * freq * (np.cos(freq * t)**2 - np.sin(freq*t)**2)       
-        z[6] = -scaling * freq**2 * 4 * np.sin(freq * t) *np.cos(freq * t)        
-        z[7] = scaling * freq**3 * 4 * (np.sin(freq * t)**2 - np.cos(freq*t)**2)
+#         z[4] = scaling * np.sin(freq * t) *np.cos(freq * t) + offset[1]        
+#         z[5] = scaling * freq * (np.cos(freq * t)**2 - np.sin(freq*t)**2)       
+#         z[6] = -scaling * freq**2 * 4 * np.sin(freq * t) *np.cos(freq * t)        
+#         z[7] = scaling * freq**3 * 4 * (np.sin(freq * t)**2 - np.cos(freq*t)**2)
 
-        v[1] = scaling * freq**4 * 16 * (np.sin(freq * t) *np.cos(freq * t))
+#         v[1] = scaling * freq**4 * 16 * (np.sin(freq * t) *np.cos(freq * t))
 
-        # z values are all = 1 for figure 8 in xy plane
-        z[8] = 1.0
+#         # z values are all = 1 for figure 8 in xy plane
+#         z[8] = 1.0
 
-        return z, v
+#         return z, v
 
-    traj_freq = 2.0 * np.pi / traj_period
-    for index, t in enumerate(times):
-        z_traj[:, index], v_traj[:, index] = figure8_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
+#     traj_freq = 2.0 * np.pi / traj_period
+#     for index, t in enumerate(times):
+#         z_traj[:, index], v_traj[:, index] = figure8_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
 
-    # calculate initial values for x, u and u_dot for flat state observer
-    initial_vals = {}
-    # z_minus1, v_minus1 = figure8_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
-    # z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
-    # v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
+#     # calculate initial values for x, u and u_dot for flat state observer
+#     initial_vals = {}
+#     # z_minus1, v_minus1 = figure8_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
+#     # z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
+#     # v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
 
-    # u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
-    # x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
+#     # u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
+#     # x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
 
-    # initial_vals['z_ini_hrzn'] = z_ini_horizon
-    # initial_vals['v_ini_hrzn'] = v_ini_horizon
-    # initial_vals['u_ini'] = u_ini
-    # initial_vals['x_ini'] = x_ini
+#     # initial_vals['z_ini_hrzn'] = z_ini_horizon
+#     # initial_vals['v_ini_hrzn'] = v_ini_horizon
+#     # initial_vals['u_ini'] = u_ini
+#     # initial_vals['x_ini'] = x_ini
 
-    # save reference trajectory for evaluation
-    data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
-    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
-        pickle.dump(data_dict, file_ref)
+#     # save reference trajectory for evaluation
+#     data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
+#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
+#         pickle.dump(data_dict, file_ref)
     
-    return z_traj, initial_vals
+#     return z_traj, initial_vals
 
-def _load_flat_trajectory_circle(): # from NMPC
-    raise NotImplementedError # initial values for state estimator not returned yet
-    with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
-        data_dict = pickle.load(file)
-    z_ref = data_dict['z_ref']
+# def _load_flat_trajectory_circle(): # from NMPC
+#     raise NotImplementedError # initial values for state estimator not returned yet
+#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
+#         data_dict = pickle.load(file)
+#     z_ref = data_dict['z_ref']
 
 
 
-    return z_ref.transpose()
+#     return z_ref.transpose()
 
+def get_full_reference_trajectory_FMPC(QUAD_TYPE, 
+                                task_info, 
+                                traj_length,
+                                sample_time=0.01):
+    
+    # task info parameters from yaml file
+    scaling = task_info.trajectory_scale
+    num_cycles = task_info.num_cycles
+    position_offset = task_info.trajectory_position_offset
+    traj_plane = task_info.trajectory_plane
+    traj_type = task_info.trajectory_type
+
+    pos_ref_traj, vel_ref_traj, acc_ref_traj, jer_ref_traj = _generate_trajectory_FMPC(traj_type, traj_length, num_cycles, traj_plane, position_offset, scaling, sample_time)
+    num_times = np.shape(pos_ref_traj)[0]
+    if QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+        z_ref = np.zeros([num_times, 12])
+        z_ref[:,0] = pos_ref_traj[:, 0]
+        z_ref[:,1] = vel_ref_traj[:, 0]
+        z_ref[:,2] = acc_ref_traj[:, 0]
+        z_ref[:,3] = jer_ref_traj[:, 0]
+        z_ref[:,4] = pos_ref_traj[:, 1]
+        z_ref[:,5] = vel_ref_traj[:, 1]
+        z_ref[:,6] = acc_ref_traj[:, 1]
+        z_ref[:,7] = jer_ref_traj[:, 1]
+        z_ref[:,8] = pos_ref_traj[:, 2] 
+        z_ref[:,9] = vel_ref_traj[:, 2]
+        z_ref[:,10] = acc_ref_traj[:, 2]
+        z_ref[:,11] = jer_ref_traj[:, 2]
+    elif QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+        z_ref = np.zeros([num_times, 8])
+        z_ref[:,0] = pos_ref_traj[:, 0]
+        z_ref[:,1] = vel_ref_traj[:, 0]
+        z_ref[:,2] = acc_ref_traj[:, 0]
+        z_ref[:,3] = jer_ref_traj[:, 0]
+        z_ref[:,4] = pos_ref_traj[:, 2] 
+        z_ref[:,5] = vel_ref_traj[:, 2]
+        z_ref[:,6] = acc_ref_traj[:, 2]
+        z_ref[:,7] = jer_ref_traj[:, 2]
+    else:
+        raise NotImplementedError
+    
+    return z_ref
+
+
+
+def _generate_trajectory_FMPC(traj_type='figure8',
+                             traj_length=10.0,
+                             num_cycles=1,
+                             traj_plane='xy',
+                             position_offset=np.array([0, 0]),
+                             scaling=1.0,
+                             sample_time=0.01
+                             ):
+    """Generates a 2D trajectory.
+
+    Args:
+        traj_type (str, optional): The type of trajectory (circle, square, figure8).
+        traj_length (float, optional): The length of the trajectory in seconds.
+        num_cycles (int, optional): The number of cycles within the length.
+        traj_plane (str, optional): The plane of the trajectory (e.g. 'xz').
+        position_offset (ndarray, optional): An initial position offset in the plane.
+        scaling (float, optional): Scaling factor for the trajectory.
+        sample_time (float, optional): The sampling timestep of the trajectory.
+
+    Returns:
+        ndarray: The positions in x, y, z of the trajectory sampled for its entire duration.
+        ndarray: The velocities in x, y, z of the trajectory sampled for its entire duration.
+        ndarray: The acceleration in x, y, z of the trajectory sampled for its entire duration.
+        ndarray: The jerk in x, y, z of the trajectory sampled for its entire duration.
+    """
+
+    # Get trajectory type.
+    valid_traj_type = ['circle', 'figure8']
+    if traj_type not in valid_traj_type:
+        raise ValueError(
+            'Trajectory type should be one of [circle, figure8] for FMPC full reference'
+        )
+    traj_period = traj_length / num_cycles
+    direction_list = ['x', 'y', 'z']
+    # Get coordinates indexes.
+    if traj_plane[0] in direction_list and traj_plane[1] in direction_list and traj_plane[0] != traj_plane[1]:
+        coord_index_a = direction_list.index(traj_plane[0])
+        coord_index_b = direction_list.index(traj_plane[1])
+    else:
+        raise ValueError('Trajectory plane should be in form of ab, where a and b can be {x, y, z}.')
+    # Generate time stamps.
+    times = np.arange(0, traj_length + sample_time, sample_time)  # sample time added to make reference one step longer than traj_length
+    pos_ref_traj = np.zeros((len(times), 3))
+    vel_ref_traj = np.zeros((len(times), 3))
+    acc_ref_traj = np.zeros((len(times), 3))
+    jer_ref_traj = np.zeros((len(times), 3))
+
+    # Compute trajectory points.
+    for t in enumerate(times):
+        pos_ref_traj[t[0]], vel_ref_traj[t[0]], acc_ref_traj[t[0]], jer_ref_traj[t[0]] = _get_coordinates(t[1],
+                                                                        traj_type,
+                                                                        traj_period,
+                                                                        coord_index_a,
+                                                                        coord_index_b,
+                                                                        position_offset[0],
+                                                                        position_offset[1],
+                                                                        scaling)
+    # NOTE: update 25.11.24: manually shift the z axis to 1.0 if not in the traj plane
+    #       ptherwise flying on the floor with z=0.0 
+    if 'z' not in traj_plane:
+        pos_ref_traj[:, 2] = 1.0
+        vel_ref_traj[:, 2] = 0.0
+        
+    return pos_ref_traj, vel_ref_traj, acc_ref_traj, jer_ref_traj
+
+def _get_coordinates(t,
+                    traj_type,
+                    traj_period,
+                    coord_index_a,
+                    coord_index_b,
+                    position_offset_a,
+                    position_offset_b,
+                    scaling
+                    ):
+    """Computes the coordinates of a specified trajectory at time t.
+
+    Args:
+        t (float): The time at which we want to sample one trajectory point.
+        traj_type (str, optional): The type of trajectory (circle, figure8).
+        traj_period (float): The period of the trajectory in seconds.
+        coord_index_a (int): The index of the first coordinate of the trajectory plane.
+        coord_index_b (int): The index of the second coordinate of the trajectory plane.
+        position_offset_a (float): The offset in the first coordinate of the trajectory plane.
+        position_offset_b (float): The offset in the second coordinate of the trajectory plane.
+        scaling (float, optional): Scaling factor for the trajectory.
+
+    Returns:
+        pos_ref (ndarray): The position in x, y, z, at time t.
+        vel_ref (ndarray): The velocity in x, y, z, at time t.
+        acc_ref (ndarray): The velocity in x, y, z, at time t.
+        jer_ref (ndarray): The velocity in x, y, z, at time t.
+    """
+
+    # Get coordinates for the trajectory chosen.
+    if traj_type == 'figure8':
+        coords_a, coords_b, coords_a_dot, coords_b_dot, coords_a_ddot, coords_b_ddot, coords_a_dddot, coords_b_dddot = _figure8(
+            t, traj_period, scaling)
+    elif traj_type == 'circle':
+        coords_a, coords_b, coords_a_dot, coords_b_dot, coords_a_ddot, coords_b_ddot , coords_a_dddot, coords_b_dddot= _circle(
+            t, traj_period, scaling)
+    elif traj_type == 'square':
+        raise NotImplementedError
+    elif traj_type == 'snap_figure8':
+        raise NotImplementedError
+    # Initialize position and velocity references.
+    pos_ref = np.zeros((3,))
+    vel_ref = np.zeros((3,))
+    acc_ref = np.zeros((3,))
+    jer_ref = np.zeros((3,))
+    # Set position and velocity references based on the plane of the trajectory chosen.
+    pos_ref[coord_index_a] = coords_a + position_offset_a
+    vel_ref[coord_index_a] = coords_a_dot
+    acc_ref[coord_index_a] = coords_a_ddot
+    jer_ref[coord_index_a] = coords_a_dddot
+    pos_ref[coord_index_b] = coords_b + position_offset_b
+    vel_ref[coord_index_b] = coords_b_dot
+    acc_ref[coord_index_b] = coords_b_ddot
+    jer_ref[coord_index_b] = coords_b_dddot
+    return pos_ref, vel_ref, acc_ref, jer_ref
+
+def _figure8(t,
+                traj_period,
+                scaling
+                ):
+    """Computes the coordinates of a figure8 trajectory at time t.
+
+    Args:
+        t (float): The time at which we want to sample one trajectory point.
+        traj_period (float): The period of the trajectory in seconds.
+        scaling (float, optional): Scaling factor for the trajectory.
+
+    Returns:
+        coords_a (float): The position in the first coordinate.
+        coords_b (float): The position in the second coordinate.
+        coords_a_dot (float): The velocity in the first coordinate.
+        coords_b_dot (float): The velocity in the second coordinate.
+    """
+    traj_freq = 2.0 * np.pi / traj_period
+    coords_a = scaling * np.sin(traj_freq * t)
+    coords_a_dot = scaling * traj_freq * np.cos(traj_freq * t)
+    coords_a_ddot = -scaling * traj_freq**2 * np.sin(traj_freq * t)
+    coords_a_dddot = -scaling * traj_freq**3 * np.cos(traj_freq * t)
+    coords_b = scaling * np.sin(traj_freq * t) * np.cos(traj_freq * t)        
+    coords_b_dot = scaling * traj_freq * (np.cos(traj_freq * t)**2 - np.sin(traj_freq * t)**2)
+    coords_b_ddot =  -scaling * traj_freq**2 * 4 * np.sin(traj_freq * t) *np.cos(traj_freq * t) 
+    coords_b_dddot = scaling * traj_freq**3 * 4 * (np.sin(traj_freq * t)**2 - np.cos(traj_freq*t)**2)       
+
+    return coords_a, coords_b, coords_a_dot, coords_b_dot, coords_a_ddot, coords_b_ddot, coords_a_dddot, coords_b_dddot
+
+
+
+def _circle(t,
+            traj_period,
+            scaling
+            ):
+    """Computes the coordinates of a circle trajectory at time t.
+
+    Args:
+        t (float): The time at which we want to sample one trajectory point.
+        traj_period (float): The period of the trajectory in seconds.
+        scaling (float, optional): Scaling factor for the trajectory.
+
+    Returns:
+        coords_a (float): The position in the first coordinate.
+        coords_b (float): The position in the second coordinate.
+        coords_a_dot (float): The velocity in the first coordinate.
+        coords_b_dot (float): The velocity in the second coordinate.
+    """
+    
+    traj_freq = 2.0 * np.pi / traj_period
+    coords_a = scaling * np.cos(traj_freq * t)
+    coords_a_dot = -scaling * traj_freq * np.sin(traj_freq * t)
+    coords_a_ddot = -scaling * traj_freq**2 * np.cos(traj_freq * t)
+    coords_a_dddot = scaling * traj_freq**3 * np.sin(traj_freq * t)
+    coords_b = scaling * np.sin(traj_freq * t)        
+    coords_b_dot = scaling * traj_freq * np.cos(traj_freq * t)
+    coords_b_ddot = -scaling * traj_freq**2 * np.sin(traj_freq * t)
+    coords_b_dddot = -scaling * traj_freq**3 * np.cos(traj_freq * t)
+    return coords_a, coords_b, coords_a_dot, coords_b_dot, coords_a_ddot, coords_b_ddot, coords_a_dddot, coords_b_dddot
