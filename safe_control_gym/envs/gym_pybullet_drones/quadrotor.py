@@ -350,6 +350,13 @@ class Quadrotor(BaseAviary):
                     self.TASK_INFO['stabilization_goal'][2], 0.0,
                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0
                 ])  # x = {x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p_body, q_body, r_body}.
+            elif self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+                self.X_GOAL = np.hstack([
+                    self.TASK_INFO['stabilization_goal'][0], 0.0,
+                    self.TASK_INFO['stabilization_goal'][1], 0.0,
+                    self.TASK_INFO['stabilization_goal'][2], 0.0,
+                    0.0, 0.0, 0.0, 0.0
+                ])  # x = {x, x_dot, y, y_dot, z, z_dot, phi, theta, phi_dot, theta_dot}.
         elif self.TASK == Task.TRAJ_TRACKING:
             if 'ilqr_ref' in self.TASK_INFO.keys() and self.TASK_INFO['ilqr_ref']:
                 traj_data = np.load(self.TASK_INFO['ilqr_traj_data'], allow_pickle=True).item()
