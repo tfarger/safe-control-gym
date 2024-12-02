@@ -46,6 +46,7 @@ class FlatMPC(LinearMPC):
             terminate_run_on_done=True,
             constraint_tol: float = 1e-8,
             solver: str = 'sqpmethod',
+            use_full_flat_reference=True,
             # runner args
             # shared/base args
             output_dir='results/temp',
@@ -55,7 +56,7 @@ class FlatMPC(LinearMPC):
 
         Args:
             env_func (Callable): function to instantiate task/environment.
-            horizon (int): mpc planning horizon.
+           horizon (int): mpc planning horizon.
             q_mpc (list): diagonals of state cost weight.
             r_mpc (list): diagonals of input/action cost weight.
             warmstart (bool): if to initialize from previous iteration.
@@ -87,19 +88,29 @@ class FlatMPC(LinearMPC):
         )
 
         self.QUAD_TYPE = self.env.QUAD_TYPE
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
+            self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_3D_SI_10State # map components of X_goal to flat state z
+            # replace dynamics model with symbolic flat model
+            self.model = _setup_flat_model_symbolic_3D_SI_10State(self.dt)
 
-        # replace dynamics model with symbolic flat model
-        self.model = self._setup_flat_model_symbolic()
+            # not as a nice variable in the env yet, thats why its defined here again
+            self.inertial_prop = {} 
+            self.inertial_prop['alpha_0'] = 20.907574256269616
+            self.inertial_prop['alpha_1'] = 3.653687545690674
+            self.inertial_prop['beta_0'] = -130.3
+            self.inertial_prop['beta_1'] = -16.33
+            self.inertial_prop['beta_2'] = 119.3
+            self.inertial_prop['gamma_0'] = -99.94
+            self.inertial_prop['gamma_1'] = -13.3
+            self.inertial_prop['gamma_2'] = 84.73
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            raise NotImplementedError
+        else:
+            raise NotImplementedError     
+        
+        self.use_full_flat_reference = use_full_flat_reference
 
-        self.inertial_prop = {} # not as a nice variable in the env yet, thats why its defined here again
-        self.inertial_prop['alpha_0'] = 20.907574256269616
-        self.inertial_prop['alpha_1'] = 3.653687545690674
-        self.inertial_prop['beta_0'] = -130.3
-        self.inertial_prop['beta_1'] = -16.33
-        self.inertial_prop['beta_2'] = 119.3
-        self.inertial_prop['gamma_0'] = -99.94
-        self.inertial_prop['gamma_1'] = -13.3
-        self.inertial_prop['gamma_2'] = 84.73
 
         self.X_EQ = np.atleast_2d(self.model.X_EQ)[0, :].T
         self.U_EQ = np.atleast_2d(self.model.U_EQ)[0, :].T 
@@ -113,16 +124,175 @@ class FlatMPC(LinearMPC):
         # self.fs_obs = FlatStateObserver(self.env.INERTIAL_PROP, self.env.GRAVITY_ACC, self.dt, self.T)
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.env.GRAVITY_ACC, self.dt, self.T)
 
+    # overwrite to input flat trajectory into reference and initialize flat state observer
+    def reset(self):
+        '''Prepares for training or evaluation.'''
+        # Setup reference input.
+        if self.env.TASK == Task.STABILIZATION:
+            self.mode = 'stabilization'
+            self.x_goal = self.transform_env_goal_to_flat_func(self.env.X_GOAL)            
+            x_ini = self.env.__dict__['init_x'.upper()]
+            y_ini = self.env.__dict__['init_y'.upper()]
+            z_ini = self.env.__dict__['init_z'.upper()]
+            self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
+        elif self.env.TASK == Task.TRAJ_TRACKING:
+            self.mode = 'tracking'
+            tmp = self.env.X_GOAL.T
+            if self.use_full_flat_reference:
+                self.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt).T
+            else:
+                self.traj = self.transform_env_goal_to_flat_func(self.env.X_GOAL.T)            
+            # Step along the reference.
+            self.traj_step = 0
+            # initialize flat state observer in hovering
+            x_ini = self.env.__dict__['init_x'.upper()]
+            y_ini = self.env.__dict__['init_y'.upper()]
+            z_ini = self.env.__dict__['init_z'.upper()]
+            self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
+
+        # Dynamics model.
+        self.set_dynamics_func()
+        # CasADi optimizer.
+        self.setup_optimizer()
+        # Previously solved states & inputs, useful for warm start.
+        self.x_prev = None
+        self.u_prev = None
+
+        self.setup_results_dict()
+        
+    def setup_results_dict(self):
+        '''Setup the results dictionary to store run information.'''
+        self.results_dict = {'obs': [],
+                             'reward': [],
+                             'done': [],
+                             'info': [],
+                             'action': [],
+                             'horizon_inputs': [],
+                             'horizon_states': [],
+                             'goal_states': [],
+                             'frames': [],
+                             'state_mse': [],
+                             'common_cost': [],
+                             'state': [],
+                             'state_error': [],
+                             't_wall': [],
+                             # addition for flat MPC
+                             'obs_x': [],
+                             'obs_z': [],
+                             'v': [],
+                             'u': [],
+                             'horizon_v': [],
+                             'horizon_z': [],
+                             'ctrl_run_time': [],
+                             }
+
+    # @timing
+    def select_action(self,
+                      obs,
+                      info=None
+                      ):
+        '''Solve nonlinear mpc problem to get next action.
+
+        Args:
+            obs (ndarray): Current state/observation.
+            info (dict): Current info.
+
+        Returns:
+            action (ndarray): Input/action to the task/env.
+        '''
+        ts = time.time()    
+        # get flat state estimation from observer
+        z_obs = self.fs_obs.compute_observation(obs)
+        
+        z_ref = self.get_references() # for debugging
+
+        # run MPC controller 
+        v = super().select_action(z_obs) 
+        z_horizon = self.x_prev #8xN set in linearMPC
+        v_horizon = self.u_prev #2xN       
+        
+        # flat input transformation: z and v to action u        
+        action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.env.GRAVITY_ACC) 
+        
+
+        # feed data into observer
+        self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
+
+        # data logging
+        self.results_dict['obs_x'].append(obs)
+        self.results_dict['obs_z'].append(z_obs)
+        self.results_dict['v'].append(v)
+        self.results_dict['u'].append(action)
+        self.results_dict['horizon_v'].append(v_horizon)
+        self.results_dict['horizon_z'].append(z_horizon)
+
+        # log execution time                
+        te = time.time()
+        self.results_dict['ctrl_run_time'].append(te-ts)
+        
+        return action
+    
+    
+class FlatStateObserver():
+    def __init__(self,  QUAD_TYPE, inertial_prop, g, dt, horizon):
+        self.QUAD_TYPE = QUAD_TYPE
+        self.inertial_prop = inertial_prop # alpha beta of model from env (from config file)
+        self.GRAVITY = g
+        self.dt = dt
+        self.fmpc_horizon = horizon
+
         if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
             self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
+            self.flat_states_from_reg_func = _get_z_from_regular_states_3D_SI_10State
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
             raise NotImplementedError
         else:
             raise NotImplementedError
 
 
+    def set_initial_hovering(self, x_pos, y_pos, z_pos):
+        # initializes u, z and v horizon for a hovering state
+        self.z_horizon = np.zeros([12, self.fmpc_horizon+1])
+        self.v_horizon = np.zeros([3, self.fmpc_horizon])
+        self.u = np.zeros(2)
+        
+        self.u[0] = (self.GRAVITY- self.inertial_prop['alpha_1'])/self.inertial_prop['alpha_0'] 
+        # z_ini = _get_flat_stabilization_goal(x_obs)
+        z_ini = np.zeros(12)
+        z_ini[0] = x_pos
+        z_ini[4] = y_pos
+        z_ini[8] = z_pos
+        for i in range(self.fmpc_horizon+1): # TODO make nicer with matrix repetition
+            self.z_horizon[:, i] = z_ini
 
-    def _setup_flat_model_symbolic(self):
+        
+    def input_FMPC_result(self, z_horizon, v_horizon, u):
+        # just save them away
+        self.z_horizon = z_horizon
+        self.v_horizon = v_horizon
+        self.u = u     
+
+              
+    def compute_observation(self, x_obs): 
+        # estimate u_dot at current time step, based on z_horizon and v_horizon set in last time step
+        u_comp_length = 3
+        u_horizon = np.zeros([3, u_comp_length])
+        for i in range(u_comp_length):
+            u_horizon[:, i] = self.action_from_flat_states_func(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
+
+        u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
+       
+        u0_dot = u_dot_central[0]
+
+        # state estimation using system dynamics
+        z_obs = self.flat_states_from_reg_func(x_obs, self.u[0], u0_dot, self.inertial_prop, self.GRAVITY) 
+        return z_obs
+    
+#################################################################################################
+################## 3D Quadrotor 10 State model flatness transforms ##############################
+################################################################################################# 
+
+def _setup_flat_model_symbolic_3D_SI_10State(dt):
         '''Creates symbolic (CasADi) models for dynamics, observation, and cost.
 
         Args:
@@ -130,7 +300,6 @@ class FlatMPC(LinearMPC):
         ''' 
         nx, nu = 12, 3
       
-        dt = self.dt
         # Define states.
         z = cs.MX.sym('z')
         z_dot = cs.MX.sym('z_dot')
@@ -188,202 +357,7 @@ class FlatMPC(LinearMPC):
             'X_EQ': X_EQ,
             'U_EQ': U_EQ,
         }
-        # Setup symbolic model.
-        #self.symbolic = SymbolicModel(dynamics=dynamics, cost=cost, dt=dt, params=params)
         return SymbolicModel(dynamics=dynamics, cost=cost, dt=dt, params=params)
-
-
-    # overwrite to input flat trajectory into reference and initialize flat state observer
-    def reset(self):
-        '''Prepares for training or evaluation.'''
-        # Setup reference input.
-        if self.env.TASK == Task.STABILIZATION:
-            self.mode = 'stabilization'
-            self.x_goal = _get_flat_stabilization_goal(self.env.X_GOAL)            
-            x_ini = self.env.__dict__['init_x'.upper()]
-            y_ini = self.env.__dict__['init_y'.upper()]
-            z_ini = self.env.__dict__['init_z'.upper()]
-            self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
-        elif self.env.TASK == Task.TRAJ_TRACKING:
-            self.mode = 'tracking'
-            #self.traj = self.env.X_GOAL.T
-            self.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt).T
-            # Step along the reference.
-            self.traj_step = 0
-            # initialize flat state observer in hovering
-            x_ini = self.env.__dict__['init_x'.upper()]
-            y_ini = self.env.__dict__['init_y'.upper()]
-            z_ini = self.env.__dict__['init_z'.upper()]
-            self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
-
-        # Dynamics model.
-        self.set_dynamics_func()
-        # CasADi optimizer.
-        self.setup_optimizer()
-        # Previously solved states & inputs, useful for warm start.
-        self.x_prev = None
-        self.u_prev = None
-
-        self.setup_results_dict()
-
-
-           
-
-
-
-
-    def setup_results_dict(self):
-        '''Setup the results dictionary to store run information.'''
-        self.results_dict = {'obs': [],
-                             'reward': [],
-                             'done': [],
-                             'info': [],
-                             'action': [],
-                             'horizon_inputs': [],
-                             'horizon_states': [],
-                             'goal_states': [],
-                             'frames': [],
-                             'state_mse': [],
-                             'common_cost': [],
-                             'state': [],
-                             'state_error': [],
-                             't_wall': [],
-                             # addition for flat MPC
-                             'obs_x': [],
-                             'obs_z': [],
-                             'v': [],
-                             'u': [],
-                             'T_dot': [],
-                             'u_ref': [],
-                             'horizon_v': [],
-                             'horizon_z': [],
-                             'horizon_u': [],
-                             'ctrl_run_time': [],
-                             }
-
-    # @timing
-    def select_action(self,
-                      obs,
-                      info=None
-                      ):
-        '''Solve nonlinear mpc problem to get next action.
-
-        Args:
-            obs (ndarray): Current state/observation.
-            info (dict): Current info.
-
-        Returns:
-            action (ndarray): Input/action to the task/env.
-        '''
-        ts = time.time()    
-        # get flat state estimation from observer
-        z_obs = self.fs_obs.compute_observation(obs)
-        
-        z_ref = self.get_references() # for debugging
-
-        # run MPC controller 
-        v = super().select_action(z_obs) 
-        z_horizon = self.x_prev #8xN set in linearMPC
-        v_horizon = self.u_prev #2xN       
-        
-        # flat input transformation: z and v to action u        
-        action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.env.GRAVITY_ACC) 
-        
-
-        # feed data into observer
-        self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
-
-        # data logging
-        self.results_dict['obs_x'].append(obs)
-        self.results_dict['obs_z'].append(z_obs)
-        self.results_dict['v'].append(v)
-        self.results_dict['u'].append(action)
-        # self.results_dict['T_dot'].append(self.u0_dot)
-        # self.results_dict['u_ref'].append(u_nmpc_horizon[:, 0])
-        self.results_dict['horizon_v'].append(v_horizon)
-        self.results_dict['horizon_z'].append(z_horizon)
-        # self.results_dict['horizon_u'].append(u_horizon)
-
-        # log execution time                
-        te = time.time()
-        self.results_dict['ctrl_run_time'].append(te-ts)
-        
-        return action
-    
-    # overwrite to change shape of goal states in stabilization task
-    def get_references(self):
-        '''Constructs reference states along mpc horizon.(nx, T+1).'''
-        if self.env.TASK == Task.STABILIZATION:
-            # Repeat goal state for horizon steps.
-            goal_states = np.tile(_get_flat_stabilization_goal(self.env.X_GOAL).reshape(-1, 1), (1, self.T + 1))
-        elif self.env.TASK == Task.TRAJ_TRACKING:
-            # Slice trajectory for horizon steps, if not long enough, repeat last state.
-            start = min(self.traj_step, self.traj.shape[-1])
-            end = min(self.traj_step + self.T + 1, self.traj.shape[-1])
-            remain = max(0, self.T + 1 - (end - start))
-            goal_states = np.concatenate([
-                self.traj[:, start:end],
-                np.tile(self.traj[:, -1:], (1, remain))
-            ], -1)
-        else:
-            raise Exception('Reference for this mode is not implemented.')
-        return goal_states  # (nx, T+1).
-    
-class FlatStateObserver():
-    def __init__(self,  QUAD_TYPE, inertial_prop, g, dt, horizon):
-        self.QUAD_TYPE = QUAD_TYPE
-        self.inertial_prop = inertial_prop # alpha beta of model from env (from config file)
-        self.GRAVITY = g
-        self.dt = dt
-        self.fmpc_horizon = horizon
-
-        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
-            self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
-            self.flat_states_from_reg_func = _get_z_from_regular_states_3D_SI_10State
-        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
-
-
-    def set_initial_hovering(self, x_pos, y_pos, z_pos):
-        # initializes u, z and v horizon for a hovering state
-        self.z_horizon = np.zeros([12, self.fmpc_horizon+1])
-        self.v_horizon = np.zeros([3, self.fmpc_horizon])
-        self.u = np.zeros(2)
-        
-        self.u[0] = (self.GRAVITY- self.inertial_prop['alpha_1'])/self.inertial_prop['alpha_0'] 
-        # z_ini = _get_flat_stabilization_goal(x_obs)
-        z_ini = np.zeros(12)
-        z_ini[0] = x_pos
-        z_ini[4] = y_pos
-        z_ini[8] = z_pos
-        for i in range(self.fmpc_horizon+1): # TODO make nicer with matrix repetition
-            self.z_horizon[:, i] = z_ini
-
-        
-    def input_FMPC_result(self, z_horizon, v_horizon, u):
-        # just save them away
-        self.z_horizon = z_horizon
-        self.v_horizon = v_horizon
-        self.u = u     
-
-              
-    def compute_observation(self, x_obs): 
-        # estimate u_dot at current time step, based on z_horizon and v_horizon set in last time step
-        u_comp_length = 3
-        u_horizon = np.zeros([3, u_comp_length])
-        for i in range(u_comp_length):
-            u_horizon[:, i] = self.action_from_flat_states_func(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
-
-        u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
-       
-        u0_dot = u_dot_central[0]
-
-        # state estimation using system dynamics
-        z_obs = self.flat_states_from_reg_func(x_obs, self.u[0], u0_dot, self.inertial_prop, self.GRAVITY) 
-        return z_obs
-       
     
 def _get_u_from_flat_states_3D_SI_10State(z, v, dyn_pars, g):
     
@@ -404,36 +378,17 @@ def _get_u_from_flat_states_3D_SI_10State(z, v, dyn_pars, g):
     phi = np.arctan2(-z[6], np.sqrt(term_xz_acc_sqrd))
     phi_dot = ((((g + z[10])*z[11] + z[2]*z[3])*z[6]) - ((g + z[10])**2 + z[2]**2)*z[7])/(np.sqrt((g + z[10])**2 + z[2]**2)*((g + z[10])**2 + z[2]**2 + z[6]**2))
     phi_ddot = ((-((g + z[10])*z[11] + z[2]*z[3])*(((g + z[10])*z[11] + z[2]*z[3])*z[6] - ((g + z[10])**2 + z[2]**2)*z[7])*((g + z[10])**2 + z[2]**2 + z[6]**2) - 2*(((g + z[10])*z[11] + z[2]*z[3])*z[6] - ((g + z[10])**2 + z[2]**2)*z[7])*((g + z[10])**2 + z[2]**2)*((g + z[10])*z[11] + z[2]*z[3] + z[6]*z[7]) + ((g + z[10])**2 + z[2]**2)*(-((g + z[10])*z[11] + z[2]*z[3])*z[7] - ((g + z[10])**2 + z[2]**2)*v[1] + ((g + z[10])*v[2] + z[2]*v[0] + z[3]**2 + z[11]**2)*z[6])*((g + z[10])**2 + z[2]**2 + z[6]**2)))/((((g + z[10])**2 + z[2]**2)**(3/2))*((g + z[10])**2 + z[2]**2 + z[6]**2)**2)
-
     
     t = (1/alpha_0)*(np.sqrt(z[2]**2 + z[6]**2 + (z[10]+g)**2)-alpha_1)
     r = (1/beta_2) * (phi_ddot - beta_0*phi -beta_1*phi_dot)
     p = (1/gamma_2) * (theta_ddot - gamma_0*theta -gamma_1*theta_dot)
     return np.array([t, r, p])
 
-def _get_total_thrust_dot_from_flat_states(z):
-    # currently not needed
-    raise NotImplementedError
-
-    alpha = np.square(z[2]) + np.square(z[6]+g) # x_ddot^2 + (z_ddot+g)^2
-    t_dot = m*(z[2]*z[3] + (z[6]+g)*z[7])/np.sqrt(alpha)
-    return t_dot
-
 def _get_z_from_regular_states_3D_SI_10State(x, u0, u0_dot, dyn_pars, g):    
    
     alpha_0 = dyn_pars['alpha_0'] 
     alpha_1 = dyn_pars['alpha_1'] 
-    # beta_0 = dyn_pars['beta_0'] 
-    # beta_1 = dyn_pars['beta_1'] 
-    # beta_2 = dyn_pars['beta_2'] 
-    # gamma_0 = dyn_pars['gamma_0'] 
-    # gamma_1 = dyn_pars['gamma_1'] 
-    # gamma_2 = dyn_pars['gamma_2']       
-
-    # print(colored('WARNING: Flat transformation: model parameters not provided, using defaults!', 'yellow'))
-    # beta_1 = 18.112984649321753
-    # beta_2 = 3.6800
-        
+       
     z = np.zeros(12)
     sin_theta = np.sin(x[7])
     cos_theta = np.cos(x[7])
@@ -479,164 +434,24 @@ def _get_x_from_flat_states_3D_SI_10State(z, g):
     return x
 
 
-# def _get_z_from_regular_states_FD(x, x_prev, dt, u, t_tot_dot):
-#     m = 0.027
-#     g=9.81
-
-#     raise NotImplementedError # currently not needed
-
-#     # compute states_dot with finite differences to get x_ddot and z_ddot
-#     states_dot = (x-x_prev)/dt
-
-#     z = np.zeros(8)
-#     total_thrust = u[0]+u[1]
-#     total_thrust_dot = t_tot_dot #u_dot[0]+u_dot[1]
-#     z[0] = x[0] # x
-#     z[1] = x[1] # x_dot
-#     z[2] = states_dot[1] #(1/m)*(np.sin(x[4])*total_thrust) # x_ddot
-#     z[3] = (1/m)*(np.cos(x[4])*total_thrust*x[5] + np.sin(x[4])*total_thrust_dot)# x_dddot
-#     z[4] = x[2] # z
-#     z[5] = x[3] # z_dot
-#     z[6] = states_dot[3] #(1/m)*(np.cos(x[4])*total_thrust) - g # z_ddot
-#     z[7] = (1/m)*(np.sin(x[4])*total_thrust*x[5]*(-1) + np.cos(x[4])*total_thrust_dot) # z_dddot
-#     return z
-
-def _get_flat_stabilization_goal(x_stab):
-    z = np.zeros(8)
-    z[0] = x_stab[0]
-    # z[1] = x_stab[1]
-    z[4] = x_stab[2]
-    # z[5] = x_stab[3]
-    z[8] = x_stab[4]
-    # z[9] = x_stab[5]
+def _transform_env_goal_to_flat_3D_SI_10State(x):
+    if x.ndim == 1:
+        l = 1
+    else:
+        l = np.shape(x)[1]
+    z = np.zeros((12, l) )
+    z[0, ...] = x[0, ...]
+    z[1, ...] = x[1, ...]
+    z[4, ...] = x[2, ...]
+    z[5, ...] = x[3, ...]
+    z[8, ...] = x[4, ...]
+    z[9, ...] = x[5, ...]
     return z
 
-# def _create_flat_trajectory_circle(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
-#     raise NotImplementedError
-#     # task info parameters from yaml file
-#     traj_scaling = task_info.trajectory_scale
-#     num_cycles = task_info.num_cycles
-#     pos_offset = task_info.trajectory_position_offset
 
-#     traj_period = traj_length/num_cycles     
-
-#     # create circle trajectory
-#     times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  # sample time added to make reference one step longer than traj_length
-#     z_traj = np.zeros((8,len(times)))
-#     v_traj = np.zeros((2,len(times)))
-
-#     def circle_traj_at_t(t, scaling, freq, offset):
-#         z = np.zeros(8)
-#         v = np.zeros(2)
-#         z[0] = scaling * np.cos(freq * t) + offset[0] # x
-#         z[1] = -scaling * freq * np.sin(freq * t) # x_dot
-#         z[2] = -scaling * freq**2 * np.cos(freq * t) # x_ddot
-#         z[3] = scaling * freq**3 * np.sin(freq * t) # x_dddot
-
-#         v[0] = scaling * freq**4 * np.cos(freq * t) # x_d4dot = v0
-
-#         z[4] = scaling * np.sin(freq * t) + offset[1]        
-#         z[5] = scaling * freq * np.cos(freq * t)        
-#         z[6] = -scaling * freq**2 * np.sin(freq * t)        
-#         z[7] = -scaling * freq**3 * np.cos(freq * t)
-
-#         v[1] = scaling * freq**4 * np.sin(freq * t)
-#         return z, v
-
-#     traj_freq = 2.0 * np.pi / traj_period
-#     for index, t in enumerate(times):
-#         z_traj[:, index], v_traj[:, index] = circle_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
-
-#     # calculate initial values for x, u and u_dot for flat state observer
-#     initial_vals = {}
-#     z_minus1, v_minus1 = circle_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
-#     z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
-#     v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
-
-#     u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
-#     x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
-
-#     initial_vals['z_ini_hrzn'] = z_ini_horizon
-#     initial_vals['v_ini_hrzn'] = v_ini_horizon
-#     initial_vals['u_ini'] = u_ini
-#     initial_vals['x_ini'] = x_ini
-
-#     # save reference trajectory for evaluation
-#     data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
-#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
-#         pickle.dump(data_dict, file_ref)
-    
-#     return z_traj, initial_vals
-
-# def _create_flat_trajectory_figure8(task_info, traj_length, sample_time, horizon, inertial_prop, gravity):
-#     # task info parameters from yaml file
-#     traj_scaling = task_info.trajectory_scale
-#     num_cycles = task_info.num_cycles
-#     pos_offset = task_info.trajectory_position_offset
-
-#     traj_period = traj_length/num_cycles     
-
-#     # create circle trajectory
-#     times = np.arange(0, traj_length + sample_time*(1+horizon), sample_time)  
-#     z_traj = np.zeros((12,len(times)))
-#     v_traj = np.zeros((3,len(times)))
-
-#     def figure8_traj_at_t(t, scaling, freq, offset):
-#         z = np.zeros(12)
-#         v = np.zeros(3)
-#         z[0] = scaling * np.sin(freq * t) + offset[0] # x
-#         z[1] = scaling * freq * np.cos(freq * t) # x_dot
-#         z[2] = -scaling * freq**2 * np.sin(freq * t) # x_ddot
-#         z[3] = -scaling * freq**3 * np.cos(freq * t) # x_dddot
-
-#         v[0] = scaling * freq**4 * np.sin(freq * t) # x_d4dot = v0
-
-#         z[4] = scaling * np.sin(freq * t) *np.cos(freq * t) + offset[1]        
-#         z[5] = scaling * freq * (np.cos(freq * t)**2 - np.sin(freq*t)**2)       
-#         z[6] = -scaling * freq**2 * 4 * np.sin(freq * t) *np.cos(freq * t)        
-#         z[7] = scaling * freq**3 * 4 * (np.sin(freq * t)**2 - np.cos(freq*t)**2)
-
-#         v[1] = scaling * freq**4 * 16 * (np.sin(freq * t) *np.cos(freq * t))
-
-#         # z values are all = 1 for figure 8 in xy plane
-#         z[8] = 1.0
-
-#         return z, v
-
-#     traj_freq = 2.0 * np.pi / traj_period
-#     for index, t in enumerate(times):
-#         z_traj[:, index], v_traj[:, index] = figure8_traj_at_t(t, traj_scaling, traj_freq, pos_offset)
-
-#     # calculate initial values for x, u and u_dot for flat state observer
-#     initial_vals = {}
-#     # z_minus1, v_minus1 = figure8_traj_at_t(-sample_time, traj_scaling, traj_freq, pos_offset)
-#     # z_ini_horizon = np.hstack((np.array([z_minus1]).T, z_traj[:, 0:horizon-1]))
-#     # v_ini_horizon = np.concatenate((np.array([v_minus1]).T, v_traj[:, 0:horizon-1]), axis=1)
-
-#     # u_ini = _get_u_from_flat_states(z_ini_horizon[:, 1], v_ini_horizon[:, 0], inertial_prop, gravity) #NOTE: the indices need to match the FMPC implementation
-#     # x_ini = _get_x_from_flat_states(z_traj[:, 0], gravity)
-
-#     # initial_vals['z_ini_hrzn'] = z_ini_horizon
-#     # initial_vals['v_ini_hrzn'] = v_ini_horizon
-#     # initial_vals['u_ini'] = u_ini
-#     # initial_vals['x_ini'] = x_ini
-
-#     # save reference trajectory for evaluation
-#     data_dict = {'z_ref': z_traj, 'v_ref':v_traj}
-#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'wb') as file_ref:
-#         pickle.dump(data_dict, file_ref)
-    
-#     return z_traj, initial_vals
-
-# def _load_flat_trajectory_circle(): # from NMPC
-#     raise NotImplementedError # initial values for state estimator not returned yet
-#     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_NMPC.pkl', 'rb') as file:
-#         data_dict = pickle.load(file)
-#     z_ref = data_dict['z_ref']
-
-
-
-#     return z_ref.transpose()
+#################################################################################################
+###################### Trajectory generation ####################################################
+################################################################################################# 
 
 def get_full_reference_trajectory_FMPC(QUAD_TYPE, 
                                 task_info, 
@@ -740,8 +555,8 @@ def _generate_trajectory_FMPC(traj_type='figure8',
                                                                         position_offset[0],
                                                                         position_offset[1],
                                                                         scaling)
-    # NOTE: update 25.11.24: manually shift the z axis to 1.0 if not in the traj plane
-    #       ptherwise flying on the floor with z=0.0 
+    # manually shift the z axis to 1.0 if not in the traj plane
+    # otherwise flying on the floor with z=0.0 
     if 'z' not in traj_plane:
         pos_ref_traj[:, 2] = 1.0
         vel_ref_traj[:, 2] = 0.0
