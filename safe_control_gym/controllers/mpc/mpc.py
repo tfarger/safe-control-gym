@@ -414,7 +414,8 @@ class MPC(BaseController):
         '''Constructs reference states along mpc horizon.(nx, T+1).'''
         if self.env.TASK == Task.STABILIZATION:
             # Repeat goal state for horizon steps.
-            goal_states = np.tile(self.env.X_GOAL.reshape(-1, 1), (1, self.T + 1))
+            # goal_states = np.tile(self.env.X_GOAL.reshape(-1, 1), (1, self.T + 1))
+            goal_states = np.tile(self.x_goal.reshape(-1, 1), (1, self.T + 1)) # equivalent, changed during FMPC development
         elif self.env.TASK == Task.TRAJ_TRACKING:
             # Slice trajectory for horizon steps, if not long enough, repeat last state.
             start = min(self.traj_step, self.traj.shape[-1])
