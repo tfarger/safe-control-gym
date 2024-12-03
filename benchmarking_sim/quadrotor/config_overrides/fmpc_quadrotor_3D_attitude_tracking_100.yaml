@@ -26,5 +26,6 @@ algo_config:
   warmstart: True
   output_dir: ./fmpc/results
   solver: qrqp
+  use_full_flat_reference: True
 
 
