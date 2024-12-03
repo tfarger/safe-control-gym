@@ -105,11 +105,15 @@ class FlatMPC(LinearMPC):
             self.inertial_prop['gamma_1'] = -13.3
             self.inertial_prop['gamma_2'] = 84.73
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
-            raise NotImplementedError
+            self.action_from_flat_states_func = _get_u_from_flat_states_2D_att
+            self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_2D_att # map components of X_goal to flat state z
+            # replace dynamics model with symbolic flat model
+            self.model = _setup_flat_model_symbolic_2D_att(self.dt)
+            self.inertial_prop = self.env.INERTIAL_PROP
         else:
             raise NotImplementedError     
         
-        self.use_full_flat_reference = use_full_flat_reference
+        self.use_full_flat_reference = use_full_flat_reference 
 
 
         self.X_EQ = np.atleast_2d(self.model.X_EQ)[0, :].T
@@ -132,12 +136,11 @@ class FlatMPC(LinearMPC):
             self.mode = 'stabilization'
             self.x_goal = self.transform_env_goal_to_flat_func(self.env.X_GOAL)            
             x_ini = self.env.__dict__['init_x'.upper()]
-            y_ini = self.env.__dict__['init_y'.upper()]
+            y_ini = self.env.__dict__.get('init_y'.upper(), 0)
             z_ini = self.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
         elif self.env.TASK == Task.TRAJ_TRACKING:
             self.mode = 'tracking'
-            tmp = self.env.X_GOAL.T
             if self.use_full_flat_reference:
                 self.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt).T
             else:
@@ -146,7 +149,7 @@ class FlatMPC(LinearMPC):
             self.traj_step = 0
             # initialize flat state observer in hovering
             x_ini = self.env.__dict__['init_x'.upper()]
-            y_ini = self.env.__dict__['init_y'.upper()]
+            y_ini = self.env.__dict__.get('init_y'.upper(), 0)
             z_ini = self.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
 
@@ -218,6 +221,9 @@ class FlatMPC(LinearMPC):
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
 
+        # log execution time                
+        te = time.time()
+
         # data logging
         self.results_dict['obs_x'].append(obs)
         self.results_dict['obs_z'].append(z_obs)
@@ -226,8 +232,6 @@ class FlatMPC(LinearMPC):
         self.results_dict['horizon_v'].append(v_horizon)
         self.results_dict['horizon_z'].append(z_horizon)
 
-        # log execution time                
-        te = time.time()
         self.results_dict['ctrl_run_time'].append(te-ts)
         
         return action
@@ -245,23 +249,36 @@ class FlatStateObserver():
             self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
             self.flat_states_from_reg_func = _get_z_from_regular_states_3D_SI_10State
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
-            raise NotImplementedError
+            self.action_from_flat_states_func = _get_u_from_flat_states_2D_att
+            self.flat_states_from_reg_func = _get_z_from_regular_states_2D_att
         else:
             raise NotImplementedError
 
 
     def set_initial_hovering(self, x_pos, y_pos, z_pos):
-        # initializes u, z and v horizon for a hovering state
-        self.z_horizon = np.zeros([12, self.fmpc_horizon+1])
-        self.v_horizon = np.zeros([3, self.fmpc_horizon])
-        self.u = np.zeros(2)
-        
-        self.u[0] = (self.GRAVITY- self.inertial_prop['alpha_1'])/self.inertial_prop['alpha_0'] 
-        # z_ini = _get_flat_stabilization_goal(x_obs)
-        z_ini = np.zeros(12)
-        z_ini[0] = x_pos
-        z_ini[4] = y_pos
-        z_ini[8] = z_pos
+       
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            # initializes u, z and v horizon for a hovering state
+            self.z_horizon = np.zeros([12, self.fmpc_horizon+1])
+            self.v_horizon = np.zeros([3, self.fmpc_horizon])
+            self.u = np.zeros(3)
+            self.u[0] = (self.GRAVITY- self.inertial_prop['alpha_1'])/self.inertial_prop['alpha_0'] 
+            z_ini = np.zeros(12)
+            z_ini[0] = x_pos
+            z_ini[4] = y_pos
+            z_ini[8] = z_pos
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            self.z_horizon = np.zeros([8, self.fmpc_horizon+1])
+            self.v_horizon = np.zeros([2, self.fmpc_horizon])
+            self.u = np.zeros(2)
+            self.u[0] = (self.GRAVITY- self.inertial_prop['beta_2'])/self.inertial_prop['beta_1']
+            z_ini = np.zeros(8)
+            z_ini[0] = x_pos
+            z_ini[4] = z_pos           
+        else: 
+            raise NotImplementedError
+       
+
         for i in range(self.fmpc_horizon+1): # TODO make nicer with matrix repetition
             self.z_horizon[:, i] = z_ini
 
@@ -271,12 +288,17 @@ class FlatStateObserver():
         self.z_horizon = z_horizon
         self.v_horizon = v_horizon
         self.u = u     
-
               
     def compute_observation(self, x_obs): 
         # estimate u_dot at current time step, based on z_horizon and v_horizon set in last time step
         u_comp_length = 3
-        u_horizon = np.zeros([3, u_comp_length])
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10: #TODO: make nicer/faster
+            u_horizon = np.zeros([3, u_comp_length])
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            u_horizon = np.zeros([2, u_comp_length])
+        else:
+            raise NotImplementedError
+        
         for i in range(u_comp_length):
             u_horizon[:, i] = self.action_from_flat_states_func(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
 
@@ -412,7 +434,6 @@ def _get_z_from_regular_states_3D_SI_10State(x, u0, u0_dot, dyn_pars, g):
 
 # not needed in FMPC, used to double check transformations
 def _get_x_from_flat_states_3D_SI_10State(z, g):
-    # raise NotImplementedError
     term_xz_acc_sqrd = (z[2])**2 + (z[10]+g)**2 # x_ddot^2 + (z_ddot+g)^2
     theta = np.arctan2(z[2], (z[10]+g))
     theta_dot = (z[3]*(z[10]+g)- z[2]*z[11])/term_xz_acc_sqrd
@@ -446,6 +467,129 @@ def _transform_env_goal_to_flat_3D_SI_10State(x):
     z[5, ...] = x[3, ...]
     z[8, ...] = x[4, ...]
     z[9, ...] = x[5, ...]
+    return z
+
+#################################################################################################
+################## 2D Quadrotor SI model flatness transforms ####################################
+################################################################################################# 
+
+def _setup_flat_model_symbolic_2D_att(dt):
+    '''Creates symbolic (CasADi) models for dynamics, observation, and cost.
+
+    Args:
+        prior_prop (dict): specify the prior inertial prop to use in the symbolic model.
+    ''' 
+    nx, nu = 8, 2
+    
+    # Define states.
+    z = cs.MX.sym('z')
+    z_dot = cs.MX.sym('z_dot')
+    z_ddot = cs.MX.sym('z_ddot')   
+    z_dddot = cs.MX.sym('z_dddot')       
+    
+    x = cs.MX.sym('x')
+    x_dot = cs.MX.sym('x_dot')
+    x_ddot = cs.MX.sym('x_ddot')
+    x_dddot = cs.MX.sym('x_dddot')
+    
+    X = cs.vertcat(x, x_dot, x_ddot, x_dddot, z, z_dot, z_ddot, z_dddot)
+    # Define flat inputs 
+    v1 = cs.MX.sym('v1')
+    v2 = cs.MX.sym('v2')
+    U = cs.vertcat(v1, v2)
+    # Define dynamics equations.
+    X_dot = cs.vertcat(x_dot, x_ddot, x_dddot, v1,
+                        z_dot, z_ddot, z_dddot, v2)
+    # Define observation.
+    Y = cs.vertcat(x, x_dot, x_ddot, x_dddot, z, z_dot, z_ddot, z_dddot)
+    
+    # Set the equilibrium values for linearizations.
+    X_EQ = np.zeros(nx)
+    U_EQ = np.zeros(nu)
+    # Define cost (quadratic form).
+    Q = cs.MX.sym('Q', nx, nx)
+    R = cs.MX.sym('R', nu, nu)
+    Xr = cs.MX.sym('Xr', nx, 1)
+    Ur = cs.MX.sym('Ur', nu, 1)
+    cost_func = 0.5 * (X - Xr).T @ Q @ (X - Xr) + 0.5 * (U - Ur).T @ R @ (U - Ur)
+    # Define dynamics and cost dictionaries.
+    dynamics = {'dyn_eqn': X_dot, 'obs_eqn': Y, 'vars': {'X': X, 'U': U}}
+    cost = {
+        'cost_func': cost_func,
+        'vars': {
+            'X': X,
+            'U': U,
+            'Xr': Xr,
+            'Ur': Ur,
+            'Q': Q,
+            'R': R
+        }
+    }
+    # Additional params to cache
+    params = {
+        # equilibrium point for linearization
+        'X_EQ': X_EQ,
+        'U_EQ': U_EQ,
+    }
+    # Setup symbolic model.
+    return SymbolicModel(dynamics=dynamics, cost=cost, dt=dt, params=params)
+
+def _get_u_from_flat_states_2D_att(z, v, dyn_pars, g):
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']
+    alpha_1 =  dyn_pars['alpha_1']
+    alpha_2 =  dyn_pars['alpha_2']
+    alpha_3 =  dyn_pars['alpha_3']
+
+    term_acc_sqrd = (z[2])**2 + (z[6]+g)**2 # x_ddot^2 + (z_ddot+g)^2
+    theta = np.arctan2(z[2], (z[6]+g))
+    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/term_acc_sqrd
+    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/(term_acc_sqrd**2)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
+
+    t = -(beta_2/beta_1) + np.sqrt(term_acc_sqrd)/beta_1
+    p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
+    return np.array([t, p])
+
+def _get_z_from_regular_states_2D_att(x, u0, u0_dot, dyn_pars, g):    
+   
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']        
+       
+    z = np.zeros(8)
+    sin_theta = np.sin(x[4])
+    cos_theta = np.cos(x[4])
+
+    z[0] = x[0] # x
+    z[1] = x[1] # x_dot
+    z[2] = sin_theta*(beta_2 + beta_1*u0) # x_ddot    
+    z[3] = cos_theta*(beta_2 + beta_1*u0)*x[5] + sin_theta*beta_1*u0_dot # x_dddot
+    z[4] = x[2] # z
+    z[5] = x[3] # z_dot
+    z[6] = cos_theta*(beta_2 + beta_1*u0)- g # z_ddot
+    z[7] = -sin_theta*(beta_2 + beta_1*u0)*x[5] + cos_theta*beta_1*u0_dot# z_dddot
+    return z
+
+# not needed in FMPC, used to double check transformations
+def _get_x_from_flat_states_2D_att(z, g):
+    x = np.zeros(6)
+    x[0] = z[0]
+    x[1] = z[1]
+    x[2] = z[4]
+    x[3] = z[5]
+    x[4] = np.arctan2(z[2], (z[6]+g))
+    x[5] = (z[3]*(z[6]+g)- z[2]*z[7])/((z[6]+g)**2 + z[2]**2)
+    return x
+
+def _transform_env_goal_to_flat_2D_att(x):
+    if x.ndim == 1:
+        l = 1
+    else:
+        l = np.shape(x)[1]
+    z = np.zeros((8, l) )
+    z[0, ...] = x[0, ...]
+    z[1, ...] = x[1, ...]
+    z[4, ...] = x[2, ...]
+    z[5, ...] = x[3, ...]
     return z
 
 
