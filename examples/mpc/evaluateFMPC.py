@@ -11,7 +11,9 @@ def evaluateFMPC(show_plots = False):
     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_traj_tracking.pkl', 'rb') as file:
     # with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/fmpc_data_quadrotor_stabilization.pkl', 'rb') as file:
         data_dict_fmpc = pickle.load(file)
+        metrics_dict = data_dict_fmpc['metrics']
         data_dict_fmpc = data_dict_fmpc['trajs_data']
+        
 
     data_dict_fmpc = data_dict_fmpc['controller_data'][0]
 
@@ -20,12 +22,10 @@ def evaluateFMPC(show_plots = False):
     obs_z = data_dict_fmpc['obs_z'][0]
     v = data_dict_fmpc['v'][0]
     u = data_dict_fmpc['u'][0]
-    T_dot = data_dict_fmpc['T_dot'][0]
-    u_ref_f = data_dict_fmpc['u_ref'][0]
+
     v_horizon = data_dict_fmpc['horizon_v'][0]
     z_horizon = data_dict_fmpc['horizon_z'][0]
-    u_horizon = data_dict_fmpc['horizon_u'][0]
-
+   
     data_length = np.shape(obs_z)[0] # use reference up until this point, reference includes an additional horizon +1 as datapoints
 
     with open('/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/temp-data/reference_analytic.pkl', 'rb') as file:
