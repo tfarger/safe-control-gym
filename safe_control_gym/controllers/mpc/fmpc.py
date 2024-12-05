@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system, compute_lqr_gain
 from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.linear_mpc import LinearMPC
+from safe_control_gym.controllers.mpc.linear_mpc_acados import LinearMPC_ACADOS
 from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain_from_cont_linear_system, get_cost_weight_matrix
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
@@ -126,6 +127,12 @@ class FlatMPC(LinearMPC):
         self.Q = get_cost_weight_matrix(q_mpc, self.model.nx) 
         self.R = get_cost_weight_matrix(r_mpc, self.model.nu)
         
+        # remove all constraints from system
+        self.constraints = {}
+        self.state_constraints_sym = {}
+        self.input_constraints_sym = {} 
+
+        # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.env.GRAVITY_ACC, self.dt, self.T)
 
     # overwrite to input flat trajectory into reference and initialize flat state observer
