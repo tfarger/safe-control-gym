@@ -20,6 +20,7 @@ from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system,
 from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.linear_mpc import LinearMPC
 from safe_control_gym.controllers.mpc.linear_mpc_acados import LinearMPC_ACADOS
+from safe_control_gym.controllers.base_controller import BaseController
 from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain_from_cont_linear_system, get_cost_weight_matrix
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
@@ -33,7 +34,7 @@ from safe_control_gym.utils.utils import timing
 
 import time
 
-class FlatMPC(LinearMPC):
+class FlatMPC(BaseController):
     '''Flatness based MPC.'''
 
     def __init__(
@@ -52,6 +53,7 @@ class FlatMPC(LinearMPC):
             # shared/base args
             output_dir='results/temp',
             additional_constraints=None,
+            use_acados=False,
             **kwargs):
         '''Creates task and controller.
 
@@ -74,27 +76,44 @@ class FlatMPC(LinearMPC):
             if k != 'self' and k != 'kwargs' and '__' not in k:
                 self.__dict__[k] = v
 
-        super().__init__(
-            env_func,
-            horizon=horizon,
-            q_mpc=[1],
-            r_mpc=[1],
-            warmstart=warmstart,
-            soft_constraints=soft_constraints,
-            terminate_run_on_done=terminate_run_on_done,
-            constraint_tol=constraint_tol,
-            # prior_info=prior_info,
-            output_dir=output_dir,
-            additional_constraints=additional_constraints,
-            **kwargs
-        )
+        if use_acados:
+            self.mpc = LinearMPC_ACADOS(
+                                        env_func,
+                                        horizon=horizon,
+                                        q_mpc=[1],
+                                        r_mpc=[1],
+                                        warmstart=warmstart,
+                                        soft_constraints=soft_constraints,
+                                        terminate_run_on_done=terminate_run_on_done,
+                                        constraint_tol=constraint_tol,
+                                        # prior_info=prior_info,
+                                        output_dir=output_dir,
+                                        additional_constraints=additional_constraints,
+                                        **kwargs
+                                    )
+        else:
+            self.mpc = LinearMPC(
+                            env_func,
+                            horizon=horizon,
+                            q_mpc=[1],
+                            r_mpc=[1],
+                            warmstart=warmstart,
+                            soft_constraints=soft_constraints,
+                            terminate_run_on_done=terminate_run_on_done,
+                            constraint_tol=constraint_tol,
+                            # prior_info=prior_info,
+                            output_dir=output_dir,
+                            additional_constraints=additional_constraints,
+                            **kwargs
+                        )
+                        
 
-        self.QUAD_TYPE = self.env.QUAD_TYPE
+        self.QUAD_TYPE = self.mpc.env.QUAD_TYPE
         if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
             self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
             self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_3D_SI_10State # map components of X_goal to flat state z
             # replace dynamics model with symbolic flat model
-            self.model = _setup_flat_model_symbolic_3D_SI_10State(self.dt)
+            self.mpc.model = _setup_flat_model_symbolic_3D_SI_10State(self.mpc.dt)
 
             # not as a nice variable in the env yet, thats why its defined here again
             self.inertial_prop = {} 
@@ -110,55 +129,58 @@ class FlatMPC(LinearMPC):
             self.action_from_flat_states_func = _get_u_from_flat_states_2D_att
             self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_2D_att # map components of X_goal to flat state z
             # replace dynamics model with symbolic flat model
-            self.model = _setup_flat_model_symbolic_2D_att(self.dt)
-            self.inertial_prop = self.env.INERTIAL_PROP
+            self.mpc.model = _setup_flat_model_symbolic_2D_att(self.mpc.dt)
+            self.inertial_prop = self.mpc.env.INERTIAL_PROP
         else:
             raise NotImplementedError     
         
         self.use_full_flat_reference = use_full_flat_reference 
 
-
-        self.X_EQ = np.atleast_2d(self.model.X_EQ)[0, :].T
-        self.U_EQ = np.atleast_2d(self.model.U_EQ)[0, :].T 
+        if use_acados:
+            self.mpc.x_lin = np.atleast_2d(self.mpc.model.X_EQ)[0, :].T
+            self.mpc.u_lin = np.atleast_2d(self.mpc.model.U_EQ)[0, :].T 
+        else:
+            self.mpc.X_EQ = np.atleast_2d(self.mpc.model.X_EQ)[0, :].T
+            self.mpc.U_EQ = np.atleast_2d(self.mpc.model.U_EQ)[0, :].T 
         assert solver in ['qpoases', 'qrqp', 'sqpmethod', 'ipopt'], '[Error]. MPC Solver not supported.'
-        self.solver = solver
+        self.mpc.solver = solver
 
         # overwrite definitions in parent init function to fit flat model
-        self.Q = get_cost_weight_matrix(q_mpc, self.model.nx) 
-        self.R = get_cost_weight_matrix(r_mpc, self.model.nu)
+        self.mpc.Q = get_cost_weight_matrix(q_mpc, self.mpc.model.nx) 
+        self.mpc.R = get_cost_weight_matrix(r_mpc, self.mpc.model.nu)
         
         # remove all constraints from system
-        self.constraints = {}
-        self.state_constraints_sym = {}
-        self.input_constraints_sym = {} 
+        self.mpc.constraints = {}
+        self.mpc.state_constraints_sym = {}
+        self.mpc.input_constraints_sym = {} 
 
         # setup flat state observer
-        self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.env.GRAVITY_ACC, self.dt, self.T)
+        self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
 
     # overwrite to input flat trajectory into reference and initialize flat state observer
     def reset(self):
         '''Prepares for training or evaluation.'''
-        super().reset()
+        self.mpc.reset()
         # Setup reference input for the flat state spaces
-        if self.env.TASK == Task.STABILIZATION:
-            self.mode = 'stabilization'
-            self.x_goal = self.transform_env_goal_to_flat_func(self.env.X_GOAL)            
+        if self.mpc.env.TASK == Task.STABILIZATION:
+            self.mpc.mode = 'stabilization'
+            self.mpc.x_goal = self.transform_env_goal_to_flat_func(self.mpc.env.X_GOAL)            
             x_ini = self.env.__dict__['init_x'.upper()]
             y_ini = self.env.__dict__.get('init_y'.upper(), 0)
             z_ini = self.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
-        elif self.env.TASK == Task.TRAJ_TRACKING:
-            self.mode = 'tracking'
+        elif self.mpc.env.TASK == Task.TRAJ_TRACKING:
+            self.mpc.mode = 'tracking'
             if self.use_full_flat_reference:
-                self.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.env.TASK_INFO, self.env.EPISODE_LEN_SEC, self.dt, self.T).T
+                self.mpc.traj = get_full_reference_trajectory_FMPC(self.QUAD_TYPE, self.mpc.env.TASK_INFO, self.mpc.env.EPISODE_LEN_SEC, self.mpc.dt, self.mpc.T).T
             else:
-                self.traj = self.transform_env_goal_to_flat_func(self.env.X_GOAL.T)            
+                self.mpc.traj = self.transform_env_goal_to_flat_func(self.mpc.env.X_GOAL.T)            
             # Step along the reference.
-            self.traj_step = 0
+            self.mpc.traj_step = 0
             # initialize flat state observer in hovering
-            x_ini = self.env.__dict__['init_x'.upper()]
-            y_ini = self.env.__dict__.get('init_y'.upper(), 0)
-            z_ini = self.env.__dict__['init_z'.upper()]
+            x_ini = self.mpc.env.__dict__['init_x'.upper()]
+            y_ini = self.mpc.env.__dict__.get('init_y'.upper(), 0)
+            z_ini = self.mpc.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
 
         # all set in super().reset()
@@ -216,15 +238,15 @@ class FlatMPC(LinearMPC):
         # get flat state estimation from observer
         z_obs = self.fs_obs.compute_observation(obs)
         
-        z_ref = self.get_references() # for debugging
+        # z_ref = self.get_references() # for debugging
 
         # run MPC controller 
-        v = super().select_action(z_obs) 
-        z_horizon = self.x_prev #8xN set in linearMPC
-        v_horizon = self.u_prev #2xN       
+        v = self.mpc.select_action(z_obs) 
+        z_horizon = self.mpc.x_prev #8xN set in linearMPC
+        v_horizon = self.mpc.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.env.GRAVITY_ACC) 
+        action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
         
 
         # feed data into observer
@@ -245,6 +267,9 @@ class FlatMPC(LinearMPC):
         
         return action
     
+    def close(self):
+        '''Cleans up resources.'''
+        self.mpc.close()
     
 class FlatStateObserver():
     
