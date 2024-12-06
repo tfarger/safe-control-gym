@@ -138,7 +138,8 @@ class FlatMPC(LinearMPC):
     # overwrite to input flat trajectory into reference and initialize flat state observer
     def reset(self):
         '''Prepares for training or evaluation.'''
-        # Setup reference input.
+        super().reset()
+        # Setup reference input for the flat state spaces
         if self.env.TASK == Task.STABILIZATION:
             self.mode = 'stabilization'
             self.x_goal = self.transform_env_goal_to_flat_func(self.env.X_GOAL)            
@@ -160,15 +161,16 @@ class FlatMPC(LinearMPC):
             z_ini = self.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
 
-        # Dynamics model.
-        self.set_dynamics_func()
-        # CasADi optimizer.
-        self.setup_optimizer()
-        # Previously solved states & inputs, useful for warm start.
-        self.x_prev = None
-        self.u_prev = None
+        # all set in super().reset()
+        # # Dynamics model.
+        # self.set_dynamics_func()
+        # # CasADi optimizer.
+        # self.setup_optimizer()
+        # # Previously solved states & inputs, useful for warm start.
+        # self.x_prev = None
+        # self.u_prev = None
 
-        self.setup_results_dict()
+        # self.setup_results_dict()
         
     def setup_results_dict(self):
         '''Setup the results dictionary to store run information.'''
