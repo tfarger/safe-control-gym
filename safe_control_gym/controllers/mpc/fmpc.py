@@ -106,6 +106,8 @@ class FlatMPC(BaseController):
                             additional_constraints=additional_constraints,
                             **kwargs
                         )
+            
+        self.env = self.mpc.env # added for evaluation and debugging, not needed to run
                         
 
         self.QUAD_TYPE = self.mpc.env.QUAD_TYPE
