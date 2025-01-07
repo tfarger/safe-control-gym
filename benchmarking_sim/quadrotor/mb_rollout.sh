@@ -22,27 +22,30 @@
 
 # for ADDITIOANL in '_9' '_11' '_13' '_15'
 # for ADDITIOANL in '_10' '_12' '_14'
-for ADDITIOANL in '_9' '_10' '_11' '_12' '_13' '_14' '_15'
+# for ADDITIOANL in '_9' '_10' '_11' '_12' '_13' '_14' '_15'
+for ADDITIOANL in '_11' 
 do
-    for STARTSEED in 1 11 21 31 41 51 61 71 81 91 
+    for STARTSEED in 1 11 21 31 41 51 61 71 81 91
+    # for STARTSEED in 1 
     do 
         # for algo in 'lqr' 'ilqr' # 'pid' 
         # for algo in 'linear_mpc' 
-        for algo in 'ilqr' # 'lqr'
+        for algo in 'fmpc' # 'mpc_acados' 'linear_mpc_acados' # 'lqr'
         do
             python3 results_rollout.py $ADDITIOANL $STARTSEED $algo 1
         done
     done
 done
 
-for ADDITIOANL in ''
-do
-    for STARTSEED in 1 
-    do 
-        for algo in 'ilqr'
-        # for algo in 'linear_mpc_acados'
-        do
-            python3 results_noise.py $algo
-        done
-    done
-done
+# noise testing. 
+# for ADDITIOANL in ''
+# do
+#     for STARTSEED in 1 
+#     do 
+#         for algo in 'ilqr'
+#         # for algo in 'linear_mpc_acados'
+#         do
+#             python3 results_noise.py $algo
+#         done
+#     done
+# done

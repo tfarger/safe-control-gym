@@ -233,7 +233,8 @@ else:
 
 # for additinonal in ['_9', '_11', '_13', '_15']:
 # for additinonal in ['_11', '_12', '_13', '_14', '_15']:
-for additinonal in ['_9', '_10', '_11', '_12', '_13', '_14', '_15']:
+# for additinonal in ['_9', '_10', '_11', '_12', '_13', '_14', '_15']:
+for additinonal in ['_11']:
     data_folder = f'results_rollout{additinonal}/temp'
     # traj_resutls, metrics = extract_rollouts(notebook_dir, data_folder, ctrl, additinonal)
     if additinonal == '_11':
@@ -254,10 +255,10 @@ additional = '_11'
 data_folder = f'results_rollout{additional}/temp'
 plot_trajectory(notebook_dir, data_folder, 'Evaluation', ctrl)
 
-additional = '_15'
-data_folder = f'results_rollout{additional}/temp'
-plot_trajectory(notebook_dir, data_folder, 'Generalization (slower)', ctrl)
+# additional = '_15'
+# data_folder = f'results_rollout{additional}/temp'
+# plot_trajectory(notebook_dir, data_folder, 'Generalization (slower)', ctrl)
 
-additional = '_9'
-data_folder = f'results_rollout{additional}/temp'
-plot_trajectory(notebook_dir, data_folder, 'Generalization (faster)', ctrl)
+# additional = '_9'
+# data_folder = f'results_rollout{additional}/temp'
+# plot_trajectory(notebook_dir, data_folder, 'Generalization (faster)', ctrl)
