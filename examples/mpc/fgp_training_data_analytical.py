@@ -28,15 +28,25 @@ ctrl_freq = 50 # of controller in dataset
 start_index = 70
 stop_index = 570
 
-inertial_prop = {} # not as a nice variable in the env yet, thats why its defined here again
-inertial_prop['alpha_0'] = 20.907574256269616
-inertial_prop['alpha_1'] = 3.653687545690674
-inertial_prop['beta_0'] = -130.3
-inertial_prop['beta_1'] = -16.33
-inertial_prop['beta_2'] = 119.3
-inertial_prop['gamma_0'] = -99.94
-inertial_prop['gamma_1'] = -13.3
-inertial_prop['gamma_2'] = 84.73
+# 2D Quadrotor Attitude model. TODO: Take from env!
+inertial_prop = {}
+inertial_prop['alpha_1'] = -140.8
+inertial_prop['alpha_2'] = -13.4
+inertial_prop['alpha_3'] = 124.8
+inertial_prop['beta_1'] = 18.11
+inertial_prop['beta_2'] = 3.68
+
+
+# These are the 3D Quad inertial properties!
+# inertial_prop = {} # not as a nice variable in the env yet, thats why its defined here again
+# inertial_prop['alpha_0'] = 20.907574256269616
+# inertial_prop['alpha_1'] = 3.653687545690674
+# inertial_prop['beta_0'] = -130.3
+# inertial_prop['beta_1'] = -16.33
+# inertial_prop['beta_2'] = 119.3
+# inertial_prop['gamma_0'] = -99.94
+# inertial_prop['gamma_1'] = -13.3
+# inertial_prop['gamma_2'] = 84.73
 g=9.8
 #############################################
 traj_sample_time = 1/ctrl_freq
@@ -90,7 +100,7 @@ u_bar[:, 1] = u_data[:, 1]
 # TODO
 # save data away
 
-if False:
+if True:
     # plotting
     times = np.linspace(0, 1, np.shape(u_data)[0]) # slightly off by one horizon
     plot_data(z_data, times, 'Flat States Z', 'time')
@@ -102,10 +112,8 @@ if False:
     plot_data(u_bar, times, 'GP training data input', 'time' )
     plt.show()
 
-# if False:
-#     reference_dict = {'z_ref': z_traj, 'x_ref': x_traj, 'u_ref': u_traj, 'u_dot_ref': u_dot_traj, 'v_ref':v_traj}
+if True:
+    gp_data_dict = {'u': u_bar, 'z': z_data, 'v': v_data}
 
-#     with open('./examples/mpc/temp-data/reference_NMPC.pkl', 'wb') as file_ref:
-#         pickle.dump(reference_dict, file_ref)
-    
-
+    with open('./examples/mpc/temp-data/gp_train_data.pkl', 'wb') as file:
+        pickle.dump(gp_data_dict, file)
