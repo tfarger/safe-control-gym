@@ -42,10 +42,10 @@ class AffineKernel(gpytorch.kernels.Kernel):
         super().__init__(**kwargs)
         self.input_dim = input_dim
         self.register_parameter(
-            name='raw_length', parameter=torch.nn.Parameter(torch.zeros(2*(self.input_dim-1)))
+            name='raw_length', parameter=torch.nn.Parameter(torch.zeros(3*(self.input_dim-2)))
         )
         self.register_parameter(
-            name='raw_variance', parameter=torch.nn.Parameter(torch.zeros(2))
+            name='raw_variance', parameter=torch.nn.Parameter(torch.zeros(3))
         )
         # set the parameter constraint to be positive, when nothing is specified
         if length_constraint is None:
@@ -105,22 +105,28 @@ class AffineKernel(gpytorch.kernels.Kernel):
         self.initialize(raw_variance=self.raw_variance_constraint.inverse_transform(value))
 
     def kappa_alpha(self,x1, x2):
-        L_alpha = torch.diag(1 / (self.length[0:self.input_dim-1] ** 2))
+        L_alpha = torch.diag(1 / (self.length[0:self.input_dim-2] ** 2))
         var_alpha = self.variance[0]
         return squared_exponential(x1, x2, L_alpha, var_alpha)
 
-    def kappa_beta(self, x1, x2):
-        L_beta = torch.diag(1 / (self.length[self.input_dim-1:] ** 2))
+    def kappa_beta1(self, x1, x2):
+        L_beta = torch.diag(1 / (self.length[self.input_dim-2:2*(self.input_dim-2)] ** 2))
         var_beta = self.variance[1]
+        return squared_exponential(x1, x2, L_beta, var_beta)
+    
+    def kappa_beta2(self, x1, x2):
+        L_beta = torch.diag(1 / (self.length[2*(self.input_dim-2):] ** 2))
+        var_beta = self.variance[2]
         return squared_exponential(x1, x2, L_beta, var_beta)
 
     def kappa(self,x1, x2):
-        z1 = x1[:, 0:self.input_dim - 1]
-        u1 = x1[:, -1, None]
-        z2 = x2[:, 0:self.input_dim - 1]
-        u2 = x2[:, -1, None]
-        u_mat = u1.unsqueeze(1) * u2
-        kappa = self.kappa_alpha(z1, z2) + self.kappa_beta(z1, z2) * u_mat.squeeze()
+        z1 = x1[:, 0:self.input_dim - 2]
+        u1 = x1[:, -2:]
+        z2 = x2[:, 0:self.input_dim - 2]
+        u2 = x2[:, -2:]           
+        u_mat_1 = u1[:, 0].unsqueeze(1) * u2[:, 0] # note: some extra dims removed from SISO code, seems to work though
+        u_mat_2 = u1[:, 1].unsqueeze(1) * u2[:, 1] 
+        kappa = self.kappa_alpha(z1, z2) + self.kappa_beta1(z1, z2) * u_mat_1.squeeze() + self.kappa_beta2(z1, z2) * u_mat_2.squeeze()
         if kappa.dim() < 2:
             return kappa.unsqueeze(0)
         else:
@@ -165,12 +171,17 @@ class AffineGP(gpytorch.models.ExactGP):
 
     def mean_and_cov_from_gammas(self,query):
         gamma_1, gamma_2, gamma_3, gamma_4, gamma_5 = self.compute_gammas(query)
-        u = query[:, None, 1]
-        means_from_gamma = gamma_1 + gamma_2.mul(u)
-        covs_from_gamma = gamma_3 + gamma_4.mul(u) + gamma_5.mul(u ** 2) + self.likelihood.noise.detach()
+        u = query[:, -2:, None]
+        # compute transposes
+        gamma_2_trans = torch.transpose(gamma_2, 1, 2)
+        gamma_4_trans = torch.transpose(gamma_4, 1, 2)
+        u_trans = torch.transpose(u, 1, 2)
+
+        means_from_gamma = gamma_1 + gamma_2_trans @ u
+        covs_from_gamma = gamma_3 + gamma_4_trans @ u + u_trans @ gamma_5 @ u  + self.likelihood.noise.detach()
         upper_from_gamma = means_from_gamma + covs_from_gamma.sqrt() * 2
         lower_from_gamma = means_from_gamma - covs_from_gamma.sqrt() * 2
-        return means_from_gamma, covs_from_gamma, upper_from_gamma, lower_from_gamma
+        return means_from_gamma.squeeze(), covs_from_gamma.squeeze(), upper_from_gamma.squeeze(), lower_from_gamma.squeeze()
 
 class ZeroMeanAffineGP(AffineGP):
     def __init__(self, train_x, train_y, likelihood):
@@ -190,25 +201,42 @@ class ZeroMeanAffineGP(AffineGP):
         with torch.no_grad():
             n_train_samples = self.train_targets.shape[0]
             n_query_samples = query.shape[0]
-            zq = query[:,0:self.input_dim-1]
-            uq = query[:,-1,None]
-            z_train = self.train_inputs[0][:,0:self.input_dim-1]
-            u_train = self.train_inputs[0][:,-1,None].tile(n_query_samples)
-            # Precompute useful matrics
+            zq = query[:,0:self.input_dim-2]
+            # uq = query[:,-2,None] # do not need it here
+            z_train = self.train_inputs[0][:,0:self.input_dim-2]
+            u_train = self.train_inputs[0][:,-2:]
+
+            # Precompute useful matrices
             k_a = self.covar_module.kappa_alpha(zq, z_train)
-            if k_a.dim() == 1:
+            k_b1 = self.covar_module.kappa_beta1(zq, z_train)            
+            k_b2 = self.covar_module.kappa_beta2(zq, z_train)
+            if n_query_samples == 1:
                 k_a = k_a.unsqueeze(0)
-            k_b = self.covar_module.kappa_beta(zq, z_train).mul(u_train.T)
-            if k_b.dim() == 1:
-                k_b = k_b.unsqueeze(0)
-            Psi = self.train_targets.reshape((n_train_samples,1))
-            # compute gammas (Note: inv_matmul(R, L) = L * inv(K) * R
+                k_b1 = k_b1.unsqueeze(0)
+                k_b2 = k_b2.unsqueeze(0)
+            k_a = k_a.unsqueeze(1) 
+            k_beta = torch.stack([k_b1, k_b2], 1)                
+
+            u_train_mat = (u_train.T).tile([n_query_samples, 1, 1])
+
+            k_b = torch.mul(k_beta, u_train_mat)
+            
+            k_a_trans = torch.transpose(k_a, 1, 2) # transpose in the second two dimensions, keeps batch at front
+
+            # first part of gamma5 correctly with batch as first dim
+            k_beta12_diag = torch.zeros(n_query_samples, 2, 2)      
+            k_beta12_diag[:, 0, 0] = torch.diag(torch.atleast_2d(self.covar_module.kappa_beta1(zq, zq)))
+            k_beta12_diag[:, 1, 1] = torch.diag(torch.atleast_2d(self.covar_module.kappa_beta2(zq, zq)))
+
+            Psi = self.train_targets.reshape((n_train_samples,1)) # equal to train_targets.transpose()
+            # compute gammas
             gamma_1 = k_a @ self.K_plus_noise_inv @ Psi
-            gamma_2 = k_b @ self.K_plus_noise_inv @ Psi
-            gamma_3 = torch.diag(self.covar_module.kappa_alpha(zq,zq) - k_a @ self.K_plus_noise_inv @ k_a.T)
-            gamma_4 = torch.diag(-( k_b @ self.K_plus_noise_inv @ k_a.T + k_a @ self.K_plus_noise_inv @ k_b.T))
-            gamma_5 = torch.diag(self.covar_module.kappa_beta(zq,zq) - k_b @ self.K_plus_noise_inv @ k_b.T)
-        return gamma_1, gamma_2, gamma_3.unsqueeze(1), gamma_4.unsqueeze(1), gamma_5.unsqueeze(1)
+            gamma_2 = k_b @ self.K_plus_noise_inv @ Psi             
+            gamma_3 = torch.diag(torch.atleast_2d(self.covar_module.kappa_alpha(zq,zq))).unsqueeze(1).unsqueeze(2) \
+                - (k_a @ self.K_plus_noise_inv @ k_a_trans)
+            gamma_4 = -2*(k_b @ self.K_plus_noise_inv @ k_a_trans)
+            gamma_5 = k_beta12_diag - k_b @ self.K_plus_noise_inv @ torch.transpose(k_b, 1, 2)
+        return gamma_1, gamma_2, gamma_3, gamma_4, gamma_5 # nothing squeezed, all in full dimension n_query_samples x ** x **
 
 class ConstantMeanAffineGP(AffineGP):
     def __init__(self, train_x, train_y, likelihood, mean_prior=None):
@@ -225,6 +253,8 @@ class ConstantMeanAffineGP(AffineGP):
         self.mean_module = gpytorch.means.ConstantMean()
 
     def compute_gammas(self, query):
+
+        raise NotImplementedError
         # Parse inputs
         with torch.no_grad():
             n_train_samples = self.train_targets.shape[0]
@@ -359,8 +389,8 @@ class GaussianProcess():
         Return
             Predicitons
             mean : torch.tensor (nx X N_samples)
-            lower : torch.tensor (nx X N_samples)
-            upper : torch.tensor (nx X N_samples)
+            cov
+            pred (if flag is true)
         """
         #x = torch.from_numpy(x).double()
         self.model.eval()
