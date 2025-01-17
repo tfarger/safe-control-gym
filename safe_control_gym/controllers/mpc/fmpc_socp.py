@@ -240,6 +240,8 @@ class FlatMPC_SOCP(BaseController):
         # action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
         action = SOCP Filter (z_d, v_d) # also think about which z_d to give. First or second in horizon
 
+        # do double integration on first action Tc_ddot --> Tc
+
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
 
