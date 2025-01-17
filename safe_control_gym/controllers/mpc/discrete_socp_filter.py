@@ -1,0 +1,326 @@
+import numpy as np
+from numpy.linalg import norm
+import cvxpy as cp
+import torch
+
+# for testing on its own
+import os
+import pickle
+import gpytorch
+from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, GaussianProcess
+import matplotlib.pyplot as plt
+
+class DiscreteSOCPFilter:
+    def __init__(self, name, d_weight=25.0, input_bound=None, state_bound=None, gps=None):
+        self.name = name
+        self.d_weight = d_weight # for slack variable
+        self.gps = gps
+        
+        self.input_bound = input_bound
+        self.state_bound = state_bound
+        # Opt variables and parameters
+        self.X = cp.Variable(shape=(4,))
+        self.A1 = cp.Parameter(shape=(8, 4))
+        #self.A2 = cp.Parameter(shape=(3, 3))
+        self.b1 = cp.Parameter(shape=(8,))
+        #self.b2 = cp.Parameter(shape=(3,))
+        self.c1 = cp.Parameter(shape=(1, 4))
+        #self.c2 = cp.Parameter(shape=(1, 3))
+        self.d1 = cp.Parameter()
+        #self.d2 = cp.Parameter()
+        # put into lists
+        As = [self.A1] #[self.A1, self.A2]
+        bs = [self.b1] #[self.b1, self.b2]
+        cs = [self.c1] #[self.c1, self.c2]
+        ds = [self.d1] #[self.d1, self.d2]
+
+        # disable input and state bound for now
+        input_bound = None
+        state_bound = None
+        # Add input constraints if supplied
+        if input_bound is not None:
+            A3 = np.zeros((3, 3))
+            A3[0, 0] = 1.0
+            b3 = np.zeros((3, 1))
+            c3 = np.zeros((1, 3))
+            d3 = input_bound
+            As.append(A3)
+            bs.append(b3)
+            cs.append(c3)
+            ds.append(d3)
+        if state_bound is not None:
+            h = state_bound['h']
+            bcon = state_bound['b']
+            phi_p = state_bound['phi_p']
+            self.del_sig = phi_p * np.sqrt(h.T @ self.Bd @ self.Bd.T @ h)
+            self.Astate = cp.Parameter(shape=(3, 3))
+            self.bstate = cp.Parameter(shape=(3,))
+            self.cstate = cp.Parameter(shape=(1, 3))
+            self.dstate = cp.Parameter()
+            #self.Astate = np.zeros((3,3))
+            #self.Astate[0, 0] = 1.0
+            #self.bstate = np.zeros((3, 1))
+            #self.cstate = np.zeros((1, 3))
+            #self.dstate = 0.0
+            As.append(self.Astate)
+            bs.append(self.bstate)
+            cs.append(self.cstate)
+            ds.append(self.dstate)
+        else:
+            self.Astate = None
+            self.bstate = None
+            self.cstate = None
+            self.dstate = None
+        # define cost function
+        self.cost = cp.Parameter(shape=(1, 4))
+        m = len(As)
+        soc_constraints = [
+            cp.SOC(cs[i] @ self.X + ds[i], As[i] @ self.X + bs[i]) for i in range(m)
+        ]
+        self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), soc_constraints)
+
+    def compute_feedback_input(self, z_des, z_ref, v_des, x_init=None, **kwargs):
+        """ Compute u so it can be used in feedback function
+        Args: 
+        z_des: flat state to linearize with, from FMPC
+        z_ref: ??, for stability constraint
+        v_des: flat input from FMPC
+        x_init=None: initial value for solver"""
+        gps = self.gps
+        u, d_sf = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        if 'optimal' in self.prob.status:
+            success = True
+        else:
+            success = False
+        return u, success, d_sf
+
+    def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
+        # e_k = z - z_ref
+        # Compute state dependent values
+        gam1 = []
+        gam2 = []
+        gam3 = []
+        gam4 = []
+        gam5 = []
+        for i in range(len(gp_models)):
+            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i])
+            gam1.append(gamma1)
+            gam2.append(gamma2)
+            gam3.append(gamma3)
+            gam4.append(gamma4)
+            gam5.append(gamma5)
+
+        # w, norm_w = compute_w(e_k, self.Ad, self.Bd, self.P, self.K)
+        #v_nom = -self.K @ e_k + v_des
+        # v_nom = v_des
+
+        # Compute cost coefficients
+        cost = compute_cost(gam1, gam2, gam4, v_des)
+        self.cost.value = cost
+
+        # Compute dummy var mats (feedback linearization part)
+        A1, b1, c1, d1 = dummy_var_matrices(gam2, gam5, self.d_weight)
+        self.A1.value = A1
+        self.b1.value = b1.squeeze()
+        self.c1.value = c1
+        self.d1.value = d1
+
+        # # Compute stablity filter coeffs
+        # A1, b1, c1, d1 = stab_filter_matrices(gam1, gam2, gam3, gam4, gam5,
+        #                                       self.Q, self.R, self.P, self.K, self.Bd, e_k,
+        #                                       norm_w, w,
+        #                                       self.input_bound, v_nom, self.beta)
+        # self.A1.value = A1
+        # self.b1.value = b1
+        # self.c1.value = c1
+        # self.d1.value = d1
+
+        # # Compute state constraints.
+
+        # if self.state_bound is not None:
+
+        #     Astate, bstate, cstate, dstate = state_con_matrices(z, gam1, gam2, gam3, gam4, gam5,
+        #                                                         self.state_bound, self.Ad, self.Bd, self.del_sig,
+        #                                                         self.d_weight)
+
+        #     self.Astate.value = Astate
+        #     self.bstate.value = bstate.squeeze()
+        #     self.cstate.value = cstate
+        #     self.dstate.value = dstate.squeeze()
+
+        self.X.value = x_init
+        self.prob.solve(solver='MOSEK', warm_start=True, verbose=True) # SCS was used in paper
+        if 'optimal' in self.prob.status:
+            return self.X.value[0:2], self.X.value[2]
+        else:
+            return 0, 0
+
+def get_gammas(z, gp_model):    
+    query_np = np.hstack((z, np.zeros(2))) # zeros as dummy inputs u, to make length 10. get removed in compute_gammas()
+    query = torch.from_numpy(query_np).double().unsqueeze(0)
+    gamma1, gamma2, gamma3, gamma4, gamma5 = gp_model.model.compute_gammas(query)
+    gamma1 = gamma1.numpy().squeeze()
+    gamma2 = gamma2.numpy().squeeze()
+    gamma3 = gamma3.numpy().squeeze()
+    gamma4 = gamma4.numpy().squeeze()
+    gamma5 = gamma5.numpy().squeeze()
+    return gamma1, gamma2, gamma3, gamma4, gamma5
+
+def compute_cost(gam1, gam2, gam4, v_des):
+    gam1_mat = np.vstack((gam1[0], gam1[1]))
+    gam2_mat = np.vstack((gam2[0].T, gam2[1].T)) # .T or not makes no difference
+    cost = 2 * (gam1_mat - v_des.reshape((2,1))).T @ gam2_mat + gam4[0].reshape((1,2)) + gam4[1].reshape((1, 2))
+    cost = np.append(cost, np.array([[0, 1.0]]), axis=1)
+    return cost
+
+def compute_w(e_k, Ad, Bd, P, K):
+    w = e_k.T @ (Ad - Bd @ K).T @ P @ Bd
+    return w.squeeze(), np.linalg.norm(w)
+
+def stab_filter_matrices(gam1,
+                         gam2,
+                         gam3,
+                         gam4,
+                         gam5,
+                         Q, R, P, K, Bd,
+                         e_k,
+                         norm_w, w,
+                         u_max, v_nom, beta):
+    A1, b1 = stab_filter_A1_and_b1(gam3, gam4, gam5, norm_w)
+    c1, d1 = stab_filter_c1_and_d1(gam1, gam2,
+                          Q, R, P, K, Bd,
+                          e_k, w,
+                          u_max, v_nom, beta)
+    return A1, b1, c1, d1
+
+def stab_filter_A1_and_b1(gam3,
+                          gam4,
+                          gam5,
+                          norm_w):
+    A1 = np.array([[norm_w*np.sqrt(gam5), 0, 0],
+                   [0, 0, 0],
+                   [0, 0, 0]])
+    b1 = np.array([[norm_w*gam4 / (2 * np.sqrt(gam5))],
+                   [norm_w*np.sqrt(gam3 - 0.25 * gam4 ** 2 / gam5)],
+                   [0]])
+    return A1, b1.squeeze()
+
+def stab_filter_c1_and_d1(gam1,
+                          gam2,
+                          Q, R, P, K, Bd,
+                          e_k,
+                          w,
+                          u_max, v_nom, beta):
+    d_a = e_k.T @ P @ e_k
+    d_b = e_k.T @ (P - Q - K.T @ R @ K) @ e_k
+    d_c = np.max([(gam1 + gam2*u_max - v_nom)**2, (gam1 + gam2*(-u_max) - v_nom)**2])* Bd.T @ P @ Bd
+    #d_c = 0.0
+    d_d = 2*w*(gam1 - v_nom)
+    d1 = (-1/(2*beta))*(d_a - d_b - d_c + d_d)
+
+    c1 = (-1/(2*beta))*np.array([[2*w*gam2, 1.0, 0.0]])
+
+    return c1, d1.squeeze()
+
+def dummy_var_matrices(gam2, gam5, d_weight):
+    L_list = []
+    for i in range(len(gam5)):
+        L_mat = np.linalg.cholesky(gam5[i]) # TODO: is analytic formula for 2x2 faster?
+        L_list.append(L_mat)
+
+    A = np.zeros((8,4))
+    A[0, :2] = 2*gam2[0]
+    A[1, :2] = 2*gam2[1]
+    A[2:4, :2] = 2*L_list[0]
+    A[4:6, :2] = 2*L_list[0]
+    A[-1, -1] = -1.0
+
+    b = np.zeros((8,1))
+    b[-1, 0] = 1.0
+
+    c = np.zeros((1, 4))
+    c[0, -1] = 1.0
+
+    d = 1
+
+    return A, b, c, d
+
+def state_con_matrices(z, gam1, gam2, gam3, gam4, gam5,
+                       state_bound, Ad, Bd, del_sig, d_weight):
+    h = state_bound['h']
+    bcon = state_bound['b']
+    Astate = np.array([[float(del_sig*np.sqrt(gam5)), 0, 0],
+                       [0, 0, 0],
+                       [0, 0, 0]])
+    bstate = np.array([[float(del_sig*gam4 / (2 * np.sqrt(gam5)))],
+                       [float(del_sig*np.sqrt(gam3 - 0.25 * gam4 ** 2 / gam5))],
+                       [0]])
+    cstate = np.array([[float(-h.T @ Bd * gam2), d_weight, 0.0]])
+    dstate = -h.T @ Ad @ z - h.T @ Bd * gam1 + bcon
+    return Astate, bstate, cstate, dstate
+
+
+
+if __name__ == "__main__":
+    # load two GPs
+    output_dir_0 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v0'
+    output_dir_1 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v1'
+    # Check if the folder exists
+    assert os.path.exists(output_dir_0), 'cannot find directory of GP 0'
+    assert os.path.exists(output_dir_1), 'cannot find directory of GP 1'
+
+    gp_type = ZeroMeanAffineGP
+    likelihood_0 = gpytorch.likelihoods.GaussianLikelihood()
+    gp_0 = GaussianProcess(gp_type, likelihood_0, 1, output_dir_0)
+    gp_0.init_with_hyperparam(output_dir_0)
+
+    likelihood_1 = gpytorch.likelihoods.GaussianLikelihood()
+    gp_1 = GaussianProcess(gp_type, likelihood_1, 1, output_dir_1)
+    gp_1.init_with_hyperparam(output_dir_1)
+
+    gps = [gp_0, gp_1]
+
+    # initialize SOCP Filter
+    filter = DiscreteSOCPFilter('test',gps=gps )
+
+    # get one test point - from evaluation dataset, so that it is a point that makes sense
+    eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
+    with open(eval_data_file, 'rb') as file:
+        eval_data = pickle.load(file)
+    inputs_eval = eval_data['inputs']
+    targets_eval = eval_data['targets'] 
+    
+    z_data = np.transpose(inputs_eval[:, :-2]) #transpose to match data that comes out of FMPC horizon
+    u_data = np.transpose(inputs_eval[:, -2:])
+    v_data = np.transpose(targets_eval[:])
+
+    u_socp = np.zeros(np.shape(u_data))
+    for point_idx in range(np.shape(z_data)[1]):
+        z_test = z_data[:,point_idx]
+        v_test = v_data[:,point_idx]    
+        # compute forward
+        u, success, d_sf = filter.compute_feedback_input(z_test, z_test, v_test)
+        u_socp[:, point_idx] = u
+    
+    # plot test data
+    fig, ax = plt.subplots(2, 1)  # Adjust size as needed
+    t = np.arange(0, np.shape(u_data)[1])
+    # First subplot
+    ax[0].plot(t, u_data[0, :], label='Test input u0' ) 
+    ax[0].plot(t, u_socp[0, :], label='SOCP result u0' ) 
+    ax[0].set_title("First component u0")
+    ax[0].set_xlabel("datapoint")
+    ax[0].set_ylabel("Tc_ddot")
+    ax[0].legend()
+
+    # Second subplot
+    ax[1].plot(t, u_data[1, :], label='Test input u1' ) 
+    ax[1].plot(t, u_socp[1, :], label='SOCP result u1' ) 
+    ax[1].set_title("Second Component u1")
+    ax[1].set_xlabel("datapoint")
+    ax[1].set_ylabel("Theta_c")
+    ax[1].legend()
+
+    plt.show()
+    
+    dummy = 0
