@@ -35,19 +35,21 @@ class DiscreteSOCPFilter:
         ds = [self.d1] #[self.d1, self.d2]
 
         # disable input and state bound for now
-        input_bound = None
+        # input_bound = None
         state_bound = None
         # Add input constraints if supplied
         if input_bound is not None:
-            A3 = np.zeros((3, 3))
-            A3[0, 0] = 1.0
-            b3 = np.zeros((3, 1))
-            c3 = np.zeros((1, 3))
-            d3 = input_bound
-            As.append(A3)
-            bs.append(b3)
-            cs.append(c3)
-            ds.append(d3)
+            #TODO: implement this as something simpler than an SOC constraint, Cone constraint is overkill as a lot is zero
+            for i in range(len(input_bound)):
+                A3 = np.zeros((4, 4))
+                A3[0, i] = 1.0
+                b3 = np.zeros((4, 1))
+                c3 = np.zeros((1, 4))
+                d3 = input_bound[i]
+                As.append(A3)
+                bs.append(b3)
+                cs.append(c3)
+                ds.append(d3)
         if state_bound is not None:
             h = state_bound['h']
             bcon = state_bound['b']
@@ -148,6 +150,33 @@ class DiscreteSOCPFilter:
         #     self.cstate.value = cstate
         #     self.dstate.value = dstate.squeeze()
 
+        # # debugging: print out everything!!
+        # print('-----------------------------------------------------------')
+        # print('Debugging all variables')
+        # print('Inputs z and v')
+        # print(z)
+        # print(v_des)
+        # print('GP 0: Gammas')
+        # print(gam1[0])
+        # print(gam2[0])
+        # print(gam3[0])
+        # print(gam4[0])
+        # print(gam5[0])
+        # print('GP 1: Gammas')
+        # print(gam1[1])
+        # print(gam2[1])
+        # print(gam3[1])
+        # print(gam4[1])
+        # print(gam5[1])
+        # print('Dummy var matrices: A, b, c, d')
+        # print(A1)
+        # print(b1)
+        # print(c1)
+        # print(d1)
+        # print('Cost value')
+        # print(cost)
+
+
         self.X.value = x_init
         self.prob.solve(solver='MOSEK', warm_start=True, verbose=True) # SCS was used in paper
         if 'optimal' in self.prob.status:
@@ -232,7 +261,7 @@ def dummy_var_matrices(gam2, gam5, d_weight):
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
     A[2:4, :2] = 2*L_list[0]
-    A[4:6, :2] = 2*L_list[0]
+    A[4:6, :2] = 2*L_list[1]
     A[-1, -1] = -1.0
 
     b = np.zeros((8,1))
@@ -281,10 +310,11 @@ if __name__ == "__main__":
     gps = [gp_0, gp_1]
 
     # initialize SOCP Filter
-    filter = DiscreteSOCPFilter('test',gps=gps )
+    filter = DiscreteSOCPFilter('test',gps=gps, input_bound=None) # input_bound=np.array((0.6, 0.3)))
 
-    # get one test point - from evaluation dataset, so that it is a point that makes sense
-    eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
+    # get test points - from evaluation dataset, so that it is a point that makes sense
+    eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' 
+    # eval_data_file = './examples/mpc/fgp/gp_train_data.pkl'
     with open(eval_data_file, 'rb') as file:
         eval_data = pickle.load(file)
     inputs_eval = eval_data['inputs']
@@ -294,13 +324,21 @@ if __name__ == "__main__":
     u_data = np.transpose(inputs_eval[:, -2:])
     v_data = np.transpose(targets_eval[:])
 
+    start_idx = 0 #15 #175
+    stop_idx = -1 #50 #215
+    z_data = z_data[:, start_idx:stop_idx]
+    u_data = u_data[:, start_idx:stop_idx]
+    v_data = v_data[:, start_idx:stop_idx]
+
     u_socp = np.zeros(np.shape(u_data))
+    success_list = []
     for point_idx in range(np.shape(z_data)[1]):
         z_test = z_data[:,point_idx]
         v_test = v_data[:,point_idx]    
         # compute forward
         u, success, d_sf = filter.compute_feedback_input(z_test, z_test, v_test)
         u_socp[:, point_idx] = u
+        success_list.append(success)
     
     # plot test data
     fig, ax = plt.subplots(2, 1)  # Adjust size as needed
