@@ -38,7 +38,7 @@ PLOT = True
 training_data_file = './fgp/gp_train_data.pkl'
 eval_data_file = './fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
-noise_std = 0.03 # for artificial noise
+noise_std_list = [0.03, 0.4]#[0.03, 0.6] # for artificial noise
 
 test_size = 0.2 # for train test split
 
@@ -48,6 +48,8 @@ N_train = 400 # number of training iterations in the GP
 learning_rate = 0.05
 
 for i in [0, 1]:
+    noise_std = noise_std_list[i] # for artificial noise
+
     output_dir = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v{i}'
     # Check if the folder exists, and create it if not
     if not os.path.exists(output_dir):
@@ -74,6 +76,10 @@ for i in [0, 1]:
     noise = np_rnd.normal(0, noise_std, size=targets_train.shape)
 
     targets_train = targets_train+noise
+
+    plt.figure()
+    plt.plot(targets_train)
+    plt.show()
 
     # move to Torch
     inputs = torch.from_numpy(inputs_train)
