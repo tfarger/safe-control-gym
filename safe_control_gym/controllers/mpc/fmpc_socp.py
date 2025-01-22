@@ -25,6 +25,10 @@ from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
 
+from safe_control_gym.controllers.mpc.discrete_socp_filter import DiscreteSOCPFilter
+from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, GaussianProcess
+import gpytorch
+
 from termcolor import colored
 
 from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
@@ -32,6 +36,7 @@ from safe_control_gym.math_and_models.symbolic_systems import SymbolicModel
 from safe_control_gym.utils.utils import timing
 
 import time
+import os
 
 class FlatMPC_SOCP(BaseController):
     '''Flatness based MPC.'''
@@ -157,6 +162,35 @@ class FlatMPC_SOCP(BaseController):
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
 
+        # setup discrete socp filter for dynamic feedback linearization with constraints
+        # load two GPs
+        output_dir_0 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v0'
+        output_dir_1 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v1'
+        # Check if the folder exists
+        assert os.path.exists(output_dir_0), 'cannot find directory of GP 0'
+        assert os.path.exists(output_dir_1), 'cannot find directory of GP 1'
+
+        gp_type = ZeroMeanAffineGP
+        likelihood_0 = gpytorch.likelihoods.GaussianLikelihood()
+        gp_0 = GaussianProcess(gp_type, likelihood_0, 1, output_dir_0)
+        gp_0.init_with_hyperparam(output_dir_0)
+
+        likelihood_1 = gpytorch.likelihoods.GaussianLikelihood()
+        gp_1 = GaussianProcess(gp_type, likelihood_1, 1, output_dir_1)
+        gp_1.init_with_hyperparam(output_dir_1)
+        gps = [gp_0, gp_1]
+        # initialize SOCP Filter
+        self.filter = DiscreteSOCPFilter('test',gps=gps, input_bound=np.array((80, 0.4)))
+
+        # setup double integrator for dynamic extension
+        self.eta = np.zeros(2)
+        A_dyn_ext = np.zeros((2, 2))
+        A_dyn_ext[0, 1] = 1.0
+        B_dyn_ext = np.zeros((2, 2))
+        B_dyn_ext[1, 0] = 1.0
+        self.Ad_dyn_ext, self.Bd_dyn_ext = discretize_linear_system(A_dyn_ext, B_dyn_ext, self.mpc.dt, exact=True)
+
+
     # overwrite to input flat trajectory into reference and initialize flat state observer
     def reset(self):
         '''Prepares for training or evaluation.'''
@@ -182,6 +216,13 @@ class FlatMPC_SOCP(BaseController):
             y_ini = self.mpc.env.__dict__.get('init_y'.upper(), 0)
             z_ini = self.mpc.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
+
+        # initialize dynamic extension in hovering
+        if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            raise NotImplementedError
+            #self.u[0] = (self.GRAVITY- self.inertial_prop['alpha_1'])/self.inertial_prop['alpha_0'] 
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            self.eta[0] = (self.mpc.env.GRAVITY_ACC- self.inertial_prop['beta_2'])/self.inertial_prop['beta_1']
 
 
     # NOTE: This might no longer work, inheritance from where???    
@@ -209,6 +250,13 @@ class FlatMPC_SOCP(BaseController):
                              'horizon_v': [],
                              'horizon_z': [],
                              'ctrl_run_time': [],
+                             # addition for FMPC+SOCP
+                             'u_oldFMPC':[],
+                             'u_extFT': [],
+                             'u_extSOCP': [],
+
+
+                            
                              }
 
     # @timing
@@ -237,13 +285,21 @@ class FlatMPC_SOCP(BaseController):
         v_horizon = self.mpc.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        # action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
-        action = SOCP Filter (z_d, v_d) # also think about which z_d to give. First or second in horizon
-
+        action_analytic = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
+        zd = z_horizon[:, 0]
+        vd = v_horizon[:, 0]
+        action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
+        action_extended_socp, success, d_val, q_dummy_val = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
+        
         # do double integration on first action Tc_ddot --> Tc
-
+        self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended
+        action = np.zeros(np.shape(action_extended))
+        action[0] = self.eta[0]
+        action[1] = action_extended[1]
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
+
+        #test = action-action_analytic
 
         # # log execution time                
         # te = time.time()
@@ -252,12 +308,15 @@ class FlatMPC_SOCP(BaseController):
         # self.results_dict['obs_x'].append(obs)
         # self.results_dict['obs_z'].append(z_obs)
         # self.results_dict['v'].append(v)
-        # self.results_dict['u'].append(action)
+        self.results_dict['u'].append(action)
         # self.results_dict['horizon_v'].append(v_horizon)
         # self.results_dict['horizon_z'].append(z_horizon)
 
         # self.results_dict['ctrl_run_time'].append(te-ts)
         
+        self.results_dict['u_oldFMPC'].append(action_analytic)
+        self.results_dict['u_extFT'].append(action_extended)
+        self.results_dict['u_extSOCP'].append(action_extended_socp)
         return action
     
     def close(self):
@@ -626,6 +685,25 @@ def _transform_env_goal_to_flat_2D_att(x):
     z[4, ...] = x[2, ...]
     z[5, ...] = x[3, ...]
     return z
+
+def _get_u_from_flat_states_2D_att_ext(z, v, dyn_pars, g):
+    # for system with dynamic extension: u + [Tc_ddot, theta_c]
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']
+    alpha_1 =  dyn_pars['alpha_1']
+    alpha_2 =  dyn_pars['alpha_2']
+    alpha_3 =  dyn_pars['alpha_3']
+
+    term_acc_sqrd = (z[2])**2 + (z[6]+g)**2 # x_ddot^2 + (z_ddot+g)^2
+    theta = np.arctan2(z[2], (z[6]+g))
+    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/term_acc_sqrd
+    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/(term_acc_sqrd**2)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
+
+    #t = -(beta_2/beta_1) + np.sqrt(term_acc_sqrd)/beta_1
+    p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
+
+    t_ddot = 1/beta_1 * 1/np.sqrt(term_acc_sqrd)*((z[3]**2 + z[7]**2 + z[2]*v[0] + (z[6]+g)*v[1]) - ((z[2]*z[3] + (z[6]+g)*z[7])**2)/term_acc_sqrd)
+    return np.array([t_ddot, p])
 
 
 #################################################################################################
