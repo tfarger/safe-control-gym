@@ -89,12 +89,12 @@ class DiscreteSOCPFilter:
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
-        u, d_sf = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        u, d_sf, q_dummy_val, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
         if 'optimal' in self.prob.status:
             success = True
         else:
             success = False
-        return u, success, d_sf
+        return u, success, d_sf, q_dummy_val, covs
 
     def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
         # e_k = z - z_ref
@@ -177,12 +177,20 @@ class DiscreteSOCPFilter:
         # print(cost)
 
 
+
         self.X.value = x_init
         self.prob.solve(solver='MOSEK', warm_start=True, verbose=True) # SCS was used in paper
         if 'optimal' in self.prob.status:
-            return self.X.value[0:2], self.X.value[2]
+            # debugging: compute the covariance at this input u: just sample from GP
+            x = torch.from_numpy(np.hstack((z,self.X.value[0:2])))
+            x = torch.unsqueeze(x, dim=0)
+            mean0, cov0, _, _  = gp_models[0].model.mean_and_cov_from_gammas(x)
+            mean1, cov1, _, _  = gp_models[1].model.mean_and_cov_from_gammas(x)
+            return self.X.value[0:2], self.X.value[2], self.X.value[3], [cov0, cov1]
+        
+        
         else:
-            return 0, 0
+            return 0, 0, 0, 0
 
 def get_gammas(z, gp_model):    
     query_np = np.hstack((z, np.zeros(2))) # zeros as dummy inputs u, to make length 10. get removed in compute_gammas()
@@ -288,9 +296,38 @@ def state_con_matrices(z, gam1, gam2, gam3, gam4, gam5,
     dstate = -h.T @ Ad @ z - h.T @ Bd * gam1 + bcon
     return Astate, bstate, cstate, dstate
 
+# for debugging: the transformation that is supposed to be learned with the GP written out analytically
+def _get_u_from_flat_states_2D_att_ext(z, v, dyn_pars, g):
+    # for system with dynamic extension: u + [Tc_ddot, theta_c]
+    beta_1 = dyn_pars['beta_1']
+    beta_2 = dyn_pars['beta_2']
+    alpha_1 =  dyn_pars['alpha_1']
+    alpha_2 =  dyn_pars['alpha_2']
+    alpha_3 =  dyn_pars['alpha_3']
 
+    term_acc_sqrd = (z[2])**2 + (z[6]+g)**2 # x_ddot^2 + (z_ddot+g)^2
+    theta = np.arctan2(z[2], (z[6]+g))
+    theta_dot = (z[3]*(z[6]+g)- z[2]*z[7])/term_acc_sqrd
+    theta_ddot = 1/term_acc_sqrd * (v[0]*(z[6]+g) - z[2]*v[1]) + (1/(term_acc_sqrd**2)) * (2*(z[6]+g)*z[7] + 2*z[2]*z[3]) * (z[2]*z[7] - z[3]*(z[6]+g))
+
+    #t = -(beta_2/beta_1) + np.sqrt(term_acc_sqrd)/beta_1
+    p = (1/alpha_3) * (theta_ddot - alpha_1*theta -alpha_2*theta_dot)
+
+    t_ddot = 1/beta_1 * 1/np.sqrt(term_acc_sqrd)*((z[3]**2 + z[7]**2 + z[2]*v[0] + (z[6]+g)*v[1]) - ((z[2]*z[3] + (z[6]+g)*z[7])**2)/term_acc_sqrd)
+    return np.array([t_ddot, p])
 
 if __name__ == "__main__":
+    # for analytic reference in debugging
+    g=9.8
+
+    # 2D Quadrotor Attitude model. TODO: Take from env!
+    inertial_prop = {}
+    inertial_prop['alpha_1'] = -140.8
+    inertial_prop['alpha_2'] = -13.4
+    inertial_prop['alpha_3'] = 124.8
+    inertial_prop['beta_1'] = 18.11
+    inertial_prop['beta_2'] = 3.68
+
     # load two GPs
     output_dir_0 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v0'
     output_dir_1 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v1'
@@ -313,8 +350,8 @@ if __name__ == "__main__":
     filter = DiscreteSOCPFilter('test',gps=gps, input_bound=None) # input_bound=np.array((0.6, 0.3)))
 
     # get test points - from evaluation dataset, so that it is a point that makes sense
-    eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' 
-    # eval_data_file = './examples/mpc/fgp/gp_train_data.pkl'
+    # eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' 
+    eval_data_file = './examples/mpc/fgp/gp_train_data.pkl'
     with open(eval_data_file, 'rb') as file:
         eval_data = pickle.load(file)
     inputs_eval = eval_data['inputs']
@@ -324,6 +361,12 @@ if __name__ == "__main__":
     u_data = np.transpose(inputs_eval[:, -2:])
     v_data = np.transpose(targets_eval[:])
 
+    # rng = np.random.default_rng(seed=9)
+    # n_datapoints_random =300
+    # z_data = rng.random(( 8, n_datapoints_random))*5
+    # u_data = np.zeros(( 2, n_datapoints_random))
+    # v_data = rng.random(( 2, n_datapoints_random))*10
+
     start_idx = 0 #15 #175
     stop_idx = -1 #50 #215
     z_data = z_data[:, start_idx:stop_idx]
@@ -331,33 +374,61 @@ if __name__ == "__main__":
     v_data = v_data[:, start_idx:stop_idx]
 
     u_socp = np.zeros(np.shape(u_data))
+    covs_run = np.zeros(np.shape(u_data))
     success_list = []
+    d_sf_list = []
+    q_dummy_list = []
+
     for point_idx in range(np.shape(z_data)[1]):
         z_test = z_data[:,point_idx]
         v_test = v_data[:,point_idx]    
         # compute forward
-        u, success, d_sf = filter.compute_feedback_input(z_test, z_test, v_test)
+        u, success, d_sf, q_dummy, covs = filter.compute_feedback_input(z_test, z_test, v_test)
         u_socp[:, point_idx] = u
         success_list.append(success)
+        d_sf_list.append(d_sf)
+        q_dummy_list.append(q_dummy)
+        covs_run[:, point_idx] = covs
+    
+    u_analytic = np.zeros(np.shape(u_data))
+    for point_idx in range(np.shape(z_data)[1]):
+        z_test = z_data[:,point_idx]
+        v_test = v_data[:,point_idx]    
+        u = _get_u_from_flat_states_2D_att_ext(z_test, v_test, inertial_prop, g)
+        u_analytic[:, point_idx] = u
     
     # plot test data
-    fig, ax = plt.subplots(2, 1)  # Adjust size as needed
+    fig, ax = plt.subplots(2, 2)  # Adjust size as needed
     t = np.arange(0, np.shape(u_data)[1])
     # First subplot
-    ax[0].plot(t, u_data[0, :], label='Test input u0' ) 
-    ax[0].plot(t, u_socp[0, :], label='SOCP result u0' ) 
-    ax[0].set_title("First component u0")
-    ax[0].set_xlabel("datapoint")
-    ax[0].set_ylabel("Tc_ddot")
-    ax[0].legend()
+    ax[0, 0].plot(t, u_data[0, :], label='Test input u0' ) 
+    ax[0, 0].plot(t, u_socp[0, :], label='SOCP result u0' ) 
+    ax[0, 0].plot(t, u_analytic[0, :], label='analytic reference u0' ) 
+    ax[0, 0].set_title("First component u0")
+    ax[0, 0].set_xlabel("datapoint")
+    ax[0, 0].set_ylabel("Tc_ddot")
+    ax[0, 0].legend()
+
+    ax[1, 0].plot(t, covs_run[0, :], label='Covariance input u0' )  
+    ax[1, 0].set_title("First component u0")
+    ax[1, 0].set_xlabel("datapoint")
+    ax[1, 0].set_ylabel("Covariance")
+    ax[1, 0].legend()
 
     # Second subplot
-    ax[1].plot(t, u_data[1, :], label='Test input u1' ) 
-    ax[1].plot(t, u_socp[1, :], label='SOCP result u1' ) 
-    ax[1].set_title("Second Component u1")
-    ax[1].set_xlabel("datapoint")
-    ax[1].set_ylabel("Theta_c")
-    ax[1].legend()
+    ax[0, 1].plot(t, u_data[1, :], label='Test input u1' ) 
+    ax[0, 1].plot(t, u_socp[1, :], label='SOCP result u1' )
+    ax[0, 1].plot(t, u_analytic[1, :], label='analytic reference u1' ) 
+    ax[0, 1].set_title("Second Component u1")
+    ax[0, 1].set_xlabel("datapoint")
+    ax[0, 1].set_ylabel("Theta_c")
+    ax[0, 1].legend()
+
+    ax[1, 1].plot(t, covs_run[1, :], label='Covariance input u1' )  
+    ax[1, 1].set_title("Second component u1")
+    ax[1, 1].set_xlabel("datapoint")
+    ax[1, 1].set_ylabel("Covariance")
+    ax[1, 1].legend()
 
     plt.show()
     
