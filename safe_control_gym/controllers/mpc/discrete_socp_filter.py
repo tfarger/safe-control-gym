@@ -350,13 +350,15 @@ if __name__ == "__main__":
     filter = DiscreteSOCPFilter('test',gps=gps, input_bound=None) # input_bound=np.array((0.6, 0.3)))
 
     # get test points - from evaluation dataset, so that it is a point that makes sense
-    # eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' 
-    eval_data_file = './examples/mpc/fgp/gp_train_data.pkl'
+    eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' 
+    # eval_data_file = './examples/mpc/fgp/gp_train_data_fig8.pkl'
     with open(eval_data_file, 'rb') as file:
         eval_data = pickle.load(file)
     inputs_eval = eval_data['inputs']
     targets_eval = eval_data['targets'] 
-    
+    inputs_eval = np.vstack(inputs_eval)
+    targets_eval = np.vstack(targets_eval)
+
     z_data = np.transpose(inputs_eval[:, :-2]) #transpose to match data that comes out of FMPC horizon
     u_data = np.transpose(inputs_eval[:, -2:])
     v_data = np.transpose(targets_eval[:])
@@ -398,7 +400,7 @@ if __name__ == "__main__":
         u_analytic[:, point_idx] = u
     
     # plot test data
-    fig, ax = plt.subplots(2, 2)  # Adjust size as needed
+    fig, ax = plt.subplots(2, 2) 
     t = np.arange(0, np.shape(u_data)[1])
     # First subplot
     ax[0, 0].plot(t, u_data[0, :], label='Test input u0' ) 
