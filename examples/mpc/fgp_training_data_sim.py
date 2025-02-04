@@ -12,8 +12,8 @@ import yaml
 
 """
 Get training data for GP of FMPC_SOCP 
-using the exact system model available in FMPC.py
-for 2D attitude model
+from simulations in Safe Control Gym with FMPC
+(here exact transformations are known)
 """
 def plot_data(states, time, title, label_x):
     '''plot states 
@@ -92,6 +92,9 @@ def get_one_dataset(additional, PLOT_RUN, traj_sample_time, inertial_prop, g):
     start_index = int((episode_len_sec/num_cycles) * ctrl_freq *(use_cycle_num-1))
     stop_index = int((episode_len_sec/num_cycles) * ctrl_freq *(use_cycle_num))
 
+    # print(start_index)
+    # print(stop_index)
+    # exit()
     # cut down data
     u_bar_data = u_bar[start_index:stop_index, :]
     z_data = z[start_index:stop_index, :]
@@ -113,10 +116,10 @@ def get_one_dataset(additional, PLOT_RUN, traj_sample_time, inertial_prop, g):
 ###################################################################################
 ################# Main part #######################################################
 PLOT_RUN = False
-ctrl_freq = 50 # of controller in dataset
+ctrl_freq = 100 # of controller in dataset
 traj_sample_time = 1/ctrl_freq
-additional_list_train = ['_tr2', '_tr3', '_tr4', '_tr5']
-additional_list_test = ['_te1', '_te2']
+additional_list_train = ['_tr1', '_tr2', '_tr3', '_tr4', '_tr5', '_tr6', '_tr7', '_tr8', '_tr9', '_tr10', '_tr11']
+additional_list_test = ['_te1', '_te2', '_te3', '_te4']
 
 g=9.8
 
@@ -148,18 +151,19 @@ for additional in additional_list_train:
     inputs.append(x_train)
     targets.append(v_data)
 
-inputs = np.vstack(inputs)
-targets = np.vstack(targets)
+inputs_arr = np.vstack(inputs)
+targets_arr = np.vstack(targets)
 
-indices = np.arange(0, np.shape(inputs)[0])
-plot_data(inputs, indices, 'GP training inputs', 'index')
-plot_data(targets, indices, 'GP training targets', 'index')
+indices = np.arange(0, np.shape(inputs_arr)[0])
+plot_data(inputs_arr, indices, 'GP training inputs z and u', 'index')
+plot_data(targets_arr, indices, 'GP training targets v', 'index')
 plt.show()
 
+# exit()
 
 train_data_dict = {'inputs': inputs, 'targets': targets}
 
-with open('./fgp/gp_train_data.pkl', 'wb') as file:
+with open('./fgp/gp_train_data_fig8.pkl', 'wb') as file:
     pickle.dump(train_data_dict, file)
 
 # Test data #######################################################################
@@ -172,12 +176,12 @@ for additional in additional_list_test:
     inputs.append(x_train)
     targets.append(v_data)
 
-inputs = np.vstack(inputs)
-targets = np.vstack(targets)
+inputs_arr = np.vstack(inputs)
+targets_arr = np.vstack(targets)
 
-indices = np.arange(0, np.shape(inputs)[0])
-plot_data(inputs, indices, 'GP test inputs', 'index')
-plot_data(targets, indices, 'GP test targets', 'index')
+indices = np.arange(0, np.shape(inputs_arr)[0])
+plot_data(inputs_arr, indices, 'GP test inputs', 'index')
+plot_data(targets_arr, indices, 'GP test targets', 'index')
 plt.show()
 
 
