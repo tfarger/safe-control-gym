@@ -333,6 +333,11 @@ class GaussianProcess():
         n_samples = train_x.shape[0]
         self.model.K_plus_noise_inv = K_lazy_plus_noise.inv_matmul(torch.eye(n_samples).double())
 
+        # for testing only: compute condition number of K + noise
+
+        cond_number = torch.linalg.cond(K_lazy_plus_noise.evaluate()).item()
+        print(f"Condition number of the covariance matrix + noise: {cond_number:.2e}")
+
     def train(self, train_x, train_y, n_train=150, learning_rate=0.01, gpu=True):
         """
         Train the GP using Train_x and Train_y
@@ -363,12 +368,14 @@ class GaussianProcess():
         self.likelihood.train()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+        loss_list =[]
         for i in range(n_train):
             self.optimizer.zero_grad()
             output = self.model(train_x)
             loss = -mll(output, train_y)
             loss.backward()
             print('Iter %d/%d - Loss: %.3f' % (i + 1, n_train, loss.item()))
+            loss_list.append(loss.item())
             self.optimizer.step()
 
         # compute inverse covariance plus noise for faster computation later
@@ -382,6 +389,7 @@ class GaussianProcess():
         data = {'inputs': train_x, 'targets': train_y}
         torch.save(data, os.path.join(self.save_dir, 'train_data.pt'))
         self._compute_GP_covariances(train_x)
+        return loss_list
 
     def predict(self, x, requires_grad=False, return_pred=True):
         """
