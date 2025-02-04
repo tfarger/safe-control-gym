@@ -75,11 +75,11 @@ noise_std_list = [0.2, 1.4] # for artificial noise
 
 test_size = 0.2 # for train test split
 
-N_train = 800 # number of training iterations in the GP
+N_train = 1000 # number of training iterations in the GP
 learning_rate = 0.02
 
 threshold = [0.12, 0.1]
-do_gp_nr = 0 # which GP to train, 0 or 1
+do_gp_nr = 1 # which GP to train, 0 or 1
 
 #############################################################################################################
 #### Data preparation 
