@@ -98,6 +98,10 @@ register(idx='fmpc',
          entry_point='safe_control_gym.controllers.mpc.fmpc:FlatMPC',
          config_entry_point='safe_control_gym.controllers.mpc:fmpc.yaml')
 
+register(idx='fmpc_ext',
+         entry_point='safe_control_gym.controllers.mpc.fmpc_ext:FlatMPC_EXT',
+         config_entry_point='safe_control_gym.controllers.mpc:fmpc_ext.yaml')
+
 register(idx='fmpc_socp',
          entry_point='safe_control_gym.controllers.mpc.fmpc_socp:FlatMPC_SOCP',
          config_entry_point='safe_control_gym.controllers.mpc:fmpc_socp.yaml')
