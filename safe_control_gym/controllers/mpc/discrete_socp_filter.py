@@ -192,7 +192,10 @@ class DiscreteSOCPFilter:
         else:
             return 0, 0, 0, 0
 
-def get_gammas(z, gp_model):    
+def get_gammas(z, gp_model): 
+    # remove position and velocity   
+    rows_to_remove = [0, 1, 4, 5]
+    z = np.delete(z, rows_to_remove)
     query_np = np.hstack((z, np.zeros(2))) # zeros as dummy inputs u, to make length 10. get removed in compute_gammas()
     query = torch.from_numpy(query_np).double().unsqueeze(0)
     gamma1, gamma2, gamma3, gamma4, gamma5 = gp_model.model.compute_gammas(query)

@@ -75,11 +75,11 @@ noise_std_list = [0.2, 1.4] # for artificial noise
 
 test_size = 0.2 # for train test split
 
-N_train = 1000 # number of training iterations in the GP
+N_train = 50000 # number of training iterations in the GP
 learning_rate = 0.02
 
-threshold = [0.12, 0.1]
-do_gp_nr = 1 # which GP to train, 0 or 1
+threshold = [0.2, 0.1]
+do_gp_nr = 0 # which GP to train, 0 or 1
 
 #############################################################################################################
 #### Data preparation 
@@ -98,6 +98,10 @@ targets_raw = np.vstack(targets_train_list)
 targets_raw_gp = targets_raw[:, do_gp_nr]
 
 inputs_raw = np.vstack(inputs_train_list)
+
+# remove position and velocity data, as the analytic transformation does not depend on it
+rows_to_remove = [0, 1, 4, 5]
+inputs_raw = np.delete(inputs_raw, rows_to_remove, axis=1)
 
 # check similarity of training data with targets
 data_full_gp = np.hstack([inputs_raw, np.expand_dims(targets_raw_gp, 1)])
@@ -226,6 +230,7 @@ targets_train = target_data
 
 inputs_eval = eval_data['inputs']
 inputs_eval = np.vstack(inputs_eval)
+inputs_eval = np.delete(inputs_eval, rows_to_remove, axis=1)
 targets_eval = eval_data['targets'] 
 targets_eval = np.vstack(targets_eval)
 targets_eval = targets_eval[:, do_gp_nr] 
@@ -283,9 +288,9 @@ print(gp.model.likelihood.noise.detach().numpy())
 print('kernel variance')
 print(gp.model.covar_module.variance.detach().numpy())
 print('kernel lengthscale')
-print(gp.model.covar_module.length.detach().numpy()[0:8])
-print(gp.model.covar_module.length.detach().numpy()[8:16])
-print(gp.model.covar_module.length.detach().numpy()[16:24])
+print(gp.model.covar_module.length.detach().numpy()[0:4])
+print(gp.model.covar_module.length.detach().numpy()[4:8])
+print(gp.model.covar_module.length.detach().numpy()[8:12])
 
 # set values to see what happens
 # gp.model.likelihood.noise = 0.2
