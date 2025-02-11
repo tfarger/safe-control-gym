@@ -51,7 +51,7 @@ def evaluateFMPC_SOCP(show_plots = False):
 
 
     if show_plots:
-        fig, ax = plt.subplots(4)
+        fig, ax = plt.subplots(5)
         ax[0].plot(range(np.shape(u_analytic_noExt)[0]), u_analytic_noExt[:, 0], label='old FMPC: no dynamic extension')
         ax[0].set_title('Input Total Thrust')
         ax[1].plot(range(np.shape(u_analytic_ext)[0]), u_analytic_ext[:, 0], label='analytic, dynamic extension')
@@ -67,6 +67,9 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[3].plot(range(np.shape(u_analytic_ext)[0]), (u_analytic_ext[:, 1] - u_socp[:, 1])*180/np.pi, label='difference analytic - socp')
         ax[3].set_title('Attitude angle theta: Difference analytic - socp')
         ax[3].set_ylabel('degrees')
+
+        ax[4].plot(range(np.shape(u_analytic_ext)[0]), (u_analytic_ext[:, 0] - u_socp[:, 0]), label='difference analytic - socp')
+        ax[4].set_title('Tc_ddot: Difference analytic - socp')
 
 
         plt.show()
