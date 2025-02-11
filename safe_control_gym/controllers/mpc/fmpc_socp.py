@@ -190,6 +190,8 @@ class FlatMPC_SOCP(BaseController):
         B_dyn_ext[1, 0] = 1.0
         self.Ad_dyn_ext, self.Bd_dyn_ext = discretize_linear_system(A_dyn_ext, B_dyn_ext, self.mpc.dt, exact=True)
 
+        self.controller_iteration = 0
+
 
     # overwrite to input flat trajectory into reference and initialize flat state observer
     def reset(self):
@@ -273,6 +275,14 @@ class FlatMPC_SOCP(BaseController):
         Returns:
             action (ndarray): Input/action to the task/env.
         '''
+        self.controller_iteration += 1
+
+        # # to get initial state of drone on trajectory
+        # z_ref = self.mpc.get_references()
+        # x_ini = _get_x_from_flat_states_2D_att(z_ref[:, 0], 9.8)
+        # print(x_ini)
+        # exit()
+
         # ts = time.time()    
         # get flat state estimation from observer
         z_obs = self.fs_obs.compute_observation(obs)
@@ -291,12 +301,16 @@ class FlatMPC_SOCP(BaseController):
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
         action_extended_socp, success, d_val, q_dummy_val, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
 
+        if self.controller_iteration < 0:
+            action_extended_used = action_extended
+        else:
+            action_extended_used = action_extended_socp
         
         # do double integration on first action Tc_ddot --> Tc
-        self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended
+        self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended_used
         action = np.zeros(np.shape(action_extended))
         action[0] = self.eta[0]
-        action[1] = action_extended[1]
+        action[1] = action_extended_used[1]
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
 
