@@ -15,6 +15,8 @@ class DiscreteSOCPFilter:
         self.name = name
         self.d_weight = d_weight # for slack variable
         self.gps = gps
+
+        self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42))
         
         self.input_bound = input_bound
         self.state_bound = state_bound
@@ -89,12 +91,12 @@ class DiscreteSOCPFilter:
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
-        u, d_sf, q_dummy_val, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        u, d_sf, q_dummy_val, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
         if 'optimal' in self.prob.status:
             success = True
         else:
             success = False
-        return u, success, d_sf, q_dummy_val, covs
+        return u, success, d_sf, q_dummy_val, means, covs
 
     def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
         # e_k = z - z_ref
@@ -105,7 +107,7 @@ class DiscreteSOCPFilter:
         gam4 = []
         gam5 = []
         for i in range(len(gp_models)):
-            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i])
+            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i], self.normalization_vector)
             gam1.append(gamma1)
             gam2.append(gamma2)
             gam3.append(gamma3)
@@ -186,16 +188,17 @@ class DiscreteSOCPFilter:
             x = torch.unsqueeze(x, dim=0)
             mean0, cov0, _, _  = gp_models[0].model.mean_and_cov_from_gammas(x)
             mean1, cov1, _, _  = gp_models[1].model.mean_and_cov_from_gammas(x)
-            return self.X.value[0:2], self.X.value[2], self.X.value[3], [cov0, cov1]
+            return self.X.value[0:2]*self.normalization_vector[4:], self.X.value[2], self.X.value[3], [mean0, mean1], [cov0, cov1]
         
         
         else:
-            return 0, 0, 0, 0
+            return 0, 0, 0, 0, 0
 
-def get_gammas(z, gp_model): 
+def get_gammas(z, gp_model, normalization_vector): 
     # remove position and velocity   
     rows_to_remove = [0, 1, 4, 5]
     z = np.delete(z, rows_to_remove)
+    z = z/normalization_vector[:4]
     query_np = np.hstack((z, np.zeros(2))) # zeros as dummy inputs u, to make length 10. get removed in compute_gammas()
     query = torch.from_numpy(query_np).double().unsqueeze(0)
     gamma1, gamma2, gamma3, gamma4, gamma5 = gp_model.model.compute_gammas(query)
@@ -380,6 +383,7 @@ if __name__ == "__main__":
 
     u_socp = np.zeros(np.shape(u_data))
     covs_run = np.zeros(np.shape(u_data))
+    means_run = np.zeros(np.shape(u_data))
     success_list = []
     d_sf_list = []
     q_dummy_list = []
@@ -388,12 +392,13 @@ if __name__ == "__main__":
         z_test = z_data[:,point_idx]
         v_test = v_data[:,point_idx]    
         # compute forward
-        u, success, d_sf, q_dummy, covs = filter.compute_feedback_input(z_test, z_test, v_test)
+        u, success, d_sf, q_dummy, means, covs = filter.compute_feedback_input(z_test, z_test, v_test)
         u_socp[:, point_idx] = u
         success_list.append(success)
         d_sf_list.append(d_sf)
         q_dummy_list.append(q_dummy)
         covs_run[:, point_idx] = covs
+        means_run[:, point_idx] = means
     
     u_analytic = np.zeros(np.shape(u_data))
     for point_idx in range(np.shape(z_data)[1]):
@@ -403,7 +408,7 @@ if __name__ == "__main__":
         u_analytic[:, point_idx] = u
     
     # plot test data
-    fig, ax = plt.subplots(2, 2) 
+    fig, ax = plt.subplots(2, 3) 
     t = np.arange(0, np.shape(u_data)[1])
     # First subplot
     ax[0, 0].plot(t, u_data[0, :], label='Test input u0' ) 
@@ -414,26 +419,37 @@ if __name__ == "__main__":
     ax[0, 0].set_ylabel("Tc_ddot")
     ax[0, 0].legend()
 
-    ax[1, 0].plot(t, covs_run[0, :], label='Covariance input u0' )  
-    ax[1, 0].set_title("First component u0")
+    ax[1, 0].plot(t, u_data[1, :], label='Test input u1' ) 
+    ax[1, 0].plot(t, u_socp[1, :], label='SOCP result u1' )
+    ax[1, 0].plot(t, u_analytic[1, :], label='analytic reference u1' ) 
+    ax[1, 0].set_title("Second Component u1")
     ax[1, 0].set_xlabel("datapoint")
-    ax[1, 0].set_ylabel("Covariance")
+    ax[1, 0].set_ylabel("Theta_c")
     ax[1, 0].legend()
 
-    # Second subplot
-    ax[0, 1].plot(t, u_data[1, :], label='Test input u1' ) 
-    ax[0, 1].plot(t, u_socp[1, :], label='SOCP result u1' )
-    ax[0, 1].plot(t, u_analytic[1, :], label='analytic reference u1' ) 
-    ax[0, 1].set_title("Second Component u1")
+    ax[0, 1].plot(t, means_run[0, :], label='Mean GP0' )  
+    ax[0, 1].set_title("Mean GP0")
     ax[0, 1].set_xlabel("datapoint")
-    ax[0, 1].set_ylabel("Theta_c")
+    ax[0, 1].set_ylabel("Mean")
     ax[0, 1].legend()
 
-    ax[1, 1].plot(t, covs_run[1, :], label='Covariance input u1' )  
-    ax[1, 1].set_title("Second component u1")
+    ax[1, 1].plot(t, means_run[1, :], label='Mean GP1' )  
+    ax[1, 1].set_title("Mean GP1")
     ax[1, 1].set_xlabel("datapoint")
-    ax[1, 1].set_ylabel("Covariance")
+    ax[1, 1].set_ylabel("Mean")
     ax[1, 1].legend()
+
+    ax[0, 2].plot(t, covs_run[0, :], label='Covariance GP0' )  
+    ax[0, 2].set_title("Covariance GP0")
+    ax[0, 2].set_xlabel("datapoint")
+    ax[0, 2].set_ylabel("Covariance")
+    ax[0, 2].legend()
+
+    ax[1, 2].plot(t, covs_run[1, :], label='Covariance GP1' )  
+    ax[1, 2].set_title("Covariance GP1")
+    ax[1, 2].set_xlabel("datapoint")
+    ax[1, 2].set_ylabel("Covariance")
+    ax[1, 2].legend()
 
     plt.show()
     

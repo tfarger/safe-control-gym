@@ -71,14 +71,14 @@ eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' # more evaluation data, t
 # training_data_file = './fgp/gp_train_data.pkl'
 # eval_data_file = './fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
-noise_std_list = [0.2, 1.4] # for artificial noise
+noise_std_list = [0.1, 0.7] # for artificial noise
 
-test_size = 0.2 # for train test split
+test_size = None #0.2 # for train test split
 
-N_train = 50000 # number of training iterations in the GP
+N_train = 5000 # number of training iterations in the GP
 learning_rate = 0.02
 
-threshold = [0.2, 0.1]
+threshold = [0.1, 0.1]
 do_gp_nr = 0 # which GP to train, 0 or 1
 
 #############################################################################################################
@@ -145,6 +145,14 @@ noise = np_rnd.normal(0, noise_std_list[do_gp_nr], size=targets_gp.shape)
 targets_gp_noisy = targets_gp + noise
 
 target_data = targets_gp_noisy
+
+# normalize input data
+# normalization_vals = np.max(np.abs(input_data), axis=0)
+normalization_vals = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42))
+input_data = input_data/normalization_vals
+
+print('Normalization vector:')
+print(normalization_vals)
 
 # np_rnd = np.random.default_rng(seed=seed)
 
@@ -231,6 +239,7 @@ targets_train = target_data
 inputs_eval = eval_data['inputs']
 inputs_eval = np.vstack(inputs_eval)
 inputs_eval = np.delete(inputs_eval, rows_to_remove, axis=1)
+inputs_eval = inputs_eval/normalization_vals # normalize with same vector as before
 targets_eval = eval_data['targets'] 
 targets_eval = np.vstack(targets_eval)
 targets_eval = targets_eval[:, do_gp_nr] 
@@ -239,9 +248,12 @@ inputs = torch.from_numpy(inputs_train)
 targets = torch.from_numpy(targets_train)
 
 # train test split
-train_in, test_in, train_tar, test_tar  = train_test_split(inputs, targets, test_size=test_size, random_state=seed)
-# train_in = inputs
-# train_tar = targets
+# train_in, test_in, train_tar, test_tar  = train_test_split(inputs, targets, test_size=test_size, random_state=seed)
+train_in = inputs
+train_tar = targets
+test_in = inputs # same data again
+test_tar = targets
+
 
 # Setup GP
 gp_type = ZeroMeanAffineGP

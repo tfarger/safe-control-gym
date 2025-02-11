@@ -289,7 +289,8 @@ class FlatMPC_SOCP(BaseController):
         zd = z_horizon[:, 0]
         vd = v_horizon[:, 0]
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
+        action_extended_socp, success, d_val, q_dummy_val, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
+
         
         # do double integration on first action Tc_ddot --> Tc
         self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended
