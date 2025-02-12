@@ -439,16 +439,16 @@ if __name__ == "__main__":
     ax[1, 1].set_ylabel("Mean")
     ax[1, 1].legend()
 
-    ax[0, 2].plot(t, covs_run[0, :], label='Covariance GP0' )  
-    ax[0, 2].set_title("Covariance GP0")
+    ax[0, 2].plot(t, 2*np.sqrt(covs_run[0, :]), label='2x standard deviation GP0' )  
+    ax[0, 2].set_title("2x Standard Deviation GP0")
     ax[0, 2].set_xlabel("datapoint")
-    ax[0, 2].set_ylabel("Covariance")
+    ax[0, 2].set_ylabel("2x Std Dev")
     ax[0, 2].legend()
 
-    ax[1, 2].plot(t, covs_run[1, :], label='Covariance GP1' )  
-    ax[1, 2].set_title("Covariance GP1")
+    ax[1, 2].plot(t, 2*np.sqrt(covs_run[1, :]), label='2x standard deviation GP1' )  
+    ax[1, 2].set_title("2x Standard Deviation GP1")
     ax[1, 2].set_xlabel("datapoint")
-    ax[1, 2].set_ylabel("Covariance")
+    ax[1, 2].set_ylabel("2x Std Dev")
     ax[1, 2].legend()
 
     plt.show()
