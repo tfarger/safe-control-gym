@@ -258,6 +258,7 @@ class FlatMPC_SOCP(BaseController):
                              'u_extSOCP': [],
                              'gp_means': [],
                              'gp_covs': [],
+                             'v_des':[],
 
 
                             
@@ -303,10 +304,12 @@ class FlatMPC_SOCP(BaseController):
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
         action_extended_socp, success, d_val, q_dummy_val, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
 
-        if self.controller_iteration < 0:
-            action_extended_used = action_extended
-        else:
-            action_extended_used = action_extended_socp
+        action_extended_used = action_extended_socp
+
+        # if self.controller_iteration < 0:
+        #     action_extended_used = action_extended
+        # else:
+        #     action_extended_used = action_extended_socp
         
         # do double integration on first action Tc_ddot --> Tc
         self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended_used
@@ -336,6 +339,8 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['u_extSOCP'].append(action_extended_socp)
         self.results_dict['gp_means'].append(means)
         self.results_dict['gp_covs'].append(covs)
+        self.results_dict['v_des'].append(vd)
+        
         return action
     
     def close(self):
