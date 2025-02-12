@@ -64,22 +64,22 @@ seed = 43
 PLOT = True
 
 #debugger
-training_data_file = './examples/mpc/fgp/gp_train_data_fig8.pkl'
+training_data_file = './examples/mpc/fgp/gp_train_data_grid.pkl'
 eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
 #run from folder
 # training_data_file = './fgp/gp_train_data.pkl'
 # eval_data_file = './fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
-noise_std_list = [0.1, 0.7] # for artificial noise
+noise_std_list = [0.2, 1.4] # for artificial noise
 
-test_size = None #0.2 # for train test split
+# test_size = None #0.2 # for train test split
 
-N_train = 5000 # number of training iterations in the GP
+N_train = 1000 # number of training iterations in the GP
 learning_rate = 0.02
 
-threshold = [0.1, 0.1]
-do_gp_nr = 0 # which GP to train, 0 or 1
+threshold = [1, 1]
+do_gp_nr = 1 # which GP to train, 0 or 1
 
 #############################################################################################################
 #### Data preparation 
@@ -89,15 +89,15 @@ with open(training_data_file, 'rb') as file:
 inputs_train_list = train_data['inputs']
 targets_train_list = train_data['targets'] 
 
-# dump first few training datasets
-inputs_train_list = inputs_train_list[2:11]
-targets_train_list = targets_train_list[2:11]
+# # dump first few training datasets
+# inputs_train_list = inputs_train_list[2:11]
+# targets_train_list = targets_train_list[2:11]
 
 
-targets_raw = np.vstack(targets_train_list)
-targets_raw_gp = targets_raw[:, do_gp_nr]
+# targets_raw = np.vstack(targets_train_list)
+targets_raw_gp = targets_train_list[:, do_gp_nr]
 
-inputs_raw = np.vstack(inputs_train_list)
+inputs_raw = inputs_train_list #np.vstack(inputs_train_list)
 
 # remove position and velocity data, as the analytic transformation does not depend on it
 rows_to_remove = [0, 1, 4, 5]
