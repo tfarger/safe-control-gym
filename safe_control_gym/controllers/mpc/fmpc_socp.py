@@ -256,6 +256,8 @@ class FlatMPC_SOCP(BaseController):
                              'u_oldFMPC':[],
                              'u_extFT': [],
                              'u_extSOCP': [],
+                             'gp_means': [],
+                             'gp_covs': [],
 
 
                             
@@ -332,6 +334,8 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['u_oldFMPC'].append(action_analytic)
         self.results_dict['u_extFT'].append(action_extended)
         self.results_dict['u_extSOCP'].append(action_extended_socp)
+        self.results_dict['gp_means'].append(means)
+        self.results_dict['gp_covs'].append(covs)
         return action
     
     def close(self):
