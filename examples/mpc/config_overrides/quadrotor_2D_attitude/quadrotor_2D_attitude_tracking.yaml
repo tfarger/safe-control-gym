@@ -7,12 +7,12 @@ task_config:
   quad_type: 4
 
   init_state: 
-    init_x: 0 #0.5
-    init_x_dot: 0.86664625 #0.52359878 # 0
+    init_x: 0 
+    init_x_dot: 0.86664625 
     init_z: 1.0
-    init_z_dot: 0.86664625 #0.52359878
-    init_theta: 0 # -0.05589187
-    init_theta_dot: -0.0664201 # -0.05859085 #-0.00326794
+    init_z_dot: 0.86664625 
+    init_theta: 0 
+    init_theta_dot: -0.0664201 
   randomized_init: False
   randomized_inertial_prop: False
 
