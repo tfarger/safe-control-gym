@@ -565,7 +565,7 @@ class GPMPC(MPC):
             cost += cost_func(x=x_var[:, i],
                               u=u_var[:, i],
                               Xr=x_ref[:, i],
-                              Ur=self.U_EQ,
+                              Ur=np.zeros((nu, 1)),
                               Q=self.Q,
                               R=self.R)['l']
         # Terminal cost.

@@ -2,15 +2,14 @@
 
 # MPC and Linear MPC Experiment.
 
-# SYS='cartpole'
-# SYS='quadrotor_2D'
+#SYS='cartpole'
+#SYS='quadrotor_2D'
 SYS='quadrotor_3D'
 
 #TASK='stabilization'
 TASK='tracking'
 
-# ALGO='mpc'
-# ALGO='mpc_acados'
+#ALGO='mpc'
 ALGO='linear_mpc'
 
 if [ "$SYS" == 'cartpole' ]; then
