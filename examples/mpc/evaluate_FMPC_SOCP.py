@@ -48,6 +48,8 @@ def evaluateFMPC_SOCP(show_plots = False):
     gp_means = data_dict_fmpc['gp_means'][0]
     gp_covs = data_dict_fmpc['gp_covs'][0]
 
+    v_des = data_dict_fmpc['v_des'][0]
+
 
 
 
@@ -73,10 +75,14 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[1, 1].set_ylabel('degrees')
 
         ax[2, 0].plot(range(np.shape(u_analytic_ext)[0]), gp_means[:, 0], label='mean0')
+        ax[2, 0].plot(range(np.shape(u_analytic_ext)[0]), v_des[:, 0], label='v0 desired')
         ax[2, 0].set_title('GP0 predictions: mean ')
+        ax[2, 0].legend()
 
         ax[2, 1].plot(range(np.shape(u_analytic_ext)[0]), gp_means[:, 1], label='mean1')
+        ax[2, 1].plot(range(np.shape(u_analytic_ext)[0]), v_des[:, 1], label='v1 desired')
         ax[2, 1].set_title('GP1 predictions: mean ')
+        ax[2, 1].legend()
 
         ax[3, 0].plot(range(np.shape(u_analytic_ext)[0]), 2* np.sqrt(gp_covs[:, 0]), label='2stddev0')
         ax[3, 0].set_title('GP0 predictions: 2x standard deviation ')

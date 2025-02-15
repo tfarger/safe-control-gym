@@ -427,13 +427,15 @@ if __name__ == "__main__":
     ax[1, 0].set_ylabel("Theta_c")
     ax[1, 0].legend()
 
-    ax[0, 1].plot(t, means_run[0, :], label='Mean GP0' )  
+    ax[0, 1].plot(t, means_run[0, :], label='Mean GP0' )
+    ax[0, 1].plot(t, v_data[0, :], label='v_0' )   
     ax[0, 1].set_title("Mean GP0")
     ax[0, 1].set_xlabel("datapoint")
     ax[0, 1].set_ylabel("Mean")
     ax[0, 1].legend()
 
-    ax[1, 1].plot(t, means_run[1, :], label='Mean GP1' )  
+    ax[1, 1].plot(t, means_run[1, :], label='Mean GP1' ) 
+    ax[1, 1].plot(t, v_data[1, :], label='v_1' )  
     ax[1, 1].set_title("Mean GP1")
     ax[1, 1].set_xlabel("datapoint")
     ax[1, 1].set_ylabel("Mean")
