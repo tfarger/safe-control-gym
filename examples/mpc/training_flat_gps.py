@@ -64,21 +64,19 @@ seed = 43
 PLOT = True
 
 #debugger
-training_data_file = './examples/mpc/fgp/gp_train_data_grid.pkl'
+training_data_file = './examples/mpc/fgp/gp_train_data_noisyFig8.pkl'
 eval_data_file = './examples/mpc/fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
 #run from folder
 # training_data_file = './fgp/gp_train_data.pkl'
 # eval_data_file = './fgp/gp_test_data.pkl' # more evaluation data, test it on unseen speeds
 
-noise_std_list = [0.2, 1.4] # for artificial noise
+noise_std_list = [2, 1.4] # for artificial noise
 
-# test_size = None #0.2 # for train test split
-
-N_train = 1000 # number of training iterations in the GP
+N_train = 2000 # number of training iterations in the GP
 learning_rate = 0.02
 
-threshold = [1, 1]
+threshold = [0.25, 0.2]
 do_gp_nr = 1 # which GP to train, 0 or 1
 
 #############################################################################################################
@@ -200,13 +198,13 @@ print(normalization_vals)
 
 if PLOT:
     # idx_dwn = np.arange(0, len(targets_noisy_gp0), downsampling_step )
-    fig, ax = plt.subplots(2)
-    ax[0].plot(targets_raw_gp,'.', label='target data')
-    ax[0].plot(filtered_indices, targets_gp,'.', label='similar points removed')
-    ax[0].plot(filtered_indices, targets_gp_noisy, '.', label='with noise')
-    # ax[0].plot(targets_dwn_gp0, '.', label='downsampled')
-    ax[0].set_title(f'Training targets GP {do_gp_nr}')
-    ax[0].legend()
+    fig, ax = plt.subplots(1)
+    ax.plot(targets_raw_gp,'.', label='target data')
+    ax.plot(filtered_indices, targets_gp,'.', label='similar points removed')
+    ax.plot(filtered_indices, targets_gp_noisy, '.', label='with noise')
+    # ax.plot(targets_dwn_gp0, '.', label='downsampled')
+    ax.set_title(f'Training targets GP {do_gp_nr}')
+    ax.legend()
 
     # ax[1].plot(targets_raw_gp1, label='target data')
     # ax[1].plot(targets_noisy_gp1, label='with artificial noise')
