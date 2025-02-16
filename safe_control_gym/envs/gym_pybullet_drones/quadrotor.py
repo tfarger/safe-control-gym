@@ -702,7 +702,10 @@ class Quadrotor(BaseAviary):
             assert self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY\
                             , QuadType.THREE_D_ATTITUDE, QuadType.THREE_D_ATTITUDE_10], '[ERROR] in Quadrotor.step(), downwash model is only available for identified model.'
             # get the current observation
-            obs = self._get_observation()
+            # obs = self._get_observation()
+            state = self.state
+            # print(f'state: {state}')
+            # print(f'get state: {self._get_state()}')
             # if self.DISTURBANCES['downwash'][0]['mode'] == 'track':
             #     # update the position of the downwash model
             #     self.dw_model.update_pos(pos=np.array([obs[0], 0, obs[2]]))
@@ -710,14 +713,15 @@ class Quadrotor(BaseAviary):
             if self.QUAD_TYPE not in [QuadType.TWO_D_ATTITUDE]:
                 raise ValueError('[ERROR] in Quadrotor.step(), downwash force is only available for 2D attitude model.')
             if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_BODY, QuadType.TWO_D_ATTITUDE_5S]:
-                pos = np.array([obs[0], 0, obs[2]])
+                pos = np.array([state[0], 0, state[2]])
             elif self.QUAD_TYPE in [QuadType.THREE_D_ATTITUDE, QuadType.THREE_D_ATTITUDE_10]:
-                pos = np.array([obs[0], obs[2], obs[4]])
+                pos = np.array([state[0], state[2], state[4]])
             
             if self.DISTURBANCES['downwash'][0]['mode'] == 'track':
                 # update the position of the downwash model
                 self.dw_model.update_pos(pos=pos+self.DISTURBANCES['downwash'][0]['pos'])
             dw_force_mag = self.dw_model.get_dw_force_mag(target_pos=pos, mode='absolute')
+            # print(f'dw_force_mag: {dw_force_mag:2f} [N]')
             
             # print(f'dw_force_mag: {dw_force_mag:2f} [N]')
             disturb_force[-1] += -dw_force_mag
@@ -1448,6 +1452,80 @@ class Quadrotor(BaseAviary):
             # action = np.clip(action, self.action_space.low, self.action_space.high)
 
         return action
+
+    def _get_state(self):
+        """Returns the current state of the environment.
+
+        Returns:
+            obs (ndarray): The state of the quadrotor, of size 2 or 6 depending on QUAD_TYPE.
+        """
+        full_state = self._get_drone_state_vector(0)
+        pos, _, rpy, vel, ang_v, rpy_rate, _ = np.split(full_state, [3, 7, 10, 13, 16, 19])
+        if self.QUAD_TYPE == QuadType.ONE_D:
+            # {z, z_dot}.
+            self.state = np.hstack([pos[2], vel[2]]).reshape((2,))
+        elif self.QUAD_TYPE == QuadType.TWO_D:
+            # {x, x_dot, z, z_dot, theta, theta_dot}.
+            self.state = np.hstack(
+                [pos[0], vel[0], pos[2], vel[2], rpy[1], ang_v[1]]
+            ).reshape((6,))
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
+            # {x, x_dot, z, z_dot, theta, theta_dot}.
+            self.state = np.hstack(
+                [pos[0], vel[0], pos[2], vel[2], rpy[1], rpy_rate[1]]
+            ).reshape((6,))
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_BODY:
+            # perform transformation to body frame translational velocities
+            pitch = -rpy[1]
+            vx = vel[0] * np.cos(pitch) - vel[2] * np.sin(pitch)
+            vz = vel[0] * np.sin(pitch) + vel[2] * np.cos(pitch)
+            # {x, vx, z, vz, theta, theta_dot}.
+            self.state = np.hstack(
+                [pos[0], vx, pos[2], vz, pitch, rpy_rate[1]]
+            ).reshape((6,))
+            world_state = np.hstack(
+                [pos[0], vel[0], pos[2], vel[2], rpy[1], rpy_rate[1]]
+            ).reshape((6,))
+            print('world_state: ', world_state)
+
+        elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
+            # {x, x_dot, z, z_dot, theta, theta_dot}.
+            self.state = np.hstack(
+                [pos[0], vel[0], pos[2], vel[2], rpy[1]]
+            ).reshape((5,))
+        elif self.QUAD_TYPE == QuadType.THREE_D:
+            Rob = np.array(p.getMatrixFromQuaternion(self.quat[0])).reshape((3, 3))
+            Rbo = Rob.T
+            ang_v_body_frame = Rbo @ ang_v
+            # {x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p_body, q_body, r_body}.
+            self.state = np.hstack(
+                # [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy, ang_v]  # Note: world ang_v != body frame pqr
+                [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy, ang_v_body_frame]
+            ).reshape((12,))
+        elif self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
+            # {x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p_body, q_body, r_body}.
+            self.state = np.hstack(
+                # [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy, ang_v]
+                [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy, ang_v]
+            ).reshape((12,))
+        elif self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            # {x, x_dot, y, y_dot, z, z_dot, phi, theta, p_body, q_body}.
+            self.state = np.hstack(
+                [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy[0], rpy[1], ang_v[0], ang_v[1]]
+            ).reshape((10,))
+        # if not np.array_equal(self.state,
+        #                       np.clip(self.state, self.observation_space.low, self.observation_space.high)):
+        #     if self.GUI and self.VERBOSE:
+        #         print(
+        #             '[WARNING]: observation was clipped in Quadrotor._get_observation().'
+        #         )
+
+        # Concatenate goal info (references state(s)) for RL.
+        # Plus two because ctrl_step_counter has not incremented yet, and we want to return the obs (which would be
+        # ctrl_step_counter + 1 as the action has already been applied), and the next state (+ 2) for the RL to see
+        # the next state.
+        return self.state
+
 
     def _get_observation(self):
         """Returns the current observation (state) of the environment.
