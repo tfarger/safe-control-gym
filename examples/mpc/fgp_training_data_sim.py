@@ -10,6 +10,8 @@ from examples.mpc.mpc_quad_gp_training_data import run
 import os
 import yaml
 
+# NOTE to Adam: this is still using finite differences, not used anymore
+
 """
 Get training data for GP of FMPC_SOCP 
 from simulations in Safe Control Gym with FMPC
