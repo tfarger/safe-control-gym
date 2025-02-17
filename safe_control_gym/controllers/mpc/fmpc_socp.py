@@ -305,6 +305,7 @@ class FlatMPC_SOCP(BaseController):
         action_extended_socp, success, d_val, q_dummy_val, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
 
         action_extended_used = action_extended_socp
+        # action_extended_used = action_extended
 
         # if self.controller_iteration < 0:
         #     action_extended_used = action_extended
