@@ -298,7 +298,7 @@ class FlatMPC_SOCP(BaseController):
         v_horizon = self.mpc.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        action_analytic = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
+        # action_analytic = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
         zd = z_horizon[:, 0]
         vd = v_horizon[:, 0]
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
@@ -335,7 +335,7 @@ class FlatMPC_SOCP(BaseController):
 
         # self.results_dict['ctrl_run_time'].append(te-ts)
         
-        self.results_dict['u_oldFMPC'].append(action_analytic)
+        # self.results_dict['u_oldFMPC'].append(action_analytic)
         self.results_dict['u_extFT'].append(action_extended)
         self.results_dict['u_extSOCP'].append(action_extended_socp)
         self.results_dict['gp_means'].append(means)
