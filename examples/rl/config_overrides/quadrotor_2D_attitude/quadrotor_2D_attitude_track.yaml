@@ -108,7 +108,7 @@ task_config:
         high: 1. # dummy
         mode: fix
         # mode: track
-        pos: [0, 0, 0] # z = 0, will cause no downwash
+        pos: [0, 0, -2] # z = 0, will cause no downwash
         # pos in track mode is the relative position to the quadrotor
         # pos in fix mode is the absolute position in the world frame
 
@@ -119,8 +119,8 @@ task_config:
       # lower_bounds: [-2, -1, 0, -1, -0.2, -2.5]
     - constraint_form: default_constraint
       constrained_variable: input
-      #upper_bounds: [0.58212, 0.7]
-      #lower_bounds: [0.09702, -0.7]
+      # upper_bounds: [0.58212, 0.7]
+      # lower_bounds: [0.09702, -0.7]
       # upper_bounds: [0.47628, 0.4]
       # lower_bounds: [0.079, -0.4]
 
