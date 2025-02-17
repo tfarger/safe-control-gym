@@ -106,13 +106,20 @@ class DiscreteSOCPFilter:
         gam3 = []
         gam4 = []
         gam5 = []
+        L_gam5 = []
+        Linv_gam5 = []
         for i in range(len(gp_models)):
             gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i], self.normalization_vector)
+            L_chol = np.linalg.cholesky(gamma5)
+            L_chol_inv = np.linalg.inv(L_chol)
             gam1.append(gamma1)
             gam2.append(gamma2)
             gam3.append(gamma3)
             gam4.append(gamma4)
             gam5.append(gamma5)
+            L_gam5.append(L_chol)
+            Linv_gam5.append(L_chol_inv)
+
 
         # w, norm_w = compute_w(e_k, self.Ad, self.Bd, self.P, self.K)
         #v_nom = -self.K @ e_k + v_des
@@ -123,7 +130,7 @@ class DiscreteSOCPFilter:
         self.cost.value = cost
 
         # Compute dummy var mats (feedback linearization part)
-        A1, b1, c1, d1 = dummy_var_matrices(gam2, gam5, self.d_weight)
+        A1, b1, c1, d1 = dummy_var_matrices(gam2, L_gam5, self.d_weight)
         self.A1.value = A1
         self.b1.value = b1.squeeze()
         self.c1.value = c1
@@ -265,17 +272,12 @@ def stab_filter_c1_and_d1(gam1,
 
     return c1, d1.squeeze()
 
-def dummy_var_matrices(gam2, gam5, d_weight):
-    L_list = []
-    for i in range(len(gam5)):
-        L_mat = np.linalg.cholesky(gam5[i]) # TODO: is analytic formula for 2x2 faster?
-        L_list.append(L_mat)
-
+def dummy_var_matrices(gam2, L_gam5, d_weight):
     A = np.zeros((8,4))
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
-    A[2:4, :2] = 2*L_list[0]
-    A[4:6, :2] = 2*L_list[1]
+    A[2:4, :2] = 2*L_gam5[0]
+    A[4:6, :2] = 2*L_gam5[1]
     A[-1, -1] = -1.0
 
     b = np.zeros((8,1))
