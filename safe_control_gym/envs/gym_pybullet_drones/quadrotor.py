@@ -1053,8 +1053,10 @@ class Quadrotor(BaseAviary):
             n_mot = 4  # due to collective thrust
             a_low = self.KF * n_mot * (self.PWM2RPM_SCALE * self.MIN_PWM + self.PWM2RPM_CONST)**2
             a_high = self.KF * n_mot * (self.PWM2RPM_SCALE * self.MAX_PWM + self.PWM2RPM_CONST)**2
-            self.physical_action_bounds = (np.array([np.full(1, a_low, np.float32), np.full(1, -max_pitch_rad, np.float32)]).flatten(),
-                                           np.array([np.full(1, a_high, np.float32), np.full(1, max_pitch_rad, np.float32)]).flatten())
+            self.physical_action_bounds = (np.array([np.full(1, a_low*0, np.float32), np.full(1, -max_pitch_rad*10, np.float32)]).flatten(),
+                                           np.array([np.full(1, a_high*100, np.float32), np.full(1, max_pitch_rad*10, np.float32)]).flatten()) # factors added to effectively disable all input constraints, Tobias 22.01.25
+            # print(self.physical_action_bounds)
+            # exit()
         elif self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE:
             n_mot = 4  # due to collective thrust
             a_low = self.KF * n_mot * (self.PWM2RPM_SCALE * self.MIN_PWM + self.PWM2RPM_CONST)**2
