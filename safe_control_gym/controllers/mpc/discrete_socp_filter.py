@@ -191,10 +191,11 @@ class DiscreteSOCPFilter:
         self.prob.solve(solver='MOSEK', warm_start=True, verbose=True) # SCS was used in paper
         if 'optimal' in self.prob.status:
             # debugging: compute the covariance at this input u: just sample from GP
-            x = torch.from_numpy(np.hstack((z,self.X.value[0:2])))
-            x = torch.unsqueeze(x, dim=0)
-            mean0, cov0, _, _  = gp_models[0].model.mean_and_cov_from_gammas(x)
-            mean1, cov1, _, _  = gp_models[1].model.mean_and_cov_from_gammas(x)
+            u_opt = self.X.value[0:2]
+            mean0 = gam1[0] + gam2[0].T@u_opt
+            cov0 = gam3[0] + gam4[0].T@u_opt + u_opt.T@gam5[0]@u_opt
+            mean1 = gam1[1] + gam2[1].T@u_opt
+            cov1 = gam3[1] + gam4[1].T@u_opt + u_opt.T@gam5[1]@u_opt
             cost_val = self.cost.value@self.X.value
             cost_val_lin_part = self.cost.value[0, 0]*self.X.value[0] + self.cost.value[0, 1]*self.X.value[1]
             cost_val_quad_part = self.X.value[3]
