@@ -91,12 +91,12 @@ class DiscreteSOCPFilter:
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
-        u, d_sf, q_dummy_val, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        u, d_sf, q_dummy_val, cost_val, cost_val_lin, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
         if 'optimal' in self.prob.status:
             success = True
         else:
             success = False
-        return u, success, d_sf, q_dummy_val, means, covs
+        return u, success, d_sf, q_dummy_val, cost_val, cost_val_lin, means, covs
 
     def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
         # e_k = z - z_ref
@@ -195,7 +195,11 @@ class DiscreteSOCPFilter:
             x = torch.unsqueeze(x, dim=0)
             mean0, cov0, _, _  = gp_models[0].model.mean_and_cov_from_gammas(x)
             mean1, cov1, _, _  = gp_models[1].model.mean_and_cov_from_gammas(x)
-            return self.X.value[0:2]*self.normalization_vector[4:], self.X.value[2], self.X.value[3], [mean0, mean1], [cov0, cov1]
+            cost_val = self.cost.value@self.X.value
+            cost_val_lin_part = self.cost.value[0, 0]*self.X.value[0] + self.cost.value[0, 1]*self.X.value[1]
+            cost_val_quad_part = self.X.value[3]
+            cost_val_double_check = cost_val_lin_part + cost_val_quad_part
+            return self.X.value[0:2]*self.normalization_vector[4:], self.X.value[2], self.X.value[3], cost_val, cost_val_lin_part, [mean0, mean1], [cov0, cov1]
         
         
         else:
@@ -394,7 +398,7 @@ if __name__ == "__main__":
         z_test = z_data[:,point_idx]
         v_test = v_data[:,point_idx]    
         # compute forward
-        u, success, d_sf, q_dummy, means, covs = filter.compute_feedback_input(z_test, z_test, v_test)
+        u, success, d_sf, q_dummy, cost_val, cost_val_lin_part,  means, covs = filter.compute_feedback_input(z_test, z_test, v_test)
         u_socp[:, point_idx] = u
         success_list.append(success)
         d_sf_list.append(d_sf)

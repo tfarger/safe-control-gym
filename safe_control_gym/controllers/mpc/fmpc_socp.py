@@ -259,9 +259,10 @@ class FlatMPC_SOCP(BaseController):
                              'gp_means': [],
                              'gp_covs': [],
                              'v_des':[],
-
-
-                            
+                             'socp_slack':[], 
+                             'socp_dummy':[],
+                             'socp_cost':[],
+                             'socp_cost_linPart':[],                            
                              }
 
     # @timing
@@ -302,7 +303,7 @@ class FlatMPC_SOCP(BaseController):
         zd = z_horizon[:, 0]
         vd = v_horizon[:, 0]
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
+        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
 
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
@@ -341,6 +342,10 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['gp_means'].append(means)
         self.results_dict['gp_covs'].append(covs)
         self.results_dict['v_des'].append(vd)
+        self.results_dict['socp_slack'].append(d_val)
+        self.results_dict['socp_dummy'].append(q_dummy_val)
+        self.results_dict['socp_cost'].append(cost_val)
+        self.results_dict['socp_cost_linPart'].append(cost_val_lin_part)
         
         return action
     

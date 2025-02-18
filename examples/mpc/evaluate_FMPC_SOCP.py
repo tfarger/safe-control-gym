@@ -50,12 +50,17 @@ def evaluateFMPC_SOCP(show_plots = False):
 
     v_des = data_dict_fmpc['v_des'][0]
 
+    d_slack = data_dict_fmpc['socp_slack'][0]
+    q_dummy = data_dict_fmpc['socp_dummy'][0]
+    cost_val = data_dict_fmpc['socp_cost'][0]
+    cost_val_lin_part = data_dict_fmpc['socp_cost_linPart'][0]
+
 
 
 
 
     if show_plots:
-        fig, ax = plt.subplots(4, 2)
+        fig, ax = plt.subplots(6, 2)
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_analytic_ext[:, 0], label='analytic, dynamic extension')
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_socp[:, 0], label='socp')
         ax[0, 0].set_title('Input extended system: Tc_ddot')
@@ -90,7 +95,18 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[3, 1].plot(range(np.shape(u_analytic_ext)[0]), 2* np.sqrt(gp_covs[:, 1]), label='2stddev1')
         ax[3, 1].set_title('GP1 predictions: 2x standard deviation ')
 
+        ax[4, 0].plot(range(np.shape(u_analytic_ext)[0]), d_slack, label='SOCP Slack')
+        ax[4, 0].set_title('SOCP slack variable')
 
+        ax[4, 1].plot(range(np.shape(u_analytic_ext)[0]), q_dummy, label='SOCP Dummy')
+        ax[4, 1].set_title('SOCP dummy variable of FB lin')
+
+        ax[5, 0].plot(range(np.shape(u_analytic_ext)[0]), cost_val, label='SOCP Cost Total')
+        ax[5, 0].plot(range(np.shape(u_analytic_ext)[0]), cost_val_lin_part, label='SOCP Cost Linear Term')
+        ax[5, 0].plot(range(np.shape(u_analytic_ext)[0]), q_dummy, label='SOCP Cost Quadratic Term')
+        ax[5, 0].plot(range(np.shape(u_analytic_ext)[0]), cost_val_lin_part + q_dummy, label='SOCP Cost Total from comp') # sanity check if it all adds up right
+        ax[5, 0].set_title('SOCP cost')
+        ax[5, 0].legend()
 
         plt.show()
 
