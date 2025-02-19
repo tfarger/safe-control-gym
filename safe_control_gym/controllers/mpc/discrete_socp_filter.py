@@ -11,33 +11,43 @@ from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, Gau
 import matplotlib.pyplot as plt
 
 class DiscreteSOCPFilter:
-    def __init__(self, name, d_weight=25.0, input_bound=None, state_bound=None, gps=None):
+    def __init__(self, name, ctrl_mat, d_weight=25.0, input_bound=None, state_bound=None, gps=None):
         self.name = name
-        self.d_weight = d_weight # for slack variable
+        self.d_weight = d_weight # for slack variable, = 2*sqrt(rho) in formulas
         self.gps = gps
 
-        self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42))
+        # get matrices for stability constraint
+        self.Ad = ctrl_mat['Ad']
+        self.Bd = ctrl_mat['Bd']
+        self.Q = ctrl_mat['Q']
+        self.R = ctrl_mat['R']
+        self.P = ctrl_mat['P']
+        self.K = ctrl_mat['K']
+
+        self.beta_sqrt = [2, 2] # sqrt(beta) in formulas # TODO get from function call
+
+
+        self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO make dynamic
         
-        self.input_bound = input_bound
-        self.state_bound = state_bound
+        self.input_bound = input_bound/self.normalization_vector[4:] # normalize the input and state bound for optimization
+        # self.state_bound = state_bound # TODO: normalize
         # Opt variables and parameters
         self.X = cp.Variable(shape=(4,))
         self.A1 = cp.Parameter(shape=(8, 4))
-        #self.A2 = cp.Parameter(shape=(3, 3))
+        self.A2 = cp.Parameter(shape=(8, 4))
         self.b1 = cp.Parameter(shape=(8,))
-        #self.b2 = cp.Parameter(shape=(3,))
+        self.b2 = cp.Parameter(shape=(8,))
         self.c1 = cp.Parameter(shape=(1, 4))
-        #self.c2 = cp.Parameter(shape=(1, 3))
+        self.c2 = cp.Parameter(shape=(1, 4))
         self.d1 = cp.Parameter()
-        #self.d2 = cp.Parameter()
+        self.d2 = cp.Parameter()
         # put into lists
-        As = [self.A1] #[self.A1, self.A2]
-        bs = [self.b1] #[self.b1, self.b2]
-        cs = [self.c1] #[self.c1, self.c2]
-        ds = [self.d1] #[self.d1, self.d2]
+        As = [self.A1, self.A2]
+        bs = [self.b1, self.b2]
+        cs = [self.c1, self.c2]
+        ds = [self.d1, self.d2]
 
-        # disable input and state bound for now
-        # input_bound = None
+        # disable  state bound for now
         state_bound = None
         # Add input constraints if supplied
         if input_bound is not None:
@@ -87,7 +97,7 @@ class DiscreteSOCPFilter:
         """ Compute u so it can be used in feedback function
         Args: 
         z_des: flat state to linearize with, from FMPC
-        z_ref: ??, for stability constraint
+        z_ref: reference flat state for stability constraint
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
@@ -99,7 +109,7 @@ class DiscreteSOCPFilter:
         return u, success, d_sf, q_dummy_val, cost_val, cost_val_lin, means, covs
 
     def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
-        # e_k = z - z_ref
+        e_k = z - z_ref
         # Compute state dependent values
         gam1 = []
         gam2 = []
@@ -120,11 +130,6 @@ class DiscreteSOCPFilter:
             L_gam5.append(L_chol)
             Linv_gam5.append(L_chol_inv)
 
-
-        # w, norm_w = compute_w(e_k, self.Ad, self.Bd, self.P, self.K)
-        #v_nom = -self.K @ e_k + v_des
-        # v_nom = v_des
-
         # Compute cost coefficients
         cost = compute_cost(gam1, gam2, gam4, v_des)
         self.cost.value = cost
@@ -136,15 +141,15 @@ class DiscreteSOCPFilter:
         self.c1.value = c1
         self.d1.value = d1
 
-        # # Compute stablity filter coeffs
-        # A1, b1, c1, d1 = stab_filter_matrices(gam1, gam2, gam3, gam4, gam5,
-        #                                       self.Q, self.R, self.P, self.K, self.Bd, e_k,
-        #                                       norm_w, w,
-        #                                       self.input_bound, v_nom, self.beta)
-        # self.A1.value = A1
-        # self.b1.value = b1
-        # self.c1.value = c1
-        # self.d1.value = d1
+        # Compute stablity filter coeffs
+        v_nom = v_des # from equivalence of FMPC with gain matrix
+        A2, b2, c2, d2 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
+                                              self.Q, self.R, self.P, self.K, self.Bd, self.Ad, e_k,
+                                              self.input_bound, v_nom, self.beta_sqrt)
+        self.A2.value = A2
+        self.b2.value = b2.squeeze()
+        self.c2.value = c2
+        self.d2.value = d2
 
         # # Compute state constraints.
 
@@ -159,7 +164,7 @@ class DiscreteSOCPFilter:
         #     self.cstate.value = cstate
         #     self.dstate.value = dstate.squeeze()
 
-        # # debugging: print out everything!!
+        # debugging: print out everything!!
         # print('-----------------------------------------------------------')
         # print('Debugging all variables')
         # print('Inputs z and v')
@@ -182,13 +187,23 @@ class DiscreteSOCPFilter:
         # print(b1)
         # print(c1)
         # print(d1)
+        # print('Stability constraint matrices: A, b, c, d')
+        # print(A2)
+        # print(b2)
+        # print(c2)
+        # print(d2)
         # print('Cost value')
         # print(cost)
+        # print('Cholesky decompositions and inverse')
+        # print(L_gam5[0])
+        # print(Linv_gam5[0])
+        # print(L_gam5[1])
+        # print(Linv_gam5[1])
 
 
 
         self.X.value = x_init
-        self.prob.solve(solver='MOSEK', warm_start=True, verbose=True) # SCS was used in paper
+        self.prob.solve(solver='MOSEK', warm_start=True, verbose=True)
         if 'optimal' in self.prob.status:
             # debugging: compute the covariance at this input u: just sample from GP
             u_opt = self.X.value[0:2]
@@ -204,7 +219,8 @@ class DiscreteSOCPFilter:
         
         
         else:
-            return 0, 0, 0, 0, 0
+            print('')
+            return 0, 0, 0, 0, 0, 0, 0
 
 def get_gammas(z, gp_model, normalization_vector): 
     # remove position and velocity   
@@ -228,62 +244,14 @@ def compute_cost(gam1, gam2, gam4, v_des):
     cost = np.append(cost, np.array([[0, 1.0]]), axis=1)
     return cost
 
-def compute_w(e_k, Ad, Bd, P, K):
-    w = e_k.T @ (Ad - Bd @ K).T @ P @ Bd
-    return w.squeeze(), np.linalg.norm(w)
-
-def stab_filter_matrices(gam1,
-                         gam2,
-                         gam3,
-                         gam4,
-                         gam5,
-                         Q, R, P, K, Bd,
-                         e_k,
-                         norm_w, w,
-                         u_max, v_nom, beta):
-    A1, b1 = stab_filter_A1_and_b1(gam3, gam4, gam5, norm_w)
-    c1, d1 = stab_filter_c1_and_d1(gam1, gam2,
-                          Q, R, P, K, Bd,
-                          e_k, w,
-                          u_max, v_nom, beta)
-    return A1, b1, c1, d1
-
-def stab_filter_A1_and_b1(gam3,
-                          gam4,
-                          gam5,
-                          norm_w):
-    A1 = np.array([[norm_w*np.sqrt(gam5), 0, 0],
-                   [0, 0, 0],
-                   [0, 0, 0]])
-    b1 = np.array([[norm_w*gam4 / (2 * np.sqrt(gam5))],
-                   [norm_w*np.sqrt(gam3 - 0.25 * gam4 ** 2 / gam5)],
-                   [0]])
-    return A1, b1.squeeze()
-
-def stab_filter_c1_and_d1(gam1,
-                          gam2,
-                          Q, R, P, K, Bd,
-                          e_k,
-                          w,
-                          u_max, v_nom, beta):
-    d_a = e_k.T @ P @ e_k
-    d_b = e_k.T @ (P - Q - K.T @ R @ K) @ e_k
-    d_c = np.max([(gam1 + gam2*u_max - v_nom)**2, (gam1 + gam2*(-u_max) - v_nom)**2])* Bd.T @ P @ Bd
-    #d_c = 0.0
-    d_d = 2*w*(gam1 - v_nom)
-    d1 = (-1/(2*beta))*(d_a - d_b - d_c + d_d)
-
-    c1 = (-1/(2*beta))*np.array([[2*w*gam2, 1.0, 0.0]])
-
-    return c1, d1.squeeze()
-
-def dummy_var_matrices(gam2, L_gam5, d_weight):
+def dummy_var_matrices(gam2, L_gam5, d_weight): # for feedback linearization
     A = np.zeros((8,4))
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
     A[2:4, :2] = 2*L_gam5[0]
     A[4:6, :2] = 2*L_gam5[1]
     A[-1, -1] = -1.0
+    A[-2, -2] = d_weight
 
     b = np.zeros((8,1))
     b[-1, 0] = 1.0
@@ -292,6 +260,73 @@ def dummy_var_matrices(gam2, L_gam5, d_weight):
     c[0, -1] = 1.0
 
     d = 1
+
+    return A, b, c, d
+
+def stab_filter_matrices(gam1,
+                         gam2,
+                         gam3,
+                         gam4,
+                         L_gam5,
+                         L_gam5_inv,
+                         Q, R, P, K, Bd, Ad,
+                         e_k,
+                         u_max, v_nom, beta_sqrt):
+    
+    w1 = (2 * e_k.T @ (Ad -Bd@K).T @ P @ Bd)
+    w1_abs = np.abs(w1)
+
+    w3 =  e_k.T @ (Q + K.T @ R @ K) @ e_k - (1e-10) # 1e-10 is the epsilon in the formula, TODO update? necessary?
+
+    # bound quadratic term
+    bound = np.zeros(2)
+    bound[0] = np.max((np.abs(gam1[0] + gam2[0].T@u_max - v_nom[0]), np.abs(gam1[0] + gam2[0].T@(-u_max) - v_nom[0]))) # here u_min = -u_max, symmetric constraints on u
+    bound[1] = np.max((np.abs(gam1[1] + gam2[1].T@u_max - v_nom[1]), np.abs(gam1[1] + gam2[1].T@(-u_max) - v_nom[1])))
+    w2 = bound.T @ Bd.T @ P @ Bd @ bound
+
+    term_Linv_gam4_0 = 0.5*L_gam5_inv[0] @ gam4[0]
+    term_Linv_gam4_1 = 0.5*L_gam5_inv[1] @ gam4[1]
+    # if True : #(0.5*gam3[1] - (term_Linv_gam4_1[1])**2) < 0:
+    #     print('Terms Linv*gam4*0.5')
+    #     print(L_gam5[1]@L_gam5[1].T)
+    #     print(L_gam5[1])
+    #     print(L_gam5_inv[1])
+    #     print(gam4[1])
+    #     # print(term_Linv_gam4_0)
+    #     print(term_Linv_gam4_1)
+    #     # print(gam3[0])
+    #     print(gam3[1])
+    #     print((0.5*gam3[1] - (term_Linv_gam4_1[1])**2))
+    #     # exit()
+
+    # print(Bd)
+    # print(P)
+    # print(Bd.T@P@Bd)
+
+    w1_beta_0 = w1_abs[0]*beta_sqrt[0]
+    w1_beta_1 = w1_abs[1]*beta_sqrt[1]
+
+    A = np.zeros((8,4))
+    A[0:2, 0:2] = w1_beta_0*L_gam5[0]    
+    A[4:6, 0:2] = w1_beta_1*L_gam5[1]
+
+    b = np.zeros((8,1))
+    b[0:2, 0] = -w1_beta_0*term_Linv_gam4_0
+    b[2, 0] = w1_beta_0*np.sqrt(0.5*gam3[0] - (term_Linv_gam4_0[0])**2)
+    b[3, 0] = w1_beta_0*np.sqrt(0.5*gam3[0] - (term_Linv_gam4_0[1])**2)
+    b[4:6, 0] = -w1_beta_1*term_Linv_gam4_1
+    # b[6, 0] = w1_beta_1*np.sqrt(0.5*gam3[1] - (term_Linv_gam4_1[0])**2)
+    # b[7, 0] = w1_beta_1*np.sqrt(max((0.5*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10)) # TODO: better thing than bounding term here????
+    # b[7, 0] = w1_beta_1*np.sqrt((0.5*gam3[1] - (term_Linv_gam4_1[1])**2))
+
+    b[6, 0] = w1_beta_1*np.sqrt(0.4*gam3[1] - (term_Linv_gam4_1[0])**2) # uneven gamma3 distribution for numerical stability
+    b[7, 0] = w1_beta_1*np.sqrt((0.6*gam3[1] - (term_Linv_gam4_1[1])**2))
+
+    c = np.zeros((1, 4))
+    c[0, 0:2] = -w1[0]*gam2[0].T -w1[1]*gam2[1].T
+    c[0, 2] = 1
+
+    d = w3 - w2 -w1[0]*(gam1[0]-v_nom[0]) - w1[1]*(gam1[1]-v_nom[1])    
 
     return A, b, c, d
 

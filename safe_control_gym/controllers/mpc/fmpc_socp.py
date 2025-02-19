@@ -179,8 +179,33 @@ class FlatMPC_SOCP(BaseController):
         gp_1 = GaussianProcess(gp_type, likelihood_1, 1, output_dir_1)
         gp_1.init_with_hyperparam(output_dir_1)
         gps = [gp_0, gp_1]
+
+        # compute matrices for stability filter
+        # discrete A and B matrices from MPC. This is overkill, as its just 1 and 0 entries.
+        dfdxdfdu = self.mpc.model.df_func(x=self.mpc.model.X_EQ, u=self.mpc.model.U_EQ)
+        dfdx = dfdxdfdu['dfdx'].toarray()
+        dfdu = dfdxdfdu['dfdu'].toarray()
+        Ad, Bd = discretize_linear_system(dfdx, dfdu, self.mpc.dt, exact=True)
+        # weight matrices from MPC
+        Q = self.mpc.Q
+        R = self.mpc.R
+        # compute P and K of equivalent finite horizon ricatti controller
+        # Equations taken from Borrelli Sec 8.3 but with the opposite sign for K as we are using the convention
+        # u = -Kx and they use u = Kx
+        P = deepcopy(Q)*100.0 # terminal constraint weight
+        for i in range(self.mpc.T):
+            P = Ad.T @ P @ Ad + Q - Ad.T @ P @ Bd @ np.linalg.pinv(Bd.T @ P @ Bd + R) @ Bd.T @ P @ Ad
+        K = np.linalg.pinv(Bd.T @ P @ Bd + R) @ Bd.T @ P @ Ad
+        ctrl_mats = {}
+        ctrl_mats['Ad'] = Ad
+        ctrl_mats['Bd'] = Bd
+        ctrl_mats['Q'] = Q
+        ctrl_mats['R'] = R
+        ctrl_mats['P'] = P
+        ctrl_mats['K'] = K
+
         # initialize SOCP Filter
-        self.filter = DiscreteSOCPFilter('test',gps=gps, input_bound=np.array((80, 0.4)))
+        self.filter = DiscreteSOCPFilter('test', ctrl_mats, gps=gps, input_bound=np.array((15, 0.4)))
 
         # setup double integrator for dynamic extension
         self.eta = np.zeros(2)
@@ -291,7 +316,7 @@ class FlatMPC_SOCP(BaseController):
         # get flat state estimation from observer
         z_obs = self.fs_obs.compute_observation(obs)
         
-        # z_ref = self.get_references() # for debugging
+       
 
         # run MPC controller 
         v = self.mpc.select_action(z_obs) 
@@ -302,8 +327,9 @@ class FlatMPC_SOCP(BaseController):
         # action_analytic = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
         zd = z_horizon[:, 0]
         vd = v_horizon[:, 0]
+        z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, means, covs = self.filter.compute_feedback_input(zd, zd, vd) # also think about which z_d to give. First or second in horizon
+        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd) 
 
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
