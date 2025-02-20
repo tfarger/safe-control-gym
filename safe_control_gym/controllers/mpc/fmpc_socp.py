@@ -169,6 +169,9 @@ class FlatMPC_SOCP(BaseController):
         B_dyn_ext = np.zeros((2, 2))
         B_dyn_ext[1, 0] = 1.0
         self.Ad_dyn_ext, self.Bd_dyn_ext = discretize_linear_system(A_dyn_ext, B_dyn_ext, self.mpc.dt, exact=True)
+        dyn_ext_mat = {} # for discrete socp filter
+        dyn_ext_mat['Ad'] = self.Ad_dyn_ext
+        dyn_ext_mat['Bd'] = self.Bd_dyn_ext
 
 
         # setup discrete socp filter for dynamic feedback linearization with constraints
@@ -214,7 +217,7 @@ class FlatMPC_SOCP(BaseController):
         ctrl_mats['K'] = K
 
         # initialize SOCP Filter
-        self.filter = DiscreteSOCPFilter('test', ctrl_mats, gps=gps, input_bound=np.array((3, (5/180*np.pi))))
+        self.filter = DiscreteSOCPFilter(ctrl_mats, dyn_ext_mat, gps, input_bound=np.array((3, (12/180*np.pi))), thrust_bound=0.41)
 
         self.controller_iteration = 0
 
@@ -286,6 +289,7 @@ class FlatMPC_SOCP(BaseController):
                              'gp_covs': [],
                              'v_des':[],
                              'socp_slack':[], 
+                             'socp_slack2':[],
                              'socp_dummy':[],
                              'socp_cost':[],
                              'socp_cost_linPart':[],  
@@ -331,7 +335,7 @@ class FlatMPC_SOCP(BaseController):
         vd = v_horizon[:, 0]
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, socp_solve_time, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd) 
+        action_extended_socp, success, d_val, q_dummy_val, d_slack_2, cost_val, cost_val_lin_part, socp_solve_time, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) 
 
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
@@ -371,6 +375,7 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['gp_covs'].append(covs)
         self.results_dict['v_des'].append(vd)
         self.results_dict['socp_slack'].append(d_val)
+        self.results_dict['socp_slack2'].append(d_slack_2)
         self.results_dict['socp_dummy'].append(q_dummy_val)
         self.results_dict['socp_cost'].append(cost_val)
         self.results_dict['socp_cost_linPart'].append(cost_val_lin_part)

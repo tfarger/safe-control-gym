@@ -44,24 +44,30 @@ def evaluateFMPC_SOCP(show_plots = False):
     # u_analytic_noExt = data_dict_fmpc['u_oldFMPC'][0]
     u_analytic_ext = data_dict_fmpc['u_extFT'][0]
     u_socp = data_dict_fmpc['u_extSOCP'][0]
-    # u = data_dict_fmpc['u'][0]
+    u = data_dict_fmpc['u'][0]
     gp_means = data_dict_fmpc['gp_means'][0]
     gp_covs = data_dict_fmpc['gp_covs'][0]
 
     v_des = data_dict_fmpc['v_des'][0]
 
     d_slack = data_dict_fmpc['socp_slack'][0]
+    d_slack2 = data_dict_fmpc['socp_slack2'][0]
     q_dummy = data_dict_fmpc['socp_dummy'][0]
     cost_val = data_dict_fmpc['socp_cost'][0]
     cost_val_lin_part = data_dict_fmpc['socp_cost_linPart'][0]
     socp_solve_time = data_dict_fmpc['socp_solve_time'][0]
+
+    print('Maximum thrust Tc')
+    print(np.max(u, axis=0)[0])
+    print('Maximum angle in deg')
+    print(np.max(u, axis=0)[1]*180/np.pi)
 
 
 
 
 
     if show_plots:
-        fig, ax = plt.subplots(6, 2)
+        fig, ax = plt.subplots(7, 2)
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_analytic_ext[:, 0], label='analytic, dynamic extension')
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_socp[:, 0], label='socp')
         ax[0, 0].set_title('Input extended system: Tc_ddot')
@@ -97,7 +103,7 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[3, 1].set_title('GP1 predictions: 2x standard deviation ')
 
         ax[4, 0].plot(range(np.shape(u_analytic_ext)[0]), d_slack, label='SOCP Slack')
-        ax[4, 0].set_title('SOCP slack variable')
+        ax[4, 0].set_title('SOCP slack variable stability')
 
         ax[4, 1].plot(range(np.shape(u_analytic_ext)[0]), q_dummy, label='SOCP Dummy')
         ax[4, 1].set_title('SOCP dummy variable of FB lin')
@@ -113,6 +119,9 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[5, 1].plot((0, np.shape(u_analytic_ext)[0]), (np.mean(socp_solve_time), np.mean(socp_solve_time)), label='SOCP mean')
         ax[5, 1].set_title('Solve times in s')
         ax[5, 1].legend()
+
+        ax[6, 0].plot(range(np.shape(u_analytic_ext)[0]), d_slack2, label='SOCP Slack dynExt')
+        ax[6, 0].set_title('SOCP slack variable dynamic extension')
 
         plt.show()
 

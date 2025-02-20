@@ -11,9 +11,9 @@ from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, Gau
 import matplotlib.pyplot as plt
 
 class DiscreteSOCPFilter:
-    def __init__(self, name, ctrl_mat, d_weight=25.0, input_bound=None, state_bound=None, gps=None):
-        self.name = name
-        self.d_weight = d_weight # for slack variable, = 2*sqrt(rho) in formulas
+    def __init__(self, ctrl_mat, dyn_ext_mat,  gps, d1_weight=25.0, d2_weight=250000.0, input_bound=None, state_bound=None, thrust_bound=None):
+        self.d1_weight = d1_weight # for slack variable, = 2*sqrt(rho) in formulas
+        self.d2_weight = d2_weight
         self.gps = gps
 
         # get matrices for stability constraint
@@ -26,6 +26,10 @@ class DiscreteSOCPFilter:
 
         self.beta_sqrt = [2, 2] # sqrt(beta_i) in formulas # TODO get from function call
 
+        # matrices for dynamic extension, for thrust constraint
+        Ad_dyn_ext = dyn_ext_mat['Ad']
+        Bd_dyn_ext = dyn_ext_mat['Bd']
+
 
         self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO make dynamic  
         self.norm_z = self.normalization_vector[:4]      
@@ -34,13 +38,13 @@ class DiscreteSOCPFilter:
         self.input_bound_normalized = input_bound/self.norm_u # normalize the input and state bound for optimization
         # self.state_bound = state_bound # TODO: normalize
         # Opt variables and parameters
-        self.X = cp.Variable(shape=(4,))
-        self.A1 = cp.Parameter(shape=(8, 4))
-        self.A2 = cp.Parameter(shape=(8, 4))
-        self.b1 = cp.Parameter(shape=(8,))
+        self.X = cp.Variable(shape=(5,))
+        self.A1 = cp.Parameter(shape=(9, 5))
+        self.A2 = cp.Parameter(shape=(8, 5))
+        self.b1 = cp.Parameter(shape=(9,))
         self.b2 = cp.Parameter(shape=(8,))
-        self.c1 = cp.Parameter(shape=(1, 4))
-        self.c2 = cp.Parameter(shape=(1, 4))
+        self.c1 = cp.Parameter(shape=(1, 5))
+        self.c2 = cp.Parameter(shape=(1, 5))
         self.d1 = cp.Parameter()
         self.d2 = cp.Parameter()
         # put into lists
@@ -93,19 +97,33 @@ class DiscreteSOCPFilter:
             #     bs.append(b3)
             #     cs.append(c3)
             #     ds.append(d3)
-            A_inp = np.zeros((2, 4))
+            A_inp = np.zeros((2, 5))
             A_inp[0, 0] = 1.0
             A_inp[1, 1] = 1.0
             constraints = constraints + [A_inp @ self.X <= self.input_bound_normalized]
             constraints = constraints + [-self.input_bound_normalized <= A_inp @ self.X] 
+
+        self.eta = cp.Parameter(shape=(2,))
+        if thrust_bound is not None:
+            # constraint for dynamic extension
+            
+            # selection_mat = np.zeros((1, 2))
+            # selection_mat[0, 0] = 1.0
+            unnormalize_mat = np.zeros((2,5))
+            unnormalize_mat[0, 0] = self.norm_u[0]
+            unnormalize_mat[1, 1] = self.norm_u[1]
+            slacking_vect = np.zeros((1, 5))
+            slacking_vect[0, -1] = 1.0
+            constraints = constraints + [(Ad_dyn_ext @ self.eta + Bd_dyn_ext @ unnormalize_mat @ self.X)[0] <= thrust_bound + slacking_vect @ self.X] # better as SOC constraint??
+
             
         # define cost function
-        self.cost = cp.Parameter(shape=(1, 4))  
+        self.cost = cp.Parameter(shape=(1, 5))  
 
         # setup optimization problem      
         self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), constraints)
 
-    def compute_feedback_input(self, z_des, z_ref, v_des, x_init=None, **kwargs): #TODO: remove this, not needed anymore, improve speed maybe
+    def compute_feedback_input(self, z_des, z_ref, v_des, eta,  x_init=None, **kwargs): #TODO: remove this, not needed anymore, improve speed maybe
         """ Compute u so it can be used in feedback function
         Args: 
         z_des: flat state to linearize with, from FMPC
@@ -113,14 +131,14 @@ class DiscreteSOCPFilter:
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
-        u, d_sf, q_dummy_val, cost_val, cost_val_lin, solve_time, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        u, d_sf, q_dummy_val, d2_slack, cost_val, cost_val_lin, solve_time, means, covs = self.solve(gps, z_des, z_ref, v_des, eta, x_init=x_init)
         if 'optimal' in self.prob.status:
             success = True
         else:
             success = False
-        return u, success, d_sf, q_dummy_val, cost_val, cost_val_lin, solve_time, means, covs
+        return u, success, d_sf, q_dummy_val, d2_slack, cost_val, cost_val_lin, solve_time, means, covs
 
-    def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
+    def solve(self, gp_models, z, z_ref, v_des, eta, x_init=np.zeros((3,))):
         e_k = z - z_ref
         # Compute state dependent values
         gam1 = []
@@ -147,7 +165,7 @@ class DiscreteSOCPFilter:
         self.cost.value = cost
 
         # Compute dummy var mats (feedback linearization part)
-        A1, b1, c1, d1 = dummy_var_matrices(gam2, L_gam5, self.d_weight)
+        A1, b1, c1, d1 = dummy_var_matrices(gam2, L_gam5, self.d1_weight, self.d2_weight)
         self.A1.value = A1
         self.b1.value = b1.squeeze()
         self.c1.value = c1
@@ -162,6 +180,9 @@ class DiscreteSOCPFilter:
         self.b2.value = b2.squeeze()
         self.c2.value = c2
         self.d2.value = d2
+
+        # set eta parameter for dynamic extension constraint
+        self.eta.value = eta
 
         # # Compute state constraints.
 
@@ -211,6 +232,7 @@ class DiscreteSOCPFilter:
         # print(Linv_gam5[0])
         # print(L_gam5[1])
         # print(Linv_gam5[1])
+        
 
 
 
@@ -225,15 +247,15 @@ class DiscreteSOCPFilter:
             cov1 = gam3[1] + gam4[1].T@u_opt + u_opt.T@gam5[1]@u_opt
             cost_val = self.cost.value@self.X.value
             cost_val_lin_part = self.cost.value[0, 0]*self.X.value[0] + self.cost.value[0, 1]*self.X.value[1]
-            cost_val_quad_part = self.X.value[3]
+            cost_val_quad_part = self.X.value[2]
             cost_val_double_check = cost_val_lin_part + cost_val_quad_part
             solve_time = self.prob.solver_stats.solve_time
-            return self.X.value[0:2]*self.norm_u, self.X.value[2], self.X.value[3], cost_val, cost_val_lin_part, solve_time,  [mean0, mean1], [cov0, cov1]
+            return self.X.value[0:2]*self.norm_u, self.X.value[3], self.X.value[2], self.X.value[4], cost_val, cost_val_lin_part, solve_time,  [mean0, mean1], [cov0, cov1]
         
         
         else:
             print('')
-            return 0, 0, 0, 0, 0, 0, 0
+            return np.array((0, 0)), 0, 0, 0, 0, 0, [0,0], [0,0]
 
 def get_gammas(z, gp_model, norm_z_vect): 
     # remove position and velocity   
@@ -254,23 +276,24 @@ def compute_cost(gam1, gam2, gam4, v_des):
     gam1_mat = np.vstack((gam1[0], gam1[1]))
     gam2_mat = np.vstack((gam2[0], gam2[1])) # .T or not makes no difference
     cost = 2 * (gam1_mat - v_des.reshape((2,1))).T @ gam2_mat + gam4[0].reshape((1,2)) + gam4[1].reshape((1, 2))
-    cost = np.append(cost, np.array([[0, 1.0]]), axis=1)
+    cost = np.append(cost, np.array([[1.0, 0, 0]]), axis=1)
     return cost
 
-def dummy_var_matrices(gam2, L_gam5, d_weight): # for feedback linearization
-    A = np.zeros((8,4))
+def dummy_var_matrices(gam2, L_gam5, d1_weight, d2_weight): # for feedback linearization
+    A = np.zeros((9,5))
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
     A[2:4, :2] = 2*L_gam5[0]
     A[4:6, :2] = 2*L_gam5[1]
-    A[-1, -1] = -1.0
-    A[-2, -2] = d_weight
+    A[6, 2] = -1.0
+    A[7, 3] = d1_weight
+    A[8, 4] = d2_weight
 
-    b = np.zeros((8,1))
-    b[-1, 0] = 1.0
+    b = np.zeros((9,1))
+    b[6, 0] = 1.0
 
-    c = np.zeros((1, 4))
-    c[0, -1] = 1.0
+    c = np.zeros((1, 5))
+    c[0, 2] = 1.0
 
     d = 1
 
@@ -325,7 +348,7 @@ def stab_filter_matrices(gam1,
     w1_beta_0 = w1_abs[0]*beta_sqrt[0]
     w1_beta_1 = w1_abs[1]*beta_sqrt[1]
 
-    A = np.zeros((8,4))
+    A = np.zeros((8,5))
     A[0:2, 0:2] = w1_beta_0*L_gam5[0]    
     A[4:6, 0:2] = w1_beta_1*L_gam5[1]
 
@@ -341,9 +364,9 @@ def stab_filter_matrices(gam1,
     b[6, 0] = w1_beta_1*np.sqrt(0.4*gam3[1] - (term_Linv_gam4_1[0])**2) # uneven gamma3 distribution for numerical stability
     b[7, 0] = w1_beta_1*np.sqrt((0.6*gam3[1] - (term_Linv_gam4_1[1])**2))
 
-    c = np.zeros((1, 4))
+    c = np.zeros((1, 5))
     c[0, 0:2] = -w1[0]*gam2[0].T -w1[1]*gam2[1].T
-    c[0, 2] = 1
+    c[0, 3] = 1
 
     d = w3 - w2 -w1[0]*(gam1[0]-v_nom[0]) - w1[1]*(gam1[1]-v_nom[1])    
 
