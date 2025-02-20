@@ -162,6 +162,15 @@ class FlatMPC_SOCP(BaseController):
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
 
+        # setup double integrator for dynamic extension
+        self.eta = np.zeros(2)
+        A_dyn_ext = np.zeros((2, 2))
+        A_dyn_ext[0, 1] = 1.0
+        B_dyn_ext = np.zeros((2, 2))
+        B_dyn_ext[1, 0] = 1.0
+        self.Ad_dyn_ext, self.Bd_dyn_ext = discretize_linear_system(A_dyn_ext, B_dyn_ext, self.mpc.dt, exact=True)
+
+
         # setup discrete socp filter for dynamic feedback linearization with constraints
         # load two GPs
         output_dir_0 = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/gp_v0'
@@ -205,15 +214,7 @@ class FlatMPC_SOCP(BaseController):
         ctrl_mats['K'] = K
 
         # initialize SOCP Filter
-        self.filter = DiscreteSOCPFilter('test', ctrl_mats, gps=gps, input_bound=np.array((15, 0.4)))
-
-        # setup double integrator for dynamic extension
-        self.eta = np.zeros(2)
-        A_dyn_ext = np.zeros((2, 2))
-        A_dyn_ext[0, 1] = 1.0
-        B_dyn_ext = np.zeros((2, 2))
-        B_dyn_ext[1, 0] = 1.0
-        self.Ad_dyn_ext, self.Bd_dyn_ext = discretize_linear_system(A_dyn_ext, B_dyn_ext, self.mpc.dt, exact=True)
+        self.filter = DiscreteSOCPFilter('test', ctrl_mats, gps=gps, input_bound=np.array((3, (5/180*np.pi))))
 
         self.controller_iteration = 0
 
@@ -287,7 +288,8 @@ class FlatMPC_SOCP(BaseController):
                              'socp_slack':[], 
                              'socp_dummy':[],
                              'socp_cost':[],
-                             'socp_cost_linPart':[],                            
+                             'socp_cost_linPart':[],  
+                             'socp_solve_time':[],                           
                              }
 
     # @timing
@@ -329,7 +331,7 @@ class FlatMPC_SOCP(BaseController):
         vd = v_horizon[:, 0]
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd) 
+        action_extended_socp, success, d_val, q_dummy_val, cost_val, cost_val_lin_part, socp_solve_time, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd) 
 
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
@@ -372,6 +374,7 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['socp_dummy'].append(q_dummy_val)
         self.results_dict['socp_cost'].append(cost_val)
         self.results_dict['socp_cost_linPart'].append(cost_val_lin_part)
+        self.results_dict['socp_solve_time'].append(socp_solve_time)
         
         return action
     

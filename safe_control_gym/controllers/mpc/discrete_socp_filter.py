@@ -24,12 +24,14 @@ class DiscreteSOCPFilter:
         self.P = ctrl_mat['P']
         self.K = ctrl_mat['K']
 
-        self.beta_sqrt = [2, 2] # sqrt(beta) in formulas # TODO get from function call
+        self.beta_sqrt = [2, 2] # sqrt(beta_i) in formulas # TODO get from function call
 
 
-        self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO make dynamic
-        
-        self.input_bound = input_bound/self.normalization_vector[4:] # normalize the input and state bound for optimization
+        self.normalization_vector = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO make dynamic  
+        self.norm_z = self.normalization_vector[:4]      
+        self.norm_u = self.normalization_vector[4:]
+
+        self.input_bound_normalized = input_bound/self.norm_u # normalize the input and state bound for optimization
         # self.state_bound = state_bound # TODO: normalize
         # Opt variables and parameters
         self.X = cp.Variable(shape=(4,))
@@ -48,20 +50,7 @@ class DiscreteSOCPFilter:
         ds = [self.d1, self.d2]
 
         # disable  state bound for now
-        state_bound = None
-        # Add input constraints if supplied
-        if input_bound is not None:
-            #TODO: implement this as something simpler than an SOC constraint, Cone constraint is overkill as a lot is zero
-            for i in range(len(input_bound)):
-                A3 = np.zeros((4, 4))
-                A3[0, i] = 1.0
-                b3 = np.zeros((4, 1))
-                c3 = np.zeros((1, 4))
-                d3 = input_bound[i]
-                As.append(A3)
-                bs.append(b3)
-                cs.append(c3)
-                ds.append(d3)
+        state_bound = None 
         if state_bound is not None:
             h = state_bound['h']
             bcon = state_bound['b']
@@ -85,15 +74,38 @@ class DiscreteSOCPFilter:
             self.bstate = None
             self.cstate = None
             self.dstate = None
-        # define cost function
-        self.cost = cp.Parameter(shape=(1, 4))
+        # create SOC constraints
         m = len(As)
-        soc_constraints = [
+        constraints = [
             cp.SOC(cs[i] @ self.X + ds[i], As[i] @ self.X + bs[i]) for i in range(m)
         ]
-        self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), soc_constraints)
 
-    def compute_feedback_input(self, z_des, z_ref, v_des, x_init=None, **kwargs):
+        # Add linear constraints: input constraints
+        if input_bound is not None:
+            # #TODO: implement this as something simpler than an SOC constraint, Cone constraint is overkill as a lot is zero
+            # for i in range(len(input_bound)):
+            #     A3 = np.zeros((4, 4))
+            #     A3[0, i] = 1.0
+            #     b3 = np.zeros((4, 1))
+            #     c3 = np.zeros((1, 4))
+            #     d3 = self.input_bound_normalized[i]
+            #     As.append(A3)
+            #     bs.append(b3)
+            #     cs.append(c3)
+            #     ds.append(d3)
+            A_inp = np.zeros((2, 4))
+            A_inp[0, 0] = 1.0
+            A_inp[1, 1] = 1.0
+            constraints = constraints + [A_inp @ self.X <= self.input_bound_normalized]
+            constraints = constraints + [-self.input_bound_normalized <= A_inp @ self.X] 
+            
+        # define cost function
+        self.cost = cp.Parameter(shape=(1, 4))  
+
+        # setup optimization problem      
+        self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), constraints)
+
+    def compute_feedback_input(self, z_des, z_ref, v_des, x_init=None, **kwargs): #TODO: remove this, not needed anymore, improve speed maybe
         """ Compute u so it can be used in feedback function
         Args: 
         z_des: flat state to linearize with, from FMPC
@@ -101,12 +113,12 @@ class DiscreteSOCPFilter:
         v_des: flat input from FMPC
         x_init=None: initial value for solver"""
         gps = self.gps
-        u, d_sf, q_dummy_val, cost_val, cost_val_lin, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
+        u, d_sf, q_dummy_val, cost_val, cost_val_lin, solve_time, means, covs = self.solve(gps, z_des, z_ref, v_des, x_init=x_init)
         if 'optimal' in self.prob.status:
             success = True
         else:
             success = False
-        return u, success, d_sf, q_dummy_val, cost_val, cost_val_lin, means, covs
+        return u, success, d_sf, q_dummy_val, cost_val, cost_val_lin, solve_time, means, covs
 
     def solve(self, gp_models, z, z_ref, v_des, x_init=np.zeros((3,))):
         e_k = z - z_ref
@@ -119,7 +131,7 @@ class DiscreteSOCPFilter:
         L_gam5 = []
         Linv_gam5 = []
         for i in range(len(gp_models)):
-            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i], self.normalization_vector)
+            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z, gp_models[i], self.norm_z)
             L_chol = np.linalg.cholesky(gamma5)
             L_chol_inv = np.linalg.inv(L_chol)
             gam1.append(gamma1)
@@ -145,7 +157,7 @@ class DiscreteSOCPFilter:
         v_nom = v_des # from equivalence of FMPC with gain matrix
         A2, b2, c2, d2 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
                                               self.Q, self.R, self.P, self.K, self.Bd, self.Ad, e_k,
-                                              self.input_bound, v_nom, self.beta_sqrt)
+                                              self.input_bound_normalized, v_nom, self.beta_sqrt)
         self.A2.value = A2
         self.b2.value = b2.squeeze()
         self.c2.value = c2
@@ -215,18 +227,19 @@ class DiscreteSOCPFilter:
             cost_val_lin_part = self.cost.value[0, 0]*self.X.value[0] + self.cost.value[0, 1]*self.X.value[1]
             cost_val_quad_part = self.X.value[3]
             cost_val_double_check = cost_val_lin_part + cost_val_quad_part
-            return self.X.value[0:2]*self.normalization_vector[4:], self.X.value[2], self.X.value[3], cost_val, cost_val_lin_part, [mean0, mean1], [cov0, cov1]
+            solve_time = self.prob.solver_stats.solve_time
+            return self.X.value[0:2]*self.norm_u, self.X.value[2], self.X.value[3], cost_val, cost_val_lin_part, solve_time,  [mean0, mean1], [cov0, cov1]
         
         
         else:
             print('')
             return 0, 0, 0, 0, 0, 0, 0
 
-def get_gammas(z, gp_model, normalization_vector): 
+def get_gammas(z, gp_model, norm_z_vect): 
     # remove position and velocity   
     rows_to_remove = [0, 1, 4, 5]
     z = np.delete(z, rows_to_remove)
-    z = z/normalization_vector[:4]
+    z = z/norm_z_vect
     query_np = np.hstack((z, np.zeros(2))) # zeros as dummy inputs u, to make length 10. get removed in compute_gammas()
     query = torch.from_numpy(query_np).double().unsqueeze(0)
     gamma1, gamma2, gamma3, gamma4, gamma5 = gp_model.model.compute_gammas(query)
@@ -239,7 +252,7 @@ def get_gammas(z, gp_model, normalization_vector):
 
 def compute_cost(gam1, gam2, gam4, v_des):
     gam1_mat = np.vstack((gam1[0], gam1[1]))
-    gam2_mat = np.vstack((gam2[0].T, gam2[1].T)) # .T or not makes no difference
+    gam2_mat = np.vstack((gam2[0], gam2[1])) # .T or not makes no difference
     cost = 2 * (gam1_mat - v_des.reshape((2,1))).T @ gam2_mat + gam4[0].reshape((1,2)) + gam4[1].reshape((1, 2))
     cost = np.append(cost, np.array([[0, 1.0]]), axis=1)
     return cost
@@ -302,6 +315,12 @@ def stab_filter_matrices(gam1,
     # print(Bd)
     # print(P)
     # print(Bd.T@P@Bd)
+
+    tmp1 = gam1[0] + gam2[0].T@u_max
+    tmp2 = gam1[0] + gam2[0].T@(-u_max)
+
+    tmp3 = gam1[1] + gam2[1].T@u_max
+    tmp4 = gam1[1] + gam2[1].T@(-u_max)
 
     w1_beta_0 = w1_abs[0]*beta_sqrt[0]
     w1_beta_1 = w1_abs[1]*beta_sqrt[1]

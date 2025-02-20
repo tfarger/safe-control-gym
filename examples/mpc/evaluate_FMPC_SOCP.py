@@ -54,6 +54,7 @@ def evaluateFMPC_SOCP(show_plots = False):
     q_dummy = data_dict_fmpc['socp_dummy'][0]
     cost_val = data_dict_fmpc['socp_cost'][0]
     cost_val_lin_part = data_dict_fmpc['socp_cost_linPart'][0]
+    socp_solve_time = data_dict_fmpc['socp_solve_time'][0]
 
 
 
@@ -107,6 +108,11 @@ def evaluateFMPC_SOCP(show_plots = False):
         ax[5, 0].plot(range(np.shape(u_analytic_ext)[0]), cost_val_lin_part + q_dummy, label='SOCP Cost Total from comp') # sanity check if it all adds up right
         ax[5, 0].set_title('SOCP cost')
         ax[5, 0].legend()
+
+        ax[5, 1].plot(range(np.shape(u_analytic_ext)[0]), socp_solve_time, label='SOCP')
+        ax[5, 1].plot((0, np.shape(u_analytic_ext)[0]), (np.mean(socp_solve_time), np.mean(socp_solve_time)), label='SOCP mean')
+        ax[5, 1].set_title('Solve times in s')
+        ax[5, 1].legend()
 
         plt.show()
 
