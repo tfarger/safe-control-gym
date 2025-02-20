@@ -5,14 +5,14 @@ algo_config:
     - 1.0e-6
     - 1.0e-6
   q_mpc: 
-    - 50
+    - 70
     - 0.001
-    - 0.1
+    - 0
+    - 0
+    - 70
     - 0.001
-    - 50
-    - 0.001
-    - 0.1
-    - 0.001
+    - 0
+    - 0
   # Prior info
   prior_info:
     prior_prop: null
@@ -20,6 +20,6 @@ algo_config:
     prior_prop_rand_info: null
   warmstart: True
   solver: qrqp
-  use_full_flat_reference: True
+  use_full_flat_reference: False
   use_acados: True
   output_dir: ./fmpc/results
