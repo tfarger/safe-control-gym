@@ -92,22 +92,31 @@ with open(training_data_file, 'rb') as file:
 inputs_train_list = train_data['inputs']
 
 # dump first few training datasets
-inputs_train_list = inputs_train_list[2:11]
+# inputs_train_list = inputs_train_list[2:11]
 input_data = np.vstack(inputs_train_list)
 
-input_data = input_data[::10, :] # downsample from 100Hz to less
+input_data = input_data[::5, :] # downsample from 50Hz to less
 
 rows_to_remove = [0, 1, 4, 5]
 input_data = np.delete(input_data, rows_to_remove, axis=1)
 
+# clip points that are too large, from transient
+indices = np.arange(0, np.shape(input_data)[0])
+plot_data(input_data, indices, 'Input data raw', 'index')
+max_vals = np.array([5, 10, 7, 25, 6, 0.6]) 
+min_vals = - max_vals# np.array([-5, -10, -7, -25, -6, -0.6]) 
+
+mask = np.logical_and(input_data >= min_vals, input_data <= max_vals).all(axis=1)
+
+input_data = input_data[mask]
+indices = np.arange(0, np.shape(input_data)[0])
+# plot_data(input_data, indices, 'Input data clipped', 'index')
+
 normalization_vals = np.max(np.abs(input_data), axis=0)
-# normalization_vals = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42))
-print(normalization_vals)
 input_data = input_data/normalization_vals
 
 indices = np.arange(0, np.shape(input_data)[0])
 plot_data(input_data, indices, 'Input data', 'index')
-# plt.show()
 
 # add random offsets around each point:
 num_samples = 5
@@ -117,14 +126,13 @@ point_noisy_list = []
 
 np.random.seed(9)
 for point in input_data:
-    for offset in offset_magnitudes:
+    for offset_mag in offset_magnitudes:
         for _ in range(num_samples):
-            random_dir = np.random.uniform(-1, 1, 6)
-            sample = point + offset*random_dir
+            offset_dir = np.random.uniform(-1, 1, 6)
+            sample = point + offset_mag*offset_dir
             point_noisy_list.append(sample)
 
 input_data_noisy = np.array(point_noisy_list)
-# plot_data(input_data_noisy, np.arange(0, np.shape(input_data_noisy)[0]), 'Noisy input data', 'index')
 
 # denormalize back to regular range
 input_data_small = input_data_noisy*normalization_vals
@@ -134,7 +142,6 @@ inputs = np.zeros((np.shape(input_data_small)[0], 10))
 inputs[:, 2:4] = input_data_small[:, :2]
 inputs[:, 6:10] = input_data_small[:, 2:6]
 plot_data(inputs, np.arange(0, np.shape(inputs)[0]), 'Noisy input data: full state vector', 'index')
-# plt.show()
 
 # get GP targets v from that: 
 targets = np.zeros((np.shape(input_data_small)[0], 2))
@@ -151,56 +158,3 @@ train_data_dict = {'inputs': inputs, 'targets': targets}
 
 with open('./fgp/gp_train_data_noisyFig8.pkl', 'wb') as file:
     pickle.dump(train_data_dict, file)
-
-        
-
-
-
-
-
-# Training data ###################################################################
-# num_points = 4
-# fac = 0.5
-# range_x_ddot = 2.44 * fac
-# range_x_dddot = 3.98 * fac
-# range_z_ddot = 5.2 * fac
-# range_z_dddot = 19.47 * fac
-# range_u0 = 3.02 * fac
-# range_u1 = 0.42 * fac
-
-# vals_x_ddot = np.linspace(-range_x_ddot, range_x_ddot, num_points)
-# vals_x_dddot = np.linspace(-range_x_dddot ,range_x_dddot  , num_points)
-# vals_z_ddot = np.linspace(-range_z_ddot ,range_z_ddot  , num_points)
-# vals_z_dddot = np.linspace(-range_z_dddot ,range_z_dddot  , num_points)
-# vals_u0 = np.linspace(-range_u0 ,range_u0  , num_points)
-# vals_u1 = np.linspace(-range_u1 ,range_u1  , num_points)
-
-# grid = np.array(np.meshgrid(vals_x_ddot, vals_x_dddot, vals_z_ddot, vals_z_dddot, vals_u0, vals_u1)).T.reshape(-1, 6)
-
-# inputs = np.zeros((np.shape(grid)[0], 10))
-# inputs[:, 2] = grid[:, 0]
-# inputs[:, 3] = grid[:, 1]
-# inputs[:, 6] = grid[:, 2]
-# inputs[:, 7] = grid[:, 3]
-# inputs[:, 8] = grid[:, 4]
-# inputs[:, 9] = grid[:, 5]
-
-# targets = np.zeros((np.shape(grid)[0], 2))
-
-# for i in range(np.shape(grid)[0]):
-#     targets[i, :] = _get_v_from_Z_and_u_2D_att_ext(inputs[i, :8], inputs[i, 8:], inertial_prop, g)
-
-
-# indices = np.arange(0, np.shape(inputs)[0])
-# plot_data(inputs, indices, 'GP training inputs z and u', 'index')
-# plot_data(targets, indices, 'GP training targets v', 'index')
-# plt.show()
-
-
-# train_data_dict = {'inputs': inputs, 'targets': targets}
-
-# with open('./fgp/gp_train_data_grid.pkl', 'wb') as file:
-#     pickle.dump(train_data_dict, file)
-
-
-

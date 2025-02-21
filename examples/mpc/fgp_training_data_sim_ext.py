@@ -59,10 +59,8 @@ def get_one_dataset(additional, PLOT_RUN):
 
     # find start/stop index of cycle 0.5 - 1.5 (full figure8 but starting in the middle)
     use_cycle_num = 1.5
-    start_index = int((episode_len_sec/num_cycles) * ctrl_freq *(use_cycle_num-1))
+    start_index = 0 #int((episode_len_sec/num_cycles) * ctrl_freq *(use_cycle_num-1))
     stop_index = int((episode_len_sec/num_cycles) * ctrl_freq *(use_cycle_num))
-    # start_index = 0
-    # stop_index = -1 # full dataset
     # cut down data
     u_bar_data = u_bar[start_index:stop_index, :]
     z_data = z[start_index:stop_index, :]
@@ -85,7 +83,7 @@ def get_one_dataset(additional, PLOT_RUN):
 ###################################################################################
 ################# Main part #######################################################
 PLOT_RUN = False
-additional_list_train = ['_tr1', '_tr2', '_tr3', '_tr4', '_tr5', '_tr6', '_tr7', '_tr8', '_tr9', '_tr10', '_tr11']
+additional_list_train = ['_tr2', '_tr3', '_tr4', '_tr5', '_tr6', '_tr7', '_tr8', '_tr9', '_tr10', '_tr11']
 additional_list_test = ['_te1', '_te2', '_te3', '_te4']
 
 
@@ -105,8 +103,6 @@ indices = np.arange(0, np.shape(inputs_arr)[0])
 plot_data(inputs_arr, indices, 'GP training inputs z and u', 'index')
 plot_data(targets_arr, indices, 'GP training targets v', 'index')
 plt.show()
-
-# exit()
 
 train_data_dict = {'inputs': inputs, 'targets': targets}
 

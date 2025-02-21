@@ -204,13 +204,13 @@ def prepare_data(inputs_raw, targets_raw, threshold, noise_std, normalization_va
 seed = 43
 PLOT = True
 
-#debugger
-training_data_file = './examples/mpc/fgp/gp_train_data_noisyFig8.pkl'
-eval_data_file = './examples/mpc/fgp/gp_test_data.pkl'
+# #debugger
+# training_data_file = './examples/mpc/fgp/gp_train_data_noisyFig8.pkl'
+# eval_data_file = './examples/mpc/fgp/gp_test_data.pkl'
 
-#run from folder
-# training_data_file = './fgp/gp_train_data.pkl'
-# eval_data_file = './fgp/gp_test_data.pkl' 
+# run from folder
+training_data_file = './fgp/gp_train_data_noisyFig8.pkl'
+eval_data_file = './fgp/gp_test_data.pkl' 
 
 N_train = 2000 # number of training iterations in the GP
 learning_rate = 0.02
@@ -237,7 +237,7 @@ rows_to_remove = [0, 1, 4, 5]
 inputs_train_raw = np.delete(inputs_train_raw, rows_to_remove, axis=1)
 inputs_eval = np.delete(inputs_eval, rows_to_remove, axis=1)
 
-normalization_file_path = './examples/mpc/fgp/normalization_arr.npy'
+normalization_file_path = './fgp/normalization_arr.npy'
 if False:
     normalization_vals = np.max(np.abs(inputs_train_raw), axis=0)
     print('saveing normalization values')
@@ -252,7 +252,7 @@ inputs_eval = inputs_eval/normalization_vals # normalize with same vector as bef
 
 ##########
 # Stuff specific to each GP 
-do_gp_nr = 0 # which GP to train, 0 or 1
+do_gp_nr = 1 # which GP to train, 0 or 1
 
 targets_raw_gp = targets_train_raw[:, do_gp_nr]
 targets_eval = targets_eval[:, do_gp_nr] 
@@ -261,6 +261,6 @@ targets_eval = targets_eval[:, do_gp_nr]
 inputs_train, targets_train = prepare_data(inputs_train_raw, targets_raw_gp, threshold[do_gp_nr], noise_std_list[do_gp_nr], normalization_vals, seed, PLOT)
 
 # GP training and testing
-output_dir = f'./examples/mpc/fgp/gp_v{do_gp_nr}'
+output_dir = f'./fgp/gp_v{do_gp_nr}'
 train_gp(output_dir, inputs_train, targets_train, inputs_eval, targets_eval, PLOT)
 
