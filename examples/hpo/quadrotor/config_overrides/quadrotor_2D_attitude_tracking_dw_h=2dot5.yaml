@@ -65,8 +65,7 @@ task_config:
     trajectory_plane: 'xz'
     trajectory_position_offset: [0, 1.]
     trajectory_scale: 1.0
-    # ilqr_ref: False
-    # ilqr_traj_data: '../lqr/ilqr_ref_traj.npy'
+    ilqr_ref: True
 
   inertial_prop:
     M: 0.033

@@ -78,7 +78,7 @@ task_config:
     alpha_3: 124.8
     pitch_bias: 0.0 # in radian
 
-  episode_len_sec: 11
+  episode_len_sec: [9, 11, 15]
   cost: quadratic
 
   rew_state_weight: [10.0, 0.1, 10.0, 0.1, 0.1, 0.001]
@@ -94,3 +94,11 @@ task_config:
 
   done_on_out_of_bound: True
   done_on_violation: False
+
+  disturbances:
+    dynamics:
+      - disturbance_func: white_noise
+        std: 0.005
+    observation:
+      - disturbance_func: white_noise
+        std: [5.6e-05, 1.5e-02, 2.9e-05, 8.0e-03, 1.3e-03, 3.5e-03]
