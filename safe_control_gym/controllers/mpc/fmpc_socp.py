@@ -58,6 +58,7 @@ class FlatMPC_SOCP(BaseController):
             output_dir='results/temp',
             additional_constraints=None,
             use_acados=False,
+            socp_config = dict,
             **kwargs):
         '''Creates task and controller.
 
@@ -202,8 +203,8 @@ class FlatMPC_SOCP(BaseController):
         Q = self.mpc.Q
         R = self.mpc.R
         # compute P and K of equivalent finite horizon ricatti controller
-        # Equations taken from Borrelli Sec 8.3 but with the opposite sign for K as we are using the convention
-        # u = -Kx and they use u = Kx
+            # Equations taken from Borrelli Sec 8.3 but with the opposite sign for K as we are using the convention
+            # u = -Kx and they use u = Kx
         P = deepcopy(Q)*100.0 # terminal constraint weight
         for i in range(self.mpc.T):
             P = Ad.T @ P @ Ad + Q - Ad.T @ P @ Bd @ np.linalg.pinv(Bd.T @ P @ Bd + R) @ Bd.T @ P @ Ad
@@ -216,10 +217,18 @@ class FlatMPC_SOCP(BaseController):
         ctrl_mats['P'] = P
         ctrl_mats['K'] = K
 
-        # initialize SOCP Filter
-        self.filter = DiscreteSOCPFilter(ctrl_mats, dyn_ext_mat, gps, input_bound=np.array((3, (12/180*np.pi))), thrust_bound=0.41)
 
-        self.controller_iteration = 0
+        normalization_vect = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO load from file
+
+        d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext]       
+
+        # initialize SOCP Filter
+        self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
+                                         normalization_vect=normalization_vect, 
+                                         slack_weights=d_weights, beta_sqrt=socp_config.beta_sqrt, 
+                                         thrust_bound=socp_config.thrust_max, dyn_ext_mat=dyn_ext_mat)
+        
+        self.socp_opt = np.zeros((5,)) # for warmstarting SOCP later
 
 
     # overwrite to input flat trajectory into reference and initialize flat state observer
@@ -310,7 +319,7 @@ class FlatMPC_SOCP(BaseController):
         Returns:
             action (ndarray): Input/action to the task/env.
         '''
-        self.controller_iteration += 1
+
 
         # # to get initial state of drone on trajectory
         # z_ref = self.mpc.get_references()
@@ -320,9 +329,7 @@ class FlatMPC_SOCP(BaseController):
 
         # ts = time.time()    
         # get flat state estimation from observer
-        z_obs = self.fs_obs.compute_observation(obs)
-        
-       
+        z_obs = self.fs_obs.compute_observation(obs)    
 
         # run MPC controller 
         v = self.mpc.select_action(z_obs) 
@@ -330,30 +337,24 @@ class FlatMPC_SOCP(BaseController):
         v_horizon = self.mpc.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        # action_analytic = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
         zd = z_horizon[:, 0]
         vd = v_horizon[:, 0]
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, d_val, q_dummy_val, d_slack_2, cost_val, cost_val_lin_part, socp_solve_time, means, covs = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) 
+        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
 
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
-
-        # if self.controller_iteration < 0:
-        #     action_extended_used = action_extended
-        # else:
-        #     action_extended_used = action_extended_socp
-        
+                
         # do double integration on first action Tc_ddot --> Tc
         self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended_used
         action = np.zeros(np.shape(action_extended))
         action[0] = self.eta[0]
         action[1] = action_extended_used[1]
+
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
 
-        #test = action-action_analytic
 
         # # log execution time                
         # te = time.time()
@@ -366,20 +367,18 @@ class FlatMPC_SOCP(BaseController):
         # self.results_dict['horizon_v'].append(v_horizon)
         # self.results_dict['horizon_z'].append(z_horizon)
 
-        # self.results_dict['ctrl_run_time'].append(te-ts)
-        
-        # self.results_dict['u_oldFMPC'].append(action_analytic)
+        # self.results_dict['ctrl_run_time'].append(te-ts)        
         self.results_dict['u_extFT'].append(action_extended)
         self.results_dict['u_extSOCP'].append(action_extended_socp)
-        self.results_dict['gp_means'].append(means)
-        self.results_dict['gp_covs'].append(covs)
+        self.results_dict['gp_means'].append(socp_logging['means'])
+        self.results_dict['gp_covs'].append(socp_logging['covs'])
         self.results_dict['v_des'].append(vd)
-        self.results_dict['socp_slack'].append(d_val)
-        self.results_dict['socp_slack2'].append(d_slack_2)
-        self.results_dict['socp_dummy'].append(q_dummy_val)
-        self.results_dict['socp_cost'].append(cost_val)
-        self.results_dict['socp_cost_linPart'].append(cost_val_lin_part)
-        self.results_dict['socp_solve_time'].append(socp_solve_time)
+        self.results_dict['socp_slack'].append(self.socp_opt[3])
+        self.results_dict['socp_slack2'].append(self.socp_opt[4])
+        self.results_dict['socp_dummy'].append(self.socp_opt[2])
+        self.results_dict['socp_cost'].append(socp_logging['cost'])
+        self.results_dict['socp_cost_linPart'].append(socp_logging['cost_lin'])
+        self.results_dict['socp_solve_time'].append(socp_logging['solve_time'])
         
         return action
     
