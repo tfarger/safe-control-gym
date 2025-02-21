@@ -13,13 +13,13 @@ use_acados: False
 deque_size: 10
 eval_batch_size: 10
 
-  socp_config:
-    beta_sqrt:
-      - 2
-      - 2
-    slack_weight_stability: 25.0
-    slack_weight_dyn_ext: 25.0
-    input_bound:
-      - 3
-      - 0.2
-    thrust_max: 0.8
+  # socp_config:
+  #   beta_sqrt:
+  #     - 2
+  #     - 2
+  #   slack_weight_stability: 25.0
+  #   slack_weight_dyn_ext: 25.0
+  #   input_bound:
+  #     - 3
+  #     - 0.2
+  #   thrust_max: 0.8
