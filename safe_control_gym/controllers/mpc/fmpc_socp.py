@@ -183,6 +183,9 @@ class FlatMPC_SOCP(BaseController):
         assert os.path.exists(output_dir_0), 'cannot find directory of GP 0'
         assert os.path.exists(output_dir_1), 'cannot find directory of GP 1'
 
+        normalization_file_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/examples/mpc/fgp/normalization_arr.npy'
+        assert os.path.exists(normalization_file_path), 'cannot find directory of data normalization vector'
+
         gp_type = ZeroMeanAffineGP
         likelihood_0 = gpytorch.likelihoods.GaussianLikelihood()
         gp_0 = GaussianProcess(gp_type, likelihood_0, 1, output_dir_0)
@@ -217,8 +220,8 @@ class FlatMPC_SOCP(BaseController):
         ctrl_mats['P'] = P
         ctrl_mats['K'] = K
 
-
-        normalization_vect = np.array((2.44,  3.98,  5.20, 19.47,  3.02,  0.42)) # TODO load from file
+        normalization_vect = np.load(normalization_file_path)
+        print(f'GP training data normalization vector: {normalization_vect}')
 
         d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext]       
 

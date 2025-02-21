@@ -45,7 +45,7 @@ task_config:
   task: traj_tracking
   task_info:
     trajectory_type: figure8 #circle
-    num_cycles: 2
+    num_cycles: 1
     trajectory_plane: 'xz'
     trajectory_position_offset: [0, 1.]
     trajectory_scale: 1
@@ -61,7 +61,7 @@ task_config:
     alpha_3: 124.8
     pitch_bias: 0.0 # in radian
 
-  episode_len_sec: 14.5
+  episode_len_sec: 7.25
   cost: quadratic
   obs_goal_horizon: 0
 
