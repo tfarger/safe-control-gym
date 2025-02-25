@@ -59,6 +59,7 @@ class FlatMPC_SOCP(BaseController):
             additional_constraints=None,
             use_acados=False,
             socp_config = dict,
+            flat_state_constraint = dict,
             **kwargs):
         '''Creates task and controller.
 
@@ -160,17 +161,15 @@ class FlatMPC_SOCP(BaseController):
         self.mpc.state_constraints_sym = []
         self.mpc.input_constraints_sym = [] 
         # adding half space constraint on flat state
-        h = np.zeros((8, 1))
-        h[0, 0] = -1.0
-        b = 0.8
-        # h[4, 0] = 1.0
-        # b = 1.35
+        h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
+        assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
+        b = flat_state_constraint.b_val
         sym_func = lambda x: h.T @ x - b
         self.mpc.state_constraints_sym = [sym_func]
-        state_bound = {}
+        state_bound = {} # for discrete socp filter
         state_bound['h'] = h
         state_bound['b'] = b
-        state_bound['quantile'] = 5.0
+        state_bound['quantile'] = flat_state_constraint.quantile
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)

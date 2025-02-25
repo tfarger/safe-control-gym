@@ -53,6 +53,7 @@ class FlatMPC_EXT(BaseController):
             output_dir='results/temp',
             additional_constraints=None,
             use_acados=False,
+            flat_state_constraint = dict,
             **kwargs):
         '''Creates task and controller.
 
@@ -155,11 +156,9 @@ class FlatMPC_EXT(BaseController):
         self.mpc.input_constraints_sym = [] 
 
         # adding half space constraint on flat state
-        h = np.zeros((8, 1))
-        h[0, 0] = -1.0
-        b = 0.80
-        # h[4, 0] = 1.0
-        # b = 1.30
+        h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
+        assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
+        b = flat_state_constraint.b_val
         sym_func = lambda x: h.T @ x - b
         self.mpc.state_constraints_sym = [sym_func]
 

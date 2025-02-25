@@ -78,7 +78,7 @@ task_config:
 #      lower_bounds: [0.079, -0.4]
     - constraint_form: bounded_constraint
       constrained_variable: state
-      active_dims: 0
+      active_dims: 0 # x
       upper_bounds: 2.0
       lower_bounds: -0.8    
 
