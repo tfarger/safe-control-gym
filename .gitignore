@@ -167,3 +167,4 @@ models/
 
 # added by Tobias, 17.1.25
 # /examples/mpc/fgp/*
+*.pkl
