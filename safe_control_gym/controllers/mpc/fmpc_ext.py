@@ -150,9 +150,18 @@ class FlatMPC_EXT(BaseController):
         self.mpc.R = get_cost_weight_matrix(r_mpc, self.mpc.model.nu)
         
         # remove all constraints from system
-        self.mpc.constraints = {}
-        self.mpc.state_constraints_sym = {}
-        self.mpc.input_constraints_sym = {} 
+        self.mpc.constraints = []
+        self.mpc.state_constraints_sym = []
+        self.mpc.input_constraints_sym = [] 
+
+        # adding half space constraint on flat state
+        h = np.zeros((8, 1))
+        h[0, 0] = -1.0
+        b = 0.80
+        # h[4, 0] = 1.0
+        # b = 1.30
+        sym_func = lambda x: h.T @ x - b
+        self.mpc.state_constraints_sym = [sym_func]
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)

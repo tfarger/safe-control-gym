@@ -156,9 +156,21 @@ class FlatMPC_SOCP(BaseController):
         self.mpc.R = get_cost_weight_matrix(r_mpc, self.mpc.model.nu)
         
         # remove all constraints from system
-        self.mpc.constraints = {}
-        self.mpc.state_constraints_sym = {}
-        self.mpc.input_constraints_sym = {} 
+        self.mpc.constraints = []
+        self.mpc.state_constraints_sym = []
+        self.mpc.input_constraints_sym = [] 
+        # adding half space constraint on flat state
+        h = np.zeros((8, 1))
+        h[0, 0] = -1.0
+        b = 0.8
+        # h[4, 0] = 1.0
+        # b = 1.35
+        sym_func = lambda x: h.T @ x - b
+        self.mpc.state_constraints_sym = [sym_func]
+        state_bound = {}
+        state_bound['h'] = h
+        state_bound['b'] = b
+        state_bound['quantile'] = 5.0
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
@@ -229,7 +241,8 @@ class FlatMPC_SOCP(BaseController):
         self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
                                          normalization_vect=normalization_vect, 
                                          slack_weights=d_weights, beta_sqrt=socp_config.beta_sqrt, 
-                                         thrust_bound=socp_config.thrust_max, dyn_ext_mat=dyn_ext_mat)
+                                         thrust_bound=socp_config.thrust_max, dyn_ext_mat=dyn_ext_mat, 
+                                         state_bound=state_bound)
         
         self.socp_opt = np.zeros((5,)) # for warmstarting SOCP later
 

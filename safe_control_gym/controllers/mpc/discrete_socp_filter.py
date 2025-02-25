@@ -29,7 +29,7 @@ class DiscreteSOCPFilter:
         self.norm_u = normalization_vect[4:]
 
         self.input_bound_normalized = input_bound/self.norm_u # normalize the input and state bound for optimization
-        # self.state_bound = state_bound # TODO: normalize
+        self.state_bound = state_bound
 
         # Opt variables and parameters
         self.X = cp.Variable(shape=(5,))
@@ -47,16 +47,23 @@ class DiscreteSOCPFilter:
         cs = [self.c1, self.c2]
         ds = [self.d1, self.d2]
 
-        # disable  state bound for now
-        state_bound = None 
+        # state bound
         if state_bound is not None:
-            h = state_bound['h']
-            bcon = state_bound['b']
-            phi_p = state_bound['phi_p']
-            self.del_sig = phi_p * np.sqrt(h.T @ self.Bd @ self.Bd.T @ h)
-            self.Astate = cp.Parameter(shape=(3, 3))
-            self.bstate = cp.Parameter(shape=(3,))
-            self.cstate = cp.Parameter(shape=(1, 3))
+            self.h = state_bound['h']
+            self.bcon = state_bound['b']
+            quantile = state_bound['quantile']
+            # precompute values
+            h1 = self.h[0:4]
+            h2 = self.h[4:8]
+            bd1 = np.atleast_2d(self.Bd[0:4, 0]).T
+            bd2 = np.atleast_2d(self.Bd[4:8, 1]).T
+
+            self.w_s1 = quantile*np.sqrt(h1.T @ bd1 @ bd1.T @ h1)[0]
+            self.w_s2 = quantile*np.sqrt(h2.T @ bd2 @ bd2.T @ h2)[0]
+
+            self.Astate = cp.Parameter(shape=(8, 5))
+            self.bstate = cp.Parameter(shape=(8,))
+            self.cstate = cp.Parameter(shape=(1, 5))
             self.dstate = cp.Parameter()
             As.append(self.Astate)
             bs.append(self.bstate)
@@ -76,17 +83,6 @@ class DiscreteSOCPFilter:
 
         # Add linear constraints: input constraints
         if input_bound is not None: # TODO remove if, input bound always applied due to stability filter
-            # #TODO: remove old implementation
-            # for i in range(len(input_bound)):
-            #     A3 = np.zeros((4, 4))
-            #     A3[0, i] = 1.0
-            #     b3 = np.zeros((4, 1))
-            #     c3 = np.zeros((1, 4))
-            #     d3 = self.input_bound_normalized[i]
-            #     As.append(A3)
-            #     bs.append(b3)
-            #     cs.append(c3)
-            #     ds.append(d3)
             A_inp = np.zeros((2, 5))
             A_inp[0, 0] = 1.0
             A_inp[1, 1] = 1.0
@@ -179,16 +175,15 @@ class DiscreteSOCPFilter:
 
         # # Compute state constraints.
 
-        # if self.state_bound is not None:
+        if self.state_bound is not None:
 
-        #     Astate, bstate, cstate, dstate = state_con_matrices(z, gam1, gam2, gam3, gam4, gam5,
-        #                                                         self.state_bound, self.Ad, self.Bd, self.del_sig,
-        #                                                         self.d_weight)
+            Astate, bstate, cstate, dstate = state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
+                                                                self.h, self.bcon, self.Ad, self.Bd, self.w_s1, self.w_s2)
 
-        #     self.Astate.value = Astate
-        #     self.bstate.value = bstate.squeeze()
-        #     self.cstate.value = cstate
-        #     self.dstate.value = dstate.squeeze()
+            self.Astate.value = Astate
+            self.bstate.value = bstate.squeeze()
+            self.cstate.value = cstate
+            self.dstate.value = dstate.squeeze()
 
         # debugging: print out everything!!
         # print('-----------------------------------------------------------')
@@ -350,15 +345,12 @@ def stab_filter_matrices(gam1,
 
     b = np.zeros((8,1))
     b[0:2, 0] = -w1_beta_0*term_Linv_gam4_0
-    b[2, 0] = w1_beta_0*np.sqrt(0.5*gam3[0] - (term_Linv_gam4_0[0])**2)
-    b[3, 0] = w1_beta_0*np.sqrt(0.5*gam3[0] - (term_Linv_gam4_0[1])**2)
     b[4:6, 0] = -w1_beta_1*term_Linv_gam4_1
-    # b[6, 0] = w1_beta_1*np.sqrt(0.5*gam3[1] - (term_Linv_gam4_1[0])**2)
-    # b[7, 0] = w1_beta_1*np.sqrt(max((0.5*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10)) # TODO: better thing than bounding term here????
-    # b[7, 0] = w1_beta_1*np.sqrt((0.5*gam3[1] - (term_Linv_gam4_1[1])**2))
 
-    b[6, 0] = w1_beta_1*np.sqrt(0.4*gam3[1] - (term_Linv_gam4_1[0])**2) # distribute gamma3 unevenly for numerical stability
-    b[7, 0] = w1_beta_1*np.sqrt((0.6*gam3[1] - (term_Linv_gam4_1[1])**2))
+    b[2, 0] = w1_beta_0*np.sqrt(max((0.4*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10))
+    b[3, 0] = w1_beta_0*np.sqrt(max((0.6*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10))
+    b[6, 0] = w1_beta_1*np.sqrt(max((0.4*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) # distribute gamma3 unevenly for numerical stability
+    b[7, 0] = w1_beta_1*np.sqrt(max((0.6*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
 
     c = np.zeros((1, 5))
     c[0, 0:2] = -w1[0]*gam2[0].T -w1[1]*gam2[1].T
@@ -368,19 +360,31 @@ def stab_filter_matrices(gam1,
 
     return A, b, c, d
 
-def state_con_matrices(z, gam1, gam2, gam3, gam4, gam5,
-                       state_bound, Ad, Bd, del_sig, d_weight):
-    h = state_bound['h']
-    bcon = state_bound['b']
-    Astate = np.array([[float(del_sig*np.sqrt(gam5)), 0, 0],
-                       [0, 0, 0],
-                       [0, 0, 0]])
-    bstate = np.array([[float(del_sig*gam4 / (2 * np.sqrt(gam5)))],
-                       [float(del_sig*np.sqrt(gam3 - 0.25 * gam4 ** 2 / gam5))],
-                       [0]])
-    cstate = np.array([[float(-h.T @ Bd * gam2), d_weight, 0.0]])
-    dstate = -h.T @ Ad @ z - h.T @ Bd * gam1 + bcon
-    return Astate, bstate, cstate, dstate
+def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
+                       h, b_con, Ad, Bd, w_s1, w_s2):
+    
+    term_Linv_gam4_0 = 0.5*Linv_gam5[0] @ gam4[0]
+    term_Linv_gam4_1 = 0.5*Linv_gam5[1] @ gam4[1]
+    
+    A = np.zeros((8,5))
+    A[0:2, 0:2] = w_s1*L_gam5[0]    
+    A[4:6, 0:2] = w_s2*L_gam5[1]
+
+    b = np.zeros((8,1))
+    b[0:2, 0] = -w_s1*term_Linv_gam4_0
+    b[4:6, 0] = -w_s2*term_Linv_gam4_1
+
+    b[2, 0] = w_s1*np.sqrt(max((0.4*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10)) # distribute gamma3 unevenly for numerical stability
+    b[3, 0] = w_s1*np.sqrt(max((0.6*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10)) # max() is fine, as it only makes constraint more conservative
+    b[6, 0] = w_s2*np.sqrt(max((0.4*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) 
+    b[7, 0] = w_s2*np.sqrt(max((0.6*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
+
+    c = np.zeros((1, 5))
+    c[0, 0:2] = - h.T @ Bd @ np.vstack((gam2[0], gam2[1])) # .T or not makes no difference, see cost function
+    c[0, 4] = 1 # no slacking 
+
+    d = b_con - h.T @ Ad @ z - h.T @ Bd @ np.vstack((gam1[0], gam1[1]))
+    return A, b, c, d
 
 # # for debugging: the transformation that is supposed to be learned with the GP written out analytically
 # def _get_u_from_flat_states_2D_att_ext(z, v, dyn_pars, g):
