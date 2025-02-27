@@ -52,6 +52,7 @@ def evaluateFMPC_SOCP(show_plots = False):
 
     d_slack = data_dict_fmpc['socp_slack'][0]
     d_slack2 = data_dict_fmpc['socp_slack2'][0]
+    d_slack3 = data_dict_fmpc['socp_slack3'][0]
     q_dummy = data_dict_fmpc['socp_dummy'][0]
     cost_val = data_dict_fmpc['socp_cost'][0]
     cost_val_lin_part = data_dict_fmpc['socp_cost_linPart'][0]
@@ -122,6 +123,9 @@ def evaluateFMPC_SOCP(show_plots = False):
 
         ax[6, 0].plot(range(np.shape(u_analytic_ext)[0]), d_slack2, label='SOCP Slack dynExt')
         ax[6, 0].set_title('SOCP slack variable dynamic extension')
+
+        ax[6, 1].plot(range(np.shape(u_analytic_ext)[0]), d_slack3, label='SOCP Slack state const')
+        ax[6, 1].set_title('SOCP slack variable state constraint')
 
         plt.show()
 

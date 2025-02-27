@@ -29,6 +29,7 @@ algo_config:
       - 2
     slack_weight_stability: 25.0
     slack_weight_dyn_ext: 250000.0
+    slack_weight_state: 250000.0
     input_bound:
       - 3
       - 0.6
@@ -36,5 +37,5 @@ algo_config:
 
   flat_state_constraint:
     h_vect: [-1, 0, 0, 0, 0, 0, 0, 0]
-    b_val: 1.2
+    b_val: 0.8
     quantile: 5 # rho(delta) in safety filter

@@ -234,7 +234,7 @@ class FlatMPC_SOCP(BaseController):
         normalization_vect = np.load(normalization_file_path)
         print(f'GP training data normalization vector: {normalization_vect}')
 
-        d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext]       
+        d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext, socp_config.slack_weight_state]       
 
         # initialize SOCP Filter
         self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
@@ -314,6 +314,7 @@ class FlatMPC_SOCP(BaseController):
                              'v_des':[],
                              'socp_slack':[], 
                              'socp_slack2':[],
+                             'socp_slack3':[],
                              'socp_dummy':[],
                              'socp_cost':[],
                              'socp_cost_linPart':[],  
@@ -390,6 +391,7 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['v_des'].append(vd)
         self.results_dict['socp_slack'].append(self.socp_opt[3])
         self.results_dict['socp_slack2'].append(self.socp_opt[4])
+        self.results_dict['socp_slack3'].append(self.socp_opt[5])
         self.results_dict['socp_dummy'].append(self.socp_opt[2])
         self.results_dict['socp_cost'].append(socp_logging['cost'])
         self.results_dict['socp_cost_linPart'].append(socp_logging['cost_lin'])
