@@ -1,6 +1,6 @@
 algo: fmpc_ext
 algo_config:
-  horizon: 50
+  horizon: 40
   r_mpc:
     - 1.0e-6
     - 1.0e-6
@@ -25,5 +25,5 @@ algo_config:
 
   flat_state_constraint:
     h_vect: [-1, 0, 0, 0, 0, 0, 0, 0]
-    b_val: 0.8
+    b_val: 1.2
     
