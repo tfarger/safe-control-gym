@@ -214,6 +214,7 @@ class HPO_Vizier(BaseHPO):
                     self.logger.info('Error plotting results: {}'.format(e))
                     self.logger.std_out_logger.logger.exception('Full exception traceback')
             objective_values = {obj: np.mean(res[obj]) for obj in self.hpo_config.objective}
+            params = self.remove_umoptimized_hps(params)
             trial = vz.Trial(parameters=params, final_measurement=vz.Measurement(objective_values))
             self.study_client._add_trial(trial)
             self.warmstart_trial_value = res
@@ -273,6 +274,7 @@ class HPO_Vizier(BaseHPO):
                 # Extract parameters
                 params = {key: val.value for key, val in optimal_trial.parameters._items.items()}
                 params = self.post_process_best_hyperparams(params)
+                params = self.add_unoptimized_hps(params)
                 
                 # Create filename with multiple objective values
                 objective_values = [
@@ -332,6 +334,7 @@ class HPO_Vizier(BaseHPO):
                 # Extract parameters for each trial
                 trial_params = {key: val.value for key, val in t.parameters._items.items()}
                 trial_params = self.post_process_best_hyperparams(trial_params)
+                trial_params = self.add_unoptimized_hps(trial_params)
                 parameter_keys.update(trial_params.keys())
                 
                 trial_data.append((trial_number, trial_objective_values, trial_params))

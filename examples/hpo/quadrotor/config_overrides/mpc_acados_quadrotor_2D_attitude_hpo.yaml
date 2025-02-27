@@ -11,21 +11,58 @@ hpo_config:
   save_n_best_hps: 1
   # budget
   trials: 60
+  hp_eval_list: ['basic', 'dw_h=2dot5', 'ob_ns=5', 'proc_ns=5'] # list of optimized hyperparameter configurations to evaluate
 
-  # hyperparameters
+  # initial hyperparameters
   hps_config:
     horizon: 30
     q_mpc: [18, 0.1, 18, 0.1, 0.5, 0.01]
     r_mpc: [5., 5.]
-  vizier_hps:
-    horizon: 20
+  basic_init:
+    horizon: 30
     q_mpc:
-    - 15.0
+    - 20.0
     - 0.0001
-    - 11.443439218510104
-    - 3.961985236616466
+    - 14.50136922944172
+    - 0.0001
     - 0.0001
     - 0.0001
     r_mpc:
-    - 15.0
-    - 4.011123731102769
+    - 1.862846289974233
+    - 3.238648152459772
+  dw_h=2dot5_init:
+    horizon: 30
+    q_mpc:
+    - 20.0
+    - 0.0001
+    - 20.0
+    - 8.374061382653329
+    - 0.0001
+    - 0.0001
+    r_mpc:
+    - 5.0
+    - 2.621741395783792
+  ob_ns=5_init:
+    horizon: 30
+    q_mpc:
+    - 20.0
+    - 0.0001
+    - 19.99999999999999
+    - 0.0001
+    - 0.0001
+    - 0.0001
+    r_mpc:
+    - 5.0
+    - 5.0
+  proc_ns=5_init:
+    horizon: 30
+    q_mpc:
+    - 12.714845821652943
+    - 0.0001
+    - 20.0
+    - 2.645583934007067
+    - 0.0001
+    - 0.0001
+    r_mpc:
+    - 5.0
+    - 1.3555886066463283

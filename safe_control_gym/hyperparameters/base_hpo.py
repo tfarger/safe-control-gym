@@ -92,7 +92,11 @@ class BaseHPO(ABC):
             self.search_space_key = self.algo
         self.logger = ExperimentLogger(output_dir)
         self.load_study = load_study
-        self.hps_config = hpo_config.hps_config
+        # set up hp initializations
+        if f'{self.exp_name}_init' in self.hpo_config:
+            self.hps_config = self.hpo_config[f'{self.exp_name}_init']
+        else:
+            self.hps_config = hpo_config.hps_config
         self.n_episodes = hpo_config.n_episodes
         self.objective_bounds = hpo_config.objective_bounds
 
@@ -118,6 +122,25 @@ class BaseHPO(ABC):
             for hp in HYPERPARAMS_DICT[self.search_space_key]:
                 if hp in self.sf_config:
                     self.hps_config[hp] = self.sf_config[hp]
+
+    def remove_umoptimized_hps(self, params):
+        ''' Remove unoptimized hyperparameters from the sampled hyperparameters (one may wants to speficify hps in self.hps_config
+            but does not want them to be optimized).'''
+        
+        for hp in list(params.keys()):
+            if hp not in HYPERPARAMS_DICT[self.search_space_key]:
+                del params[hp]
+
+        return params
+    
+    def add_unoptimized_hps(self, params):
+        ''' Add unoptimized hyperparameters to the sampled hyperparameters for saving purposes.'''
+
+        for hp in self.hps_config:
+            if hp not in params:
+                params[hp] = self.hps_config[hp]
+
+        return params
 
     def special_handle(self, param_name, param_value):
         """
@@ -152,10 +175,11 @@ class BaseHPO(ABC):
         """
         valid = True
         for param in self.hps_config:
-            if HYPERPARAMS_DICT[self.search_space_key][param]['type'] is not type(self.hps_config[param]):
-                valid = False
-                valid, _ = self.special_handle(param, self.hps_config[param])
-                assert valid, f'Hyperparameter {param} should be of type {HYPERPARAMS_DICT[self.search_space_key][param]["type"]}'
+            if param in HYPERPARAMS_DICT[self.search_space_key]:
+                if HYPERPARAMS_DICT[self.search_space_key][param]['type'] is not type(self.hps_config[param]):
+                    valid = False
+                    valid, _ = self.special_handle(param, self.hps_config[param])
+                    assert valid, f'Hyperparameter {param} should be of type {HYPERPARAMS_DICT[self.search_space_key][param]["type"]}'
 
     @abstractmethod
     def setup_problem(self):
@@ -274,16 +298,17 @@ class BaseHPO(ABC):
         params = deepcopy(params)
         for param in list(params.keys()):
             is_list = isinstance(params[param], list)
-            if is_list:
-                # multi-dimensional hyperparameters
-                if list == HYPERPARAMS_DICT[self.search_space_key][param]['type']:
-                    for i, value in enumerate(params[param]):
-                        new_param = f'{param}_{i}'
-                        params[new_param] = value
-                    del params[param]
-                # single-dimensional hyperparameters but in list format
-                else:
-                    params[param] = params[param][0]
+            if param in HYPERPARAMS_DICT[self.search_space_key]:
+                if is_list:
+                    # multi-dimensional hyperparameters
+                    if list == HYPERPARAMS_DICT[self.search_space_key][param]['type']:
+                        for i, value in enumerate(params[param]):
+                            new_param = f'{param}_{i}'
+                            params[new_param] = value
+                        del params[param]
+                    # single-dimensional hyperparameters but in list format
+                    else:
+                        params[param] = params[param][0]
 
         return params
 
