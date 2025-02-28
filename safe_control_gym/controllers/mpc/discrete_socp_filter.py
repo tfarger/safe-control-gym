@@ -312,16 +312,16 @@ def stab_filter_matrices(gam1,
     # w1_abs = np.abs(w1)
     W2 = (Bd.T @ P @ Bd)
     W2_inv = np.linalg.inv(W2)
-    c0 = 0.5 * W2_inv@w1
     w3 =  e_k.T @ (Q + K.T @ R @ K) @ e_k - (1e-10) # 1e-10 is the epsilon in the formula, TODO update? necessary?
+    w4 = 0.5 * W2_inv@w1
     
     u_t1 = u_max.copy()
     u_t1[0] *= -1.0
     u_t2 = u_max.copy()
     u_t2[1] *= -1.0
     u_test = [u_max, -u_max, u_t1 , u_t2]
-    L1 = 2*W2[0,0]*max([(np.abs(gam1[0]-v_nom[0]+c0[0]+ gam2[0].T @ u)) for u in u_test])
-    L2 = 2*W2[1,1]*max([(np.abs(gam1[1]-v_nom[1]+c0[1]+ gam2[1].T @ u)) for u in u_test])
+    L1 = 2*W2[0,0]*max([(np.abs(gam1[0]-v_nom[0]+w4[0]+ gam2[0].T @ u)) for u in u_test])
+    L2 = 2*W2[1,1]*max([(np.abs(gam1[1]-v_nom[1]+w4[1]+ gam2[1].T @ u)) for u in u_test])
 
     term_Linv_gam4_0 = 0.5*L_gam5_inv[0] @ gam4[0]
     term_Linv_gam4_1 = 0.5*L_gam5_inv[1] @ gam4[1]
@@ -344,14 +344,14 @@ def stab_filter_matrices(gam1,
     b[7, 0] = L2_beta_sqrt*np.sqrt(max((0.5*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
 
     c = np.zeros((1, 7))
-    c[0, 0:2] = - W2[0,0]*(2*gam1[0] + 2*(c0[0]-v_nom[0]))*gam2[0].T - W2[1,1]*(2*gam1[1] + 2*(c0[1]-v_nom[1]))*gam2[1].T 
+    c[0, 0:2] = - W2[0,0]*(2*gam1[0] + 2*(w4[0]-v_nom[0]))*gam2[0].T - W2[1,1]*(2*gam1[1] + 2*(w4[1]-v_nom[1]))*gam2[1].T 
     c[0, 3] = 1 # slack variable
 
-    d = w3 + 0.25*w1.T @ W2_inv @ w1 - W2[0,0]*((gam1[0]+c0[0]-v_nom[0])**2) - W2[1,1]*((gam1[1]+c0[1]-v_nom[1])**2) 
+    d = w3 + 0.25*w1.T @ W2_inv @ w1 - W2[0,0]*((gam1[0]+w4[0]-v_nom[0])**2) - W2[1,1]*((gam1[1]+w4[1]-v_nom[1])**2) 
 
-    tmp = 0.25*w1.T @ W2_inv @ w1
-    tmp2 = W2[0,0]*((gam1[0]+c0[0]-v_nom[0])**2)
-    tmp3 = W2[1,1]*((gam1[1]+c0[1]-v_nom[1])**2)
+    # tmp = 0.25*w1.T @ W2_inv @ w1
+    # tmp2 = W2[0,0]*((gam1[0]+w4[0]-v_nom[0])**2)
+    # tmp3 = W2[1,1]*((gam1[1]+w4[1]-v_nom[1])**2)
 
     A_dummy, c_dummy = stab_filter_dummy_matrices(gam2, [np.sqrt(W2[0,0]), np.sqrt(W2[1,1])])
 
