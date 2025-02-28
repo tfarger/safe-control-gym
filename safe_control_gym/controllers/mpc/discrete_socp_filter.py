@@ -32,20 +32,24 @@ class DiscreteSOCPFilter:
         self.state_bound = state_bound
 
         # Opt variables and parameters
-        self.X = cp.Variable(shape=(6,))
-        self.A1 = cp.Parameter(shape=(10, 6))
-        self.A2 = cp.Parameter(shape=(8, 6))
+        self.X = cp.Variable(shape=(7,))
+        self.A1 = cp.Parameter(shape=(10, 7))
+        self.A2 = cp.Parameter(shape=(9, 7))
+        self.A3 = cp.Parameter(shape=(2, 7))
         self.b1 = cp.Parameter(shape=(10,))
-        self.b2 = cp.Parameter(shape=(8,))
-        self.c1 = cp.Parameter(shape=(1, 6))
-        self.c2 = cp.Parameter(shape=(1, 6))
+        self.b2 = cp.Parameter(shape=(9,))
+        self.b3 = np.zeros((2, 1))
+        self.c1 = cp.Parameter(shape=(1, 7))
+        self.c2 = cp.Parameter(shape=(1, 7))
+        self.c3 = cp.Parameter(shape=(1, 7))
         self.d1 = cp.Parameter()
         self.d2 = cp.Parameter()
+        self.d3 = 0
         # put into lists
-        As = [self.A1, self.A2]
-        bs = [self.b1, self.b2]
-        cs = [self.c1, self.c2]
-        ds = [self.d1, self.d2]
+        As = [self.A1, self.A2, self.A3]
+        bs = [self.b1, self.b2, self.b3]
+        cs = [self.c1, self.c2, self.c3]
+        ds = [self.d1, self.d2, self.d3]
 
         # state bound
         if state_bound is not None:
@@ -61,9 +65,9 @@ class DiscreteSOCPFilter:
             self.w_s1 = quantile*np.sqrt(h1.T @ bd1 @ bd1.T @ h1)[0]
             self.w_s2 = quantile*np.sqrt(h2.T @ bd2 @ bd2.T @ h2)[0]
 
-            self.Astate = cp.Parameter(shape=(8, 6))
+            self.Astate = cp.Parameter(shape=(8, 7))
             self.bstate = cp.Parameter(shape=(8,))
-            self.cstate = cp.Parameter(shape=(1, 6))
+            self.cstate = cp.Parameter(shape=(1, 7))
             self.dstate = cp.Parameter()
             As.append(self.Astate)
             bs.append(self.bstate)
@@ -83,7 +87,7 @@ class DiscreteSOCPFilter:
 
         # Add linear constraints: input constraints
         if input_bound is not None: # TODO remove if, input bound always applied due to stability filter
-            A_inp = np.zeros((2, 6))
+            A_inp = np.zeros((2, 7))
             A_inp[0, 0] = 1.0
             A_inp[1, 1] = 1.0
             constraints = constraints + [A_inp @ self.X <= self.input_bound_normalized]
@@ -100,21 +104,21 @@ class DiscreteSOCPFilter:
             self.eta = cp.Parameter(shape=(2,))
             # selection_mat = np.zeros((1, 2))
             # selection_mat[0, 0] = 1.0
-            unnormalize_mat = np.zeros((2,6))
+            unnormalize_mat = np.zeros((2,7))
             unnormalize_mat[0, 0] = self.norm_u[0]
             unnormalize_mat[1, 1] = self.norm_u[1]
-            slacking_vect = np.zeros((1, 6))
+            slacking_vect = np.zeros((1, 7))
             slacking_vect[0, 4] = 1.0
             constraints = constraints + [(Ad_dyn_ext @ self.eta + Bd_dyn_ext @ unnormalize_mat @ self.X)[0] <= thrust_bound + slacking_vect @ self.X] # better as SOC constraint??
 
             
         # define cost function
-        self.cost = cp.Parameter(shape=(1, 6))  
+        self.cost = cp.Parameter(shape=(1, 7))  
 
         # setup optimization problem      
         self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), constraints)
 
-    def compute_feedback_input(self, z, z_ref, v_des, eta= np.zeros((2,)),  x_init=np.zeros((6,)), **kwargs): 
+    def compute_feedback_input(self, z, z_ref, v_des, eta= np.zeros((2,)),  x_init=np.zeros((7,)), **kwargs): 
         """ Compute u so it can be used in feedback loop
         Args: 
         z: flat state to linearize with, from FMPC
@@ -161,13 +165,16 @@ class DiscreteSOCPFilter:
         # Compute stablity filter coeffs
         e_k = z - z_ref
         v_nom = v_des # from equivalence of FMPC with closed form solution
-        A2, b2, c2, d2 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
+        A2, b2, c2, d2 , A3, c3 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
                                               self.Q, self.R, self.P, self.K, self.Bd, self.Ad, e_k,
                                               self.input_bound_normalized, v_nom, self.beta_sqrt)
         self.A2.value = A2
         self.b2.value = b2.squeeze()
         self.c2.value = c2
         self.d2.value = d2
+
+        self.A3.value = A3
+        self.c3.value = c3
 
         # dynamic extension constraint: set previous value of extension states
         if self.thrust_bound_applied:
@@ -267,11 +274,11 @@ def compute_cost(gam1, gam2, gam4, v_des):
     gam1_mat = np.vstack((gam1[0], gam1[1]))
     gam2_mat = np.vstack((gam2[0], gam2[1])) # .T or not makes no difference
     cost = 2 * (gam1_mat - v_des.reshape((2,1))).T @ gam2_mat + gam4[0].reshape((1,2)) + gam4[1].reshape((1, 2))
-    cost = np.append(cost, np.array([[1.0, 0, 0, 0]]), axis=1)
+    cost = np.append(cost, np.array([[1.0, 0, 0, 0, 0]]), axis=1)
     return cost
 
 def dummy_var_matrices(gam2, L_gam5, d_weights): # for feedback linearization
-    A = np.zeros((10,6))
+    A = np.zeros((10,7))
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
     A[2:4, :2] = 2*L_gam5[0]
@@ -284,7 +291,7 @@ def dummy_var_matrices(gam2, L_gam5, d_weights): # for feedback linearization
     b = np.zeros((10,1))
     b[6, 0] = 1.0
 
-    c = np.zeros((1, 6))
+    c = np.zeros((1, 7))
     c[0, 2] = 1.0
 
     d = 1
@@ -302,64 +309,117 @@ def stab_filter_matrices(gam1,
                          u_max, v_nom, beta_sqrt):
     
     w1 = (2 * e_k.T @ (Ad -Bd@K).T @ P @ Bd)
-    w1_abs = np.abs(w1)
-
+    # w1_abs = np.abs(w1)
+    W2 = (Bd.T @ P @ Bd)
+    W2_inv = np.linalg.inv(W2)
+    c0 = 0.5 * W2_inv@w1
     w3 =  e_k.T @ (Q + K.T @ R @ K) @ e_k - (1e-10) # 1e-10 is the epsilon in the formula, TODO update? necessary?
-
-    # bound quadratic term
-    bound = np.zeros(2)
-    bound[0] = np.max((np.abs(gam1[0] + gam2[0].T@u_max - v_nom[0]), np.abs(gam1[0] + gam2[0].T@(-u_max) - v_nom[0]))) # here u_min = -u_max, symmetric constraints on u
-    bound[1] = np.max((np.abs(gam1[1] + gam2[1].T@u_max - v_nom[1]), np.abs(gam1[1] + gam2[1].T@(-u_max) - v_nom[1])))
-    w2 = bound.T @ Bd.T @ P @ Bd @ bound
+    
+    u_t1 = u_max.copy()
+    u_t1[0] *= -1.0
+    u_t2 = u_max.copy()
+    u_t2[1] *= -1.0
+    u_test = [u_max, -u_max, u_t1 , u_t2]
+    L1 = 2*W2[0,0]*max([(np.abs(gam1[0]-v_nom[0]+c0[0]+ gam2[0].T @ u)) for u in u_test])
+    L2 = 2*W2[1,1]*max([(np.abs(gam1[1]-v_nom[1]+c0[1]+ gam2[1].T @ u)) for u in u_test])
 
     term_Linv_gam4_0 = 0.5*L_gam5_inv[0] @ gam4[0]
     term_Linv_gam4_1 = 0.5*L_gam5_inv[1] @ gam4[1]
-    # if True : #(0.5*gam3[1] - (term_Linv_gam4_1[1])**2) < 0:
-    #     print('Terms Linv*gam4*0.5')
-    #     print(L_gam5[1]@L_gam5[1].T)
-    #     print(L_gam5[1])
-    #     print(L_gam5_inv[1])
-    #     print(gam4[1])
-    #     # print(term_Linv_gam4_0)
-    #     print(term_Linv_gam4_1)
-    #     # print(gam3[0])
-    #     print(gam3[1])
-    #     print((0.5*gam3[1] - (term_Linv_gam4_1[1])**2))
-    #     # exit()
 
-    # print(Bd)
-    # print(P)
-    # print(Bd.T@P@Bd)
+    L1_beta_sqrt = L1* beta_sqrt[0]
+    L2_beta_sqrt = L2* beta_sqrt[1]
 
-    # tmp1 = gam1[0] + gam2[0].T@u_max
-    # tmp2 = gam1[0] + gam2[0].T@(-u_max)
+    A = np.zeros((9,7))    
+    A[0:2, 0:2] = L1_beta_sqrt*L_gam5[0]        
+    A[4:6, 0:2] = L2_beta_sqrt*L_gam5[1]
+    A[8, 6] = 1.0 # dummy variable to extend
 
-    # tmp3 = gam1[1] + gam2[1].T@u_max
-    # tmp4 = gam1[1] + gam2[1].T@(-u_max)
+    b = np.zeros((9,1))
+    b[0:2, 0] = -L1_beta_sqrt*term_Linv_gam4_0
+    b[4:6, 0] = -L2_beta_sqrt*term_Linv_gam4_1
 
-    w1_beta_0 = w1_abs[0]*beta_sqrt[0]
-    w1_beta_1 = w1_abs[1]*beta_sqrt[1]
+    b[2, 0] = L1_beta_sqrt*np.sqrt(max((0.5*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10))
+    b[3, 0] = L1_beta_sqrt*np.sqrt(max((0.5*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10))
+    b[6, 0] = L2_beta_sqrt*np.sqrt(max((0.5*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) 
+    b[7, 0] = L2_beta_sqrt*np.sqrt(max((0.5*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
 
-    A = np.zeros((8,6))
-    A[0:2, 0:2] = w1_beta_0*L_gam5[0]    
-    A[4:6, 0:2] = w1_beta_1*L_gam5[1]
+    c = np.zeros((1, 7))
+    c[0, 0:2] = - W2[0,0]*(2*gam1[0] + 2*(c0[0]-v_nom[0]))*gam2[0].T - W2[1,1]*(2*gam1[1] + 2*(c0[1]-v_nom[1]))*gam2[1].T 
+    c[0, 3] = 1 # slack variable
 
-    b = np.zeros((8,1))
-    b[0:2, 0] = -w1_beta_0*term_Linv_gam4_0
-    b[4:6, 0] = -w1_beta_1*term_Linv_gam4_1
+    d = w3 + 0.25*w1.T @ W2_inv @ w1 - W2[0,0]*((gam1[0]+c0[0]-v_nom[0])**2) - W2[1,1]*((gam1[1]+c0[1]-v_nom[1])**2) 
 
-    b[2, 0] = w1_beta_0*np.sqrt(max((0.4*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10))
-    b[3, 0] = w1_beta_0*np.sqrt(max((0.6*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10))
-    b[6, 0] = w1_beta_1*np.sqrt(max((0.4*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) # distribute gamma3 unevenly for numerical stability
-    b[7, 0] = w1_beta_1*np.sqrt(max((0.6*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
+    tmp = 0.25*w1.T @ W2_inv @ w1
+    tmp2 = W2[0,0]*((gam1[0]+c0[0]-v_nom[0])**2)
+    tmp3 = W2[1,1]*((gam1[1]+c0[1]-v_nom[1])**2)
 
-    c = np.zeros((1, 6))
-    c[0, 0:2] = -w1[0]*gam2[0].T -w1[1]*gam2[1].T
-    c[0, 3] = 1
+    A_dummy, c_dummy = stab_filter_dummy_matrices(gam2, [np.sqrt(W2[0,0]), np.sqrt(W2[1,1])])
 
-    d = w3 - w2 -w1[0]*(gam1[0]-v_nom[0]) - w1[1]*(gam1[1]-v_nom[1])    
+    # # bound quadratic term
+    # bound = np.zeros(2)
+    # bound[0] = np.max((np.abs(gam1[0] + gam2[0].T@u_max - v_nom[0]), np.abs(gam1[0] + gam2[0].T@(-u_max) - v_nom[0]))) # here u_min = -u_max, symmetric constraints on u
+    # bound[1] = np.max((np.abs(gam1[1] + gam2[1].T@u_max - v_nom[1]), np.abs(gam1[1] + gam2[1].T@(-u_max) - v_nom[1])))
+    # w2 = bound.T @ Bd.T @ P @ Bd @ bound
 
-    return A, b, c, d
+    # term_Linv_gam4_0 = 0.5*L_gam5_inv[0] @ gam4[0]
+    # term_Linv_gam4_1 = 0.5*L_gam5_inv[1] @ gam4[1]
+    # # if True : #(0.5*gam3[1] - (term_Linv_gam4_1[1])**2) < 0:
+    # #     print('Terms Linv*gam4*0.5')
+    # #     print(L_gam5[1]@L_gam5[1].T)
+    # #     print(L_gam5[1])
+    # #     print(L_gam5_inv[1])
+    # #     print(gam4[1])
+    # #     # print(term_Linv_gam4_0)
+    # #     print(term_Linv_gam4_1)
+    # #     # print(gam3[0])
+    # #     print(gam3[1])
+    # #     print((0.5*gam3[1] - (term_Linv_gam4_1[1])**2))
+    # #     # exit()
+
+    # # print(Bd)
+    # # print(P)
+    # # print(Bd.T@P@Bd)
+
+    # # tmp1 = gam1[0] + gam2[0].T@u_max
+    # # tmp2 = gam1[0] + gam2[0].T@(-u_max)
+
+    # # tmp3 = gam1[1] + gam2[1].T@u_max
+    # # tmp4 = gam1[1] + gam2[1].T@(-u_max)
+
+    # w1_beta_0 = w1_abs[0]*beta_sqrt[0]
+    # w1_beta_1 = w1_abs[1]*beta_sqrt[1]
+
+    # A = np.zeros((8,7))
+    # A[0:2, 0:2] = w1_beta_0*L_gam5[0]    
+    # A[4:6, 0:2] = w1_beta_1*L_gam5[1]
+
+    # b = np.zeros((8,1))
+    # b[0:2, 0] = -w1_beta_0*term_Linv_gam4_0
+    # b[4:6, 0] = -w1_beta_1*term_Linv_gam4_1
+
+    # b[2, 0] = w1_beta_0*np.sqrt(max((0.4*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10))
+    # b[3, 0] = w1_beta_0*np.sqrt(max((0.6*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10))
+    # b[6, 0] = w1_beta_1*np.sqrt(max((0.4*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) # distribute gamma3 unevenly for numerical stability
+    # b[7, 0] = w1_beta_1*np.sqrt(max((0.6*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
+
+    # c = np.zeros((1, 7))
+    # c[0, 0:2] = -w1[0]*gam2[0].T -w1[1]*gam2[1].T
+    # c[0, 3] = 1
+
+    # d = w3 - w2 -w1[0]*(gam1[0]-v_nom[0]) - w1[1]*(gam1[1]-v_nom[1])  
+
+     
+
+    return A, b, c, d, A_dummy, c_dummy
+
+def stab_filter_dummy_matrices(gam2, w2_sqrt):
+    A = np.zeros((2, 7))
+    A[0, 0:2] = w2_sqrt[0] * gam2[0]
+    A[1, 0:2] = w2_sqrt[1] * gam2[1]
+
+    c = np.zeros((1, 7))
+    c[0, 6] = 1
+    return A, c
 
 def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
                        h, b_con, Ad, Bd, w_s1, w_s2):
@@ -367,7 +427,7 @@ def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
     term_Linv_gam4_0 = 0.5*Linv_gam5[0] @ gam4[0]
     term_Linv_gam4_1 = 0.5*Linv_gam5[1] @ gam4[1]
     
-    A = np.zeros((8,6))
+    A = np.zeros((8,7))
     A[0:2, 0:2] = w_s1*L_gam5[0]    
     A[4:6, 0:2] = w_s2*L_gam5[1]
 
@@ -380,7 +440,7 @@ def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
     b[6, 0] = w_s2*np.sqrt(max((0.4*gam3[1] - (term_Linv_gam4_1[0])**2), 1e-10)) 
     b[7, 0] = w_s2*np.sqrt(max((0.6*gam3[1] - (term_Linv_gam4_1[1])**2), 1e-10))
 
-    c = np.zeros((1, 6))
+    c = np.zeros((1, 7))
     c[0, 0:2] = - h.T @ Bd @ np.vstack((gam2[0], gam2[1])) # .T or not makes no difference, see cost function
     c[0, 5] = 1 # slacking it
 

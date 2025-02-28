@@ -84,7 +84,7 @@ task_config:
     - constraint_form: bounded_constraint
       constrained_variable: input
       active_dims: 0 # x
-      upper_bounds: 0.6
+      upper_bounds: 0.43
       lower_bounds: 0  
 
   done_on_out_of_bound: True

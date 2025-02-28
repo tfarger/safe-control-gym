@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 
 
 ######### Parameters ###############################
-RUN_NMPC=True
-RUN_FMPC=True
-RUN_FMPC_SOCP=True
+RUN_NMPC=False
+RUN_FMPC=False
+RUN_FMPC_SOCP=False
 
 yaml_file_base = './config_overrides/quadrotor_2D_attitude/quadrotor_2D_attitude_tracking.yaml'
 yaml_file_nmpc = './config_overrides/quadrotor_2D_attitude/mpc_quadrotor_2D_attitude_tracking.yaml'
@@ -26,6 +26,9 @@ num_loops = 2
 
 SHADE_STATE_CONSTRAINT = True
 constraint = -0.8
+
+SHADE_INPUT_CONSTRAINT = True
+constraint_input = 0.435
 
 #########################################
 data_path_nmpc = './temp-data/mpc_data_quadrotor_traj_tracking.pkl'
@@ -201,12 +204,14 @@ print('      average RMSE: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(rmse_mpc*1000,
 
 ##################################################################################
 # Inputs
+limits_y1 = [0, 0.65]
 time = np.arange(0, np.shape(action_mpc)[0]*sample_time, sample_time )
 fig, ax = plt.subplots(2)
 ax[0].plot(time, action_mpc[:, 0], color=mpc_color, label=mpc_label, linewidth=linewidth)
 ax[0].plot(time, action_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 ax[0].plot(time, action_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
 ax[0].set_ylabel(r'$T_c$ in N')
+ax[0].set_ylim(limits_y1)
 ax[0].legend()
 ax[0].grid()
 ax[1].plot(time, action_mpc[:, 1], color=mpc_color, label=mpc_label, linewidth=linewidth)
@@ -215,6 +220,8 @@ ax[1].plot(time, action_fmpc_socp[:, 1], color=fmpc_socp_color, label=fmpc_socp_
 ax[1].set_ylabel(r'$\theta_c$ in rad')
 ax[1].grid()
 ax[1].set_xlabel('time in s')
+if SHADE_INPUT_CONSTRAINT:
+    ax[0].axhspan(constraint_input, limits_y1[1], color=tum_dia_red, alpha=0.2)
 
 # Tc_ddot in Flatness based controllers
 time = np.arange(0, np.shape(action_ext_fmpc)[0]*sample_time, sample_time )
