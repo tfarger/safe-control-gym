@@ -24,11 +24,15 @@ ctrl_freq = 50
 sample_time = 1/ctrl_freq
 num_loops = 2
 
-SHADE_STATE_CONSTRAINT = True
+SHADE_STATE_CONSTRAINT = False
 constraint = -0.8
 
-SHADE_INPUT_CONSTRAINT = True
+SHADE_INPUT_CONSTRAINT = False
 constraint_input = 0.435
+
+fig_width = 3.4*2 # inches
+fig_height = 3.4*1.6
+plt.rcParams.update({'font.size': 10})
 
 #########################################
 data_path_nmpc = './temp-data/mpc_data_quadrotor_traj_tracking.pkl'
@@ -146,9 +150,9 @@ fmpc_color = tum_dia_dark_green
 fmpc_socp_color = tum_dia_dark_orange
 
 ref_label = 'reference'
-mpc_label = 'NMPC'
-fmpc_label = 'FMPC(true dynamics)'
-fmpc_socp_label = 'FMPC+SOCP'
+mpc_label = 'NMPC (true dynamics)'
+fmpc_label = 'FMPC (true dynamics)'
+fmpc_socp_label = 'FMPC+GP+SOCP (ours)'
 
 linewidth = 2.0
 
@@ -156,30 +160,32 @@ limits_x = [-1.1, 1.1]
 limits_y = [0.4, 1.6]
 
 # plot of figure 8 in 2D space
-plt.figure()
+plt.figure(figsize=(fig_width, fig_height))
 plt.plot(state_ref_mpc[0, :301, 0, 0], state_ref_mpc[0, :301, 2, 0], linestyle = 'dashed', color=ref_color, label=ref_label, linewidth=linewidth)
 plt.plot(state_mpc[:, 0], state_mpc[:, 2], color=mpc_color, label=mpc_label, linewidth=linewidth)
 plt.plot(state_x_fmpc[:, 0], state_x_fmpc[:, 2], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 plt.plot(state_x_fmpc_socp[:, 0], state_x_fmpc_socp[:, 2], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
 plt.legend()
-plt.xlabel('x in m')
-plt.ylabel('z in m')
+plt.xlabel(r'Position x (m)')
+plt.ylabel(r'Position z (m)')
 plt.xlim(limits_x)
 plt.ylim(limits_y)
 plt.grid()
 if SHADE_STATE_CONSTRAINT:
     plt.axvspan(limits_x[0], constraint, color=tum_dia_red, alpha=0.2)
+plt.savefig("./plots/fig8.pdf", format="pdf", bbox_inches="tight")
 
 # plot errors over time
 time = np.arange(0, np.shape(error_mpc)[0]*sample_time, sample_time )
-plt.figure()
+plt.figure(figsize=(fig_width, fig_height))
 plt.plot(time, np.sqrt(error_mpc), color=mpc_color, label=mpc_label, linewidth=linewidth)
 plt.plot(time, np.sqrt(error_fmpc), color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 plt.plot(time, np.sqrt(error_fmpc_socp), color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
 plt.legend()
-plt.xlabel('time in s')
-plt.ylabel('tracking error in m')
+plt.xlabel(r'Time (s)')
+plt.ylabel(r'Tracking error (m)')
 plt.grid()
+plt.savefig("./plots/tracking_error.pdf", format="pdf", bbox_inches="tight")
 
 # generate a bunch of metrics on tracking error
 end_idx_first_loop = int(np.shape(state_mpc)[0]/num_loops)
@@ -206,26 +212,27 @@ print('      average RMSE: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(rmse_mpc*1000,
 # Inputs
 limits_y1 = [0, 0.65]
 time = np.arange(0, np.shape(action_mpc)[0]*sample_time, sample_time )
-fig, ax = plt.subplots(2)
+fig, ax = plt.subplots(2, figsize=(fig_width, fig_height))
 ax[0].plot(time, action_mpc[:, 0], color=mpc_color, label=mpc_label, linewidth=linewidth)
 ax[0].plot(time, action_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 ax[0].plot(time, action_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
-ax[0].set_ylabel(r'$T_c$ in N')
+ax[0].set_ylabel(r'Thrust $T_c$ (N)')
 ax[0].set_ylim(limits_y1)
 ax[0].legend()
 ax[0].grid()
 ax[1].plot(time, action_mpc[:, 1], color=mpc_color, label=mpc_label, linewidth=linewidth)
 ax[1].plot(time, action_fmpc[:, 1], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 ax[1].plot(time, action_fmpc_socp[:, 1], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
-ax[1].set_ylabel(r'$\theta_c$ in rad')
+ax[1].set_ylabel(r'Angle $\theta_c$ (rad)')
 ax[1].grid()
-ax[1].set_xlabel('time in s')
+ax[1].set_xlabel(r'Time (s)')
 if SHADE_INPUT_CONSTRAINT:
     ax[0].axhspan(constraint_input, limits_y1[1], color=tum_dia_red, alpha=0.2)
+plt.savefig("./plots/inputs.pdf", format="pdf", bbox_inches="tight")
 
 # Tc_ddot in Flatness based controllers
 time = np.arange(0, np.shape(action_ext_fmpc)[0]*sample_time, sample_time )
-plt.figure()
+plt.figure(figsize=(fig_width, fig_height))
 # plt.plot(time, np.sqrt(error_mpc), color=mpc_color, label=mpc_label, linewidth=linewidth)
 plt.plot(time, action_ext_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
 plt.plot(time, action_ext_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
