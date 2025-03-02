@@ -161,15 +161,18 @@ class FlatMPC_SOCP(BaseController):
         self.mpc.state_constraints_sym = []
         self.mpc.input_constraints_sym = [] 
         # adding half space constraint on flat state
-        h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
-        assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
-        b = flat_state_constraint.b_val
-        sym_func = lambda x: h.T @ x - b
-        self.mpc.state_constraints_sym = [sym_func]
-        state_bound = {} # for discrete socp filter
-        state_bound['h'] = h
-        state_bound['b'] = b
-        state_bound['quantile'] = flat_state_constraint.quantile
+        if flat_state_constraint.apply_state_bound == True: 
+            h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
+            assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
+            b = flat_state_constraint.b_val
+            sym_func = lambda x: h.T @ x - b
+            self.mpc.state_constraints_sym = [sym_func]
+            state_bound = {} # for discrete socp filter
+            state_bound['h'] = h
+            state_bound['b'] = b
+            state_bound['quantile'] = flat_state_constraint.quantile
+        else: 
+            state_bound = None
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
@@ -234,13 +237,17 @@ class FlatMPC_SOCP(BaseController):
         normalization_vect = np.load(normalization_file_path)
         print(f'GP training data normalization vector: {normalization_vect}')
 
-        d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext, socp_config.slack_weight_state]       
+        d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext, socp_config.slack_weight_state] 
+        if socp_config.apply_thrust_constraint == True: 
+            thrust_max = socp_config.thrust_max
+        else:
+            thrust_max = None 
 
         # initialize SOCP Filter
         self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
                                          normalization_vect=normalization_vect, 
                                          slack_weights=d_weights, beta_sqrt=socp_config.beta_sqrt, 
-                                         thrust_bound=socp_config.thrust_max, dyn_ext_mat=dyn_ext_mat, 
+                                         thrust_bound=thrust_max, dyn_ext_mat=dyn_ext_mat, 
                                          state_bound=state_bound)
         
         self.socp_opt = np.zeros((5,)) # for warmstarting SOCP later

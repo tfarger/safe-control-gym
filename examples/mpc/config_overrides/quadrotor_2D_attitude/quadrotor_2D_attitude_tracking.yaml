@@ -61,7 +61,7 @@ task_config:
     alpha_3: 124.8
     pitch_bias: 0.0 # in radian
 
-  episode_len_sec: 12
+  episode_len_sec: 10
   cost: quadratic
   obs_goal_horizon: 0
 
@@ -76,16 +76,16 @@ task_config:
       constrained_variable: input
 #      upper_bounds: [0.47628, 0.4]
 #      lower_bounds: [0.079, -0.4]
-    - constraint_form: bounded_constraint
-      constrained_variable: state
-      active_dims: 0 # x
-      upper_bounds: 2.0
-      lower_bounds: -0.8
-    - constraint_form: bounded_constraint
-      constrained_variable: input
-      active_dims: 0 # x
-      upper_bounds: 0.43
-      lower_bounds: 0  
+    # - constraint_form: bounded_constraint
+    #   constrained_variable: state
+    #   active_dims: 0 # x
+    #   upper_bounds: 2.0
+    #   lower_bounds: -0.8
+    # - constraint_form: bounded_constraint
+    #   constrained_variable: input
+    #   active_dims: 0 # x
+    #   upper_bounds: 0.43
+    #   lower_bounds: 0  
 
   done_on_out_of_bound: True
   done_on_violation: False

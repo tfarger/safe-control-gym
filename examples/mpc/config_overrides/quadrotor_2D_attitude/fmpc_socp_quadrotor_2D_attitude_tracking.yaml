@@ -33,9 +33,11 @@ algo_config:
     input_bound:
       - 3
       - 1.5
-    thrust_max: 0.43
-
+    apply_thrust_constraint: False  
+    thrust_max: 0.70 #0.43
+  
   flat_state_constraint:
+    apply_state_bound: False
     h_vect: [-1, 0, 0, 0, 0, 0, 0, 0]
-    b_val: 0.8
+    b_val: 2.0 #0.8
     quantile: 3 # rho(delta) in safety filter

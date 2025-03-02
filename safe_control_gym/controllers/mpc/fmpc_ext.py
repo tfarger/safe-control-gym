@@ -156,11 +156,12 @@ class FlatMPC_EXT(BaseController):
         self.mpc.input_constraints_sym = [] 
 
         # adding half space constraint on flat state
-        h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
-        assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
-        b = flat_state_constraint.b_val
-        sym_func = lambda x: h.T @ x - b
-        self.mpc.state_constraints_sym = [sym_func]
+        if flat_state_constraint.apply_state_bound == True:
+            h = np.atleast_2d(np.array(flat_state_constraint.h_vect)).T
+            assert np.shape(h)[0] == self.mpc.model.nx, "Flat half space constraint: dimension of h does not fit flat state dim"
+            b = flat_state_constraint.b_val
+            sym_func = lambda x: h.T @ x - b
+            self.mpc.state_constraints_sym = [sym_func]
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
