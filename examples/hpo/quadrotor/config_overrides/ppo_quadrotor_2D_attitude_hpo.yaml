@@ -24,7 +24,7 @@ hpo_config:
     gae_lambda: 0.92
     clip_param: 0.2
     target_kl: 0.01
-    entropy_coef: 0.005
+    entropy_coef: 0.002
 
     # optim args
     opt_epochs: 20
