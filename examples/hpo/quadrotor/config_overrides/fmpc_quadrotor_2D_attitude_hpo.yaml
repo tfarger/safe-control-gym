@@ -11,33 +11,20 @@ hpo_config:
   save_n_best_hps: 1
   # budget
   trials: 60
+  hp_eval_list: [] # list of hyperparameter configurations to evaluate
 
   # hyperparameters
   hps_config:
-    horizon: 40
+    horizon: 50
     r_mpc:
       - 1.0e-6
       - 1.0e-6
     q_mpc: 
-      - 20
+      - 70
       - 0.001
-      - 0.1
+      - 0
+      - 0
+      - 70
       - 0.001
-      - 20
-      - 0.001
-      - 0.1
-      - 0.001
-  vizier_hps:
-    horizon: 50
-    q_mpc:
-    - 15.0
-    - 0.0001
-    - 0.0001
-    - 0.0001
-    - 15.0
-    - 15.0
-    - 0.0001
-    - 0.0001
-    r_mpc:
-    - 1.0e-07
-    - 7.584670721859954e-05
+      - 0
+      - 0
