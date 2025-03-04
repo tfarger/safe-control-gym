@@ -23,7 +23,9 @@ from termcolor import colored
 
 from safe_control_gym.controllers.lqr.lqr_utils import discretize_linear_system
 from safe_control_gym.controllers.mpc.gp_utils import (GaussianProcessCollection, ZeroMeanIndependentGPModel,
-                                                       covMatern52ard, covSEard, covSE_single, kmeans_centriods, GaussianProcess)
+                                                       covMatern52ard, covSEard, 
+                                                       covSE_single, covLinear,
+                                                       kmeans_centriods, GaussianProcess)
 from safe_control_gym.controllers.mpc.linear_mpc import MPC, LinearMPC
 from safe_control_gym.controllers.mpc.mpc import MPC
 from safe_control_gym.controllers.mpc.gpmpc_base import GPMPC
@@ -31,6 +33,7 @@ from safe_control_gym.controllers.mpc.mpc_acados import MPC_ACADOS
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.utils.utils import timing
 from safe_control_gym.experiments.base_experiment import BaseExperiment
+from scipy.signal import butter, filtfilt
 
 class GPMPC_ACADOS_TP(GPMPC):
     '''Implements a GP-MPC controller with Acados optimization.'''
@@ -203,6 +206,20 @@ class GPMPC_ACADOS_TP(GPMPC):
         x_dot_seq = [(x_next_seq[i, :] - x_seq[i, :])/dt for i in range(x_seq.shape[0])]
         x_dot_seq = np.array(x_dot_seq)
 
+        # apply a low pass filter to the numerical differentiation
+        # fig, ax = plt.subplots(2, 1)
+        # ax[0].plot(x_dot_seq[:, 3], label='original')
+        # ax[1].plot(x_dot_seq[:, 1], label='original')
+        # Wn = 0.8
+        # b, a = butter(4, Wn, btype='lowpass')
+        # x_dot_seq = filtfilt(b, a, x_dot_seq, axis=0)
+        # ax[0].plot(x_dot_seq[:, 3], '--', label='filtered')
+        # ax[1].plot(x_dot_seq[:, 1], '--', label='filtered')
+        # ax[0].legend()
+        # ax[1].legend()
+        # # plt.show()
+        # fig.savefig(f'{self.output_dir}/filtered_numerical_diff.png')
+
         T_true_data = np.sqrt((x_dot_seq[:, 3] +  g) ** 2 + (x_dot_seq[:, 1] ** 2))
         targets_T = (T_true_data - T_prior_data).reshape(-1, 1)
         input_T = u_seq[:, 0].reshape(-1, 1)
@@ -233,14 +250,14 @@ class GPMPC_ACADOS_TP(GPMPC):
         epoch_seeds = [int(seed) for seed in epoch_seeds]
 
         if self.same_train_initial_state:
+            train_env = self.env_func(randomized_init=True, seed=epoch_seeds[0])
+            train_env.action_space.seed(epoch_seeds[0])
+            train_envs = [train_env] * self.num_epochs
+        else:
             train_envs = []
             for epoch in range(self.num_epochs):
                 train_envs.append(self.env_func(randomized_init=True, seed=epoch_seeds[epoch]))
                 train_envs[epoch].action_space.seed(epoch_seeds[epoch])
-        else:
-            train_env = self.env_func(randomized_init=True, seed=epoch_seeds[0])
-            train_env.action_space.seed(epoch_seeds[0])
-            train_envs = [train_env] * self.num_epochs
         
         test_envs = []
         if self.same_test_initial_state:
@@ -348,6 +365,13 @@ class GPMPC_ACADOS_TP(GPMPC):
                     domain_rand_info[keys] = test_experiments[epoch].env.dw_model.pos
                 else:
                     domain_rand_info[keys] = values.disturbances[0].std
+            # env_dyn_params = {}
+            # env_dyn_params['beta_1'] =  train_experiments[epoch].env.beta_1
+            # env_dyn_params['beta_2'] =  train_experiments[epoch].env.beta_2
+            # env_dyn_params['alpha_1'] = train_experiments[epoch].env.alpha_1
+            # env_dyn_params['alpha_2'] = train_experiments[epoch].env.alpha_2
+            # env_dyn_params['alpha_3'] = train_experiments[epoch].env.alpha_3
+            # domain_rand_info['env_dyn_params'] = env_dyn_params
             self.rand_hist['domain_rand'].append(domain_rand_info)
             # TODO: fix data logging
             np.savez(os.path.join(self.output_dir, 'epoch_data'),
@@ -486,12 +510,15 @@ class GPMPC_ACADOS_TP(GPMPC):
             model_type=ZeroMeanIndependentGPModel,
             likelihood=likelihood_T,
             kernel='RBF_single', 
+            # kernel='Linear',
         )
 
         GP_P = GaussianProcess(
             model_type=ZeroMeanIndependentGPModel,
             likelihood=likelihood_P,
             kernel='RBF_single',
+            # kernel='Linear',
+            # kernel='RBF',
         )
 
         if gp_model:
@@ -507,7 +534,6 @@ class GPMPC_ACADOS_TP(GPMPC):
                     gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_P.pth'))
 
         self.gaussian_process = [GP_T, GP_P]
-        
 
         # self.gaussian_process = GaussianProcessCollection(ZeroMeanIndependentGPModel,
         #                                                   likelihood,
@@ -552,7 +578,6 @@ class GPMPC_ACADOS_TP(GPMPC):
 
         # setup GP related
         self.inverse_cdf = scipy.stats.norm.ppf(1 - (1 / self.model.nx - (self.prob + 1) / (2 * self.model.nx)))
-        self.create_sparse_GP_machinery(n_ind_points)
 
         # setup acados model
         model_name = self.env.NAME
@@ -582,6 +607,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             mean_post_factor should be of shape (len(self.target_mask), n_ind_points)
             Here we create the corresponding parameters since acados supports only 1D parameters
             '''
+            self.create_sparse_GP_machinery(n_ind_points)
             z_ind = cs.MX.sym('z_ind', n_ind_points, 4)
             mean_post_factor = cs.MX.sym('mean_post_factor', 2, n_ind_points)
             acados_model.p = cs.vertcat(cs.reshape(z_ind, -1, 1), cs.reshape(mean_post_factor, -1, 1))
@@ -615,12 +641,14 @@ class GPMPC_ACADOS_TP(GPMPC):
             GP_P = self.gaussian_process[1]
             T_pred_point = z[6]
             P_pred_point = z[[4, 5, 7]]
-            z_ind = cs.MX.sym('z_ind', n_ind_points, 4)
-            mean_post_factor = cs.MX.sym('mean_post_factor', 2, n_ind_points)
-            acados_model.p = cs.vertcat(cs.reshape(z_ind, -1, 1), cs.reshape(mean_post_factor, -1, 1))
-            # full_pred = cs.sum2(self.K_z_zind_func(z1=cs.vertcat(T_pred_point, P_pred_point), z2=z_ind)['K'] * mean_post_factor)
-            T_pred = cs.sum2(self.K_z_zind_func_T(z1=T_pred_point, z2=z_ind)['K'] * mean_post_factor[0, :])
-            P_pred = cs.sum2(self.K_z_zind_func_P(z1=P_pred_point, z2=z_ind)['K'] * mean_post_factor[1, :])
+            # z_ind = cs.MX.sym('z_ind', n_ind_points, 4)
+            # mean_post_factor = cs.MX.sym('mean_post_factor', 2, n_ind_points)
+            # acados_model.p = cs.vertcat(cs.reshape(z_ind, -1, 1), cs.reshape(mean_post_factor, -1, 1))
+            # # full_pred = cs.sum2(self.K_z_zind_func(z1=cs.vertcat(T_pred_point, P_pred_point), z2=z_ind)['K'] * mean_post_factor)
+            # T_pred = cs.sum2(self.K_z_zind_func_T(z1=T_pred_point, z2=z_ind)['K'] * mean_post_factor[0, :])
+            # P_pred = cs.sum2(self.K_z_zind_func_P(z1=P_pred_point, z2=z_ind)['K'] * mean_post_factor[1, :])
+            T_pred = GP_T.casadi_predict(z=T_pred_point)['mean']
+            P_pred = GP_P.casadi_predict(z=P_pred_point)['mean']
 
             f_cont = self.prior_dynamics_func_c(x=acados_model.x, u=acados_model.u)['f']\
                     + cs.vertcat(0, cs.sin(acados_model.x[4])*T_pred,
@@ -1348,10 +1376,15 @@ class GPMPC_ACADOS_TP(GPMPC):
         
         GP_T = self.gaussian_process[0]
         GP_P = self.gaussian_process[1]
-        lengthscales_T = GP_T.model.covar_module.base_kernel.lengthscale.detach().numpy()
+        if GP_T.kernel == 'Linear':
+            variance_T = GP_T.model.covar_module.kernels[0].variance.detach().numpy()
+            constant_T = GP_T.model.covar_module.kernels[1].constant.detach().numpy()
+        else:
+            lengthscales_T = GP_T.model.covar_module.base_kernel.lengthscale.detach().numpy()
+            signal_var_T = GP_T.model.covar_module.outputscale.detach().numpy()
         lengthscales_P = GP_P.model.covar_module.base_kernel.lengthscale.detach().numpy()
-        signal_var_T = GP_T.model.covar_module.outputscale.detach().numpy()
         signal_var_P = GP_P.model.covar_module.outputscale.detach().numpy()
+        
         noise_var_T = GP_T.likelihood.noise.detach().numpy()
         noise_var_P = GP_P.likelihood.noise.detach().numpy()
         gp_K_plus_noise_T = GP_T.model.K_plus_noise.detach().numpy()
@@ -1360,16 +1393,16 @@ class GPMPC_ACADOS_TP(GPMPC):
         # gp_K_plus_noise_inv_P = GP_P.model.K_plus_noise_inv.detach().numpy()
 
         # stacking
-        lengthscales = np.vstack((lengthscales_T, lengthscales_P))
-        signal_var = np.array([signal_var_T, signal_var_P])
-        noise_var = np.array([noise_var_T, noise_var_P])
+        # lengthscales = np.vstack((lengthscales_T, lengthscales_P))
+        # signal_var = np.array([signal_var_T, signal_var_P])
+        # noise_var = np.array([noise_var_T, noise_var_P])
         gp_K_plus_noise = np.zeros((2, gp_K_plus_noise_T.shape[0], gp_K_plus_noise_T.shape[1]))
         gp_K_plus_noise[0] = gp_K_plus_noise_T
         gp_K_plus_noise[1] = gp_K_plus_noise_P
         
-        self.length_scales = lengthscales.squeeze()
-        self.signal_var = signal_var.squeeze()
-        self.noise_var = noise_var.squeeze()
+        # self.length_scales = lengthscales.squeeze()
+        # self.signal_var = signal_var.squeeze()
+        # self.noise_var = noise_var.squeeze()
         self.gp_K_plus_noise = gp_K_plus_noise
         Nx =self.train_data['train_inputs'].shape[1]
         Ny =self.train_data['train_targets'].shape[1]
@@ -1377,29 +1410,49 @@ class GPMPC_ACADOS_TP(GPMPC):
         # We need the CasADI version of this so that it can by symbolically differentiated in in the MPC optimization.
         z1_T = cs.SX.sym('z1', 1)
         z2_T = cs.SX.sym('z2', 1)
-        ell_s_T = cs.SX.sym('ell', 1)
-        sf2_s_T = cs.SX.sym('sf2')
         z1_P = cs.SX.sym('z1', 3)
         z2_P = cs.SX.sym('z2', 3)
-        ell_s_P = cs.SX.sym('ell', 1)
+        ell_s_P = cs.SX.sym('ell', 1) if GP_P.kernel == 'RBF_single' else cs.SX.sym('ell', 3)
         sf2_s_P = cs.SX.sym('sf2')
         z_ind = cs.SX.sym('z_ind', n_ind_points, Nx)
         ks_T = cs.SX.zeros(1, n_ind_points) # kernel vector
         ks_P = cs.SX.zeros(1, n_ind_points) # kernel vector
 
-        covSE_T = cs.Function('covSE', [z1_T, z2_T, ell_s_T, sf2_s_T], 
-                                       [covSE_single(z1_T, z2_T, ell_s_T, sf2_s_T)])
-        covSE_P = cs.Function('covSE', [z1_P, z2_P, ell_s_P, sf2_s_P],
-                                       [covSE_single(z1_P, z2_P, ell_s_P, sf2_s_P)])
+        if GP_T.kernel == 'Linear':
+            v_T = cs.SX.sym('variance')
+            c_T = cs.SX.sym('constant')
+            cov_T = cs.Function('covLinear', [z1_T, z2_T, v_T, c_T],
+                                        [covLinear(z1_T, z2_T, v_T, c_T)])
+            for i in range(n_ind_points):
+                ks_T[i] = cov_T(z1_T, z_ind[i, 0], v_T, c_T)
+            ks_func_T = cs.Function('K_s', [z1_T, z_ind, v_T, c_T], [ks_T])
+        else:
+            ell_s_T = cs.SX.sym('ell', 1)
+            sf2_s_T = cs.SX.sym('sf2')
+            cov_T = cs.Function('covSE', [z1_T, z2_T, ell_s_T, sf2_s_T], 
+                                        [covSE_single(z1_T, z2_T, ell_s_T, sf2_s_T)])
+            for i in range(n_ind_points):
+                ks_T[i] = cov_T(z1_T, z_ind[i, 0], ell_s_T, sf2_s_T)
+            ks_func_T = cs.Function('K_s', [z1_T, z_ind, ell_s_T, sf2_s_T], [ks_T])
+
+        if GP_P.kernel == 'RBF':
+            cov_P = cs.Function('covSE', [z1_P, z2_P, ell_s_P, sf2_s_P],
+                                        [covSEard(z1_P, z2_P, ell_s_P, sf2_s_P)])
+        elif GP_P.kernel == 'RBF_single':
+            cov_P = cs.Function('covSE', [z1_P, z2_P, ell_s_P, sf2_s_P],
+                                        [covSE_single(z1_P, z2_P, ell_s_P, sf2_s_P)])
         for i in range(n_ind_points):
-            ks_T[i] = covSE_T(z1_T, z_ind[i, 0], ell_s_T, sf2_s_T)
-            ks_P[i] = covSE_P(z1_P, z_ind[i, 1:], ell_s_P, sf2_s_P)
-        ks_func_T = cs.Function('K_s', [z1_T, z_ind, ell_s_T, sf2_s_T], [ks_T])
+            ks_P[i] = cov_P(z1_P, z_ind[i, 1:], ell_s_P, sf2_s_P)
         ks_func_P = cs.Function('K_s', [z1_P, z_ind, ell_s_P, sf2_s_P], [ks_P])
 
-        K_z_zind = cs.SX.zeros(Ny, n_ind_points)
-        K_z_zind_T = ks_func_T(z1_T, z_ind, self.length_scales[0], self.signal_var[0])
-        K_z_zind_P = ks_func_P(z1_P, z_ind, self.length_scales[1], self.signal_var[1])
+        # K_z_zind = cs.SX.zeros(Ny, n_ind_points)
+        # K_z_zind_T = ks_func_T(z1_T, z_ind, self.length_scales[0], self.signal_var[0])
+        # K_z_zind_P = ks_func_P(z1_P, z_ind, self.length_scales[1], self.signal_var[1])
+        if GP_T.kernel == 'Linear':
+            K_z_zind_T = ks_func_T(z1_T, z_ind, variance_T, constant_T)
+        else:
+            K_z_zind_T = ks_func_T(z1_T, z_ind, lengthscales_T, signal_var_T)
+        K_z_zind_P = ks_func_P(z1_P, z_ind, lengthscales_P, signal_var_P)
         self.K_z_zind_func_T = cs.Function('K_z_zind', [z1_T, z_ind], [K_z_zind_T], ['z1', 'z2'], ['K'])
         self.K_z_zind_func_P = cs.Function('K_z_zind', [z1_P, z_ind], [K_z_zind_P], ['z1', 'z2'], ['K'])
         # self.K_z_zind_func = cs.Function('K_z_zind', [z1_T, z1_P, z_ind], [K_z_zind], ['z1', 'z2'], ['K'])
@@ -1632,6 +1685,7 @@ class GPMPC_ACADOS_TP(GPMPC):
         ax[0].set_ylabel('T residual [$m/s^2$]')
         ax[0].set_xlabel('data points')
         ax[0].set_title(f'T residual, {percentage_within_2std_T:.2f}% within 2-$\sigma$')
+        ax[0].set_xlim([0, num_data])
         ax[0].legend()
 
         ax[1].scatter(train_inputs[:, 0], train_targets[:, 0], label='Target', color='gray')
@@ -1652,8 +1706,18 @@ class GPMPC_ACADOS_TP(GPMPC):
         ax[2].set_ylabel('P residual [$rad/s^2$]')
         ax[2].set_xlabel('data points')
         ax[2].set_title(f'P residual, {percentage_within_2std_P:.2f}% within 2-$\sigma$')
+        ax[2].set_xlim([0, num_data])
         plt_title = f'GP_validation_{title}'
         plt.suptitle(plt_title)
+        # add a second horizontal axis tick at the bottom of the plot
+        # the second axis should be 1/60 * the first axis
+        # showing only :.2f
+        ax2 = ax[0].twiny()
+        ax2.set_xlim(ax[0].get_xlim())
+        ax2.set_xticks(ax[0].get_xticks())
+        ax2.set_xticklabels([f'{x:.2f}' for x in ax[0].get_xticks() / 60])
+        ax2.set_xlabel('time [s]')        
+        
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, f'{plt_title}.png'))
         print(f'Plot saved at {os.path.join(output_dir, f"{plt_title}.png")}')
