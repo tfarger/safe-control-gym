@@ -197,10 +197,10 @@ class LinearMPC(MPC):
         # create solver (IPOPT solver for now )
         opts = {'expand': True}
         if platform == 'linux':
-            opts.update({'print_time': 1, 'print_header': 0})
+            # opts.update({'print_time': 1, 'print_header': 0})
             opti.solver(solver, opts)
         elif platform == 'darwin':
-            opts.update({'ipopt.max_iter': 100})
+            # opts.update({'ipopt.max_iter': 100})
             opti.solver('ipopt', opts)
         else:
             print('[ERROR]: CasADi solver tested on Linux and OSX only.')
