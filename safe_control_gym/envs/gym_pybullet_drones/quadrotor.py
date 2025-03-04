@@ -1374,6 +1374,7 @@ class Quadrotor(BaseAviary):
                                               self.action_space.low,
                                               self.action_space.high)
 
+        # TODO: double check why a mixture of PHYSICS and QUAD_TYPE is used here
         # if self.PHYSICS == Physics.DYN_SI or self.PHYSICS == Physics.DYN_SI_3D:
         if self.PHYSICS in [Physics.DYN_SI, Physics.DYN_SI_3D, Physics.DYN_SI_3D_10]:
             return self.current_clipped_action
