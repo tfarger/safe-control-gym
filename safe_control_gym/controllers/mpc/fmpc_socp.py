@@ -360,8 +360,8 @@ class FlatMPC_SOCP(BaseController):
         v_horizon = self.mpc.u_prev #2xN       
         
         # flat input transformation: z and v to action u        
-        zd = z_horizon[:, 0]
-        vd = v_horizon[:, 0]
+        zd = z_horizon[:, 0].copy()
+        vd = v_horizon[:, 0].copy()
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
         action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
