@@ -31,6 +31,10 @@ class DiscreteSOCPFilter:
         self.input_bound_normalized = input_bound/self.norm_u # normalize the input and state bound for optimization
         self.state_bound = state_bound
 
+        # precompute quantity for stability filter
+        W3_mat_comp = self.Ad - self.Bd @ self.K
+        self.W3_mat = self.P - W3_mat_comp.T @ self.P @ W3_mat_comp
+
         # Opt variables and parameters
         self.X = cp.Variable(shape=(7,))
         self.A1 = cp.Parameter(shape=(10, 7))
@@ -166,7 +170,7 @@ class DiscreteSOCPFilter:
         e_k = z - z_ref
         v_nom = v_des # from equivalence of FMPC with closed form solution
         A2, b2, c2, d2 , A3, c3 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
-                                              self.Q, self.R, self.P, self.K, self.Bd, self.Ad, e_k,
+                                              self.Q, self.R, self.P, self.K, self.Bd, self.Ad, self.W3_mat, e_k,
                                               self.input_bound_normalized, v_nom, self.beta_sqrt)
         self.A2.value = A2
         self.b2.value = b2.squeeze()
@@ -304,7 +308,7 @@ def stab_filter_matrices(gam1,
                          gam4,
                          L_gam5,
                          L_gam5_inv,
-                         Q, R, P, K, Bd, Ad,
+                         Q, R, P, K, Bd, Ad, W3_mat,
                          e_k,
                          u_max, v_nom, beta_sqrt):
     
@@ -312,8 +316,10 @@ def stab_filter_matrices(gam1,
     # w1_abs = np.abs(w1)
     W2 = (Bd.T @ P @ Bd)
     W2_inv = np.linalg.inv(W2)
-    w3 =  e_k.T @ (Q + K.T @ R @ K) @ e_k - (1e-10) # 1e-10 is the epsilon in the formula, TODO update? necessary?
-    w4 = 0.5 * W2_inv@w1
+    # w3 =  e_k.T @ (Q + K.T @ R @ K) @ e_k - (1e-10) # with DARE reformulation, not used anymore
+    # W3_mat is predomputed: P - (A - BK).T P (A-BK)
+    w3 = e_k.T @ W3_mat @ e_k - (1e-10) # 1e-10 is the epsilon in the formula
+    w4 = 0.5 * W2_inv @ w1
     
     u_t1 = u_max.copy()
     u_t1[0] *= -1.0
