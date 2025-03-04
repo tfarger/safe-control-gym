@@ -222,7 +222,7 @@ class FlatMPC_SOCP(BaseController):
         # compute P and K of equivalent finite horizon ricatti controller
             # Equations taken from Borrelli Sec 8.3 but with the opposite sign for K as we are using the convention
             # u = -Kx and they use u = Kx
-        P = deepcopy(Q)*100.0 # terminal constraint weight
+        P = deepcopy(Q) #*100.0 # terminal constraint weight
         for i in range(self.mpc.T):
             P = Ad.T @ P @ Ad + Q - Ad.T @ P @ Bd @ np.linalg.pinv(Bd.T @ P @ Bd + R) @ Bd.T @ P @ Ad
         K = np.linalg.pinv(Bd.T @ P @ Bd + R) @ Bd.T @ P @ Ad
