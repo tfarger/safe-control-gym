@@ -509,8 +509,8 @@ class GPMPC_ACADOS_TP(GPMPC):
         GP_T = GaussianProcess(
             model_type=ZeroMeanIndependentGPModel,
             likelihood=likelihood_T,
-            kernel='RBF_single', 
-            # kernel='Linear',
+            # kernel='RBF_single', 
+            kernel='Linear',
         )
 
         GP_P = GaussianProcess(
