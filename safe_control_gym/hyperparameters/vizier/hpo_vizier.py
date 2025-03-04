@@ -157,7 +157,7 @@ class HPO_Vizier(BaseHPO):
                 # evaluate the suggested hyperparameters
                 materialized_suggestion = suggestion.materialize()
                 suggested_params = {key: val.value for key, val in materialized_suggestion.parameters._items.items()}
-                res = self.evaluate(suggested_params, seed_list=[num for num in range(len(self.hpo_config.repetitions))])
+                res = self.evaluate(suggested_params, seed_list=[num for num in range(self.hpo_config.repetitions)])
                 if res != self.none_handler():
                     trajs_data_list = self.trajs_data_list
                     metrics_list = self.metrics_list
@@ -204,7 +204,7 @@ class HPO_Vizier(BaseHPO):
             params (dict): Specified hyperparameters to be evaluated.
         """
         if hasattr(self, 'study_client'):
-            res = self.evaluate(params, seed_list=[num for num in range(len(self.hpo_config.repetitions))])
+            res = self.evaluate(params, seed_list=[num for num in range(self.hpo_config.repetitions)])
             if res != self.none_handler():
                 trajs_data_list = self.trajs_data_list
                 metrics_list = self.metrics_list
