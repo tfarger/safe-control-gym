@@ -22,7 +22,7 @@ if __name__ == '__main__':
     ADDITIONAL = sys.argv[2] if len(sys.argv) > 2 else ''
 
     runtime_list = []
-    num_seed = 50
+    num_seed = 10
     start_seed = 1 # [1, 5, 6, 8, 9, 11, 12]
     suceeded = 0
     seed = start_seed

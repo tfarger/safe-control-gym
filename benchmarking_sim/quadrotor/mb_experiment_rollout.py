@@ -102,10 +102,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
         gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
         config.output_dir = os.path.join(config.output_dir, f'_{gp_model_tag}')
-        # if seed%10 == 0:
-        #     config.algo_config.gp_model_path = gp_model_dirs[10-1]
-        # else:
-        #     config.algo_config.gp_model_path = gp_model_dirs[seed%10-1]
+        if seed%10 == 0:
+            config.algo_config.gp_model_path = gp_model_dirs[10-1]
+        else:
+            config.algo_config.gp_model_path = gp_model_dirs[seed%10-1]
     # else:
     if eval_task == 'rollout':
         config.output_dir = config.output_dir + f'{ctrl_tag}_rollout_{SYS}{ADDITIONAL}'

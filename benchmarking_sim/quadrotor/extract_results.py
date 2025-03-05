@@ -239,7 +239,7 @@ else:
     # ctrl = 'linear_mpc_acados'
     # ctrl = 'mpc_acados'
     ctrl = 'gpmpc_acados_TP'
-gp_model_tag = '100_200'
+gp_model_tag = '_100_200'
 SYS = 'quadrotor_2D_attitude'
 # SYS = 'quadrotor_3D_attitude'
 
@@ -276,20 +276,20 @@ np.save(f'data/{ctrl}_{SYS}_gen_results.npy', results)
 additional = '_11'
 data_folder = f'results_rollout_{SYS}{additional}/temp'
 if ctrl in ['gpmpc_acados_TP']:
-        GPMPC_option = '100_200'
+        GPMPC_option = gp_model_tag
         data_folder = f'results/{GPMPC_option}_rollout_{SYS}{additional}/temp'
 plot_trajectory(notebook_dir, data_folder, 'Evaluation', ctrl, SYS, additional)
 
 additional = '_15'
 data_folder = f'results_rollout_{SYS}{additional}/temp'
 if ctrl in ['gpmpc_acados_TP']:
-        GPMPC_option = '100_200'
+        GPMPC_option = gp_model_tag
         data_folder = f'results/{GPMPC_option}_rollout_{SYS}{additional}/temp'
 plot_trajectory(notebook_dir, data_folder, 'Generalization (slower)', ctrl, SYS, additional)
 
 additional = '_9'
 data_folder = f'results_rollout_{SYS}{additional}/temp'
 if ctrl in ['gpmpc_acados_TP']:
-        GPMPC_option = '100_200'
+        GPMPC_option = gp_model_tag
         data_folder = f'results/{GPMPC_option}_rollout_{SYS}{additional}/temp'
 plot_trajectory(notebook_dir, data_folder, 'Generalization (faster)', ctrl, SYS, additional)

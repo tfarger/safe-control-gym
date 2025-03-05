@@ -1,17 +1,25 @@
   algo: gpmpc_acados_TP
   algo_config:
     horizon: 30
-    q_mpc: [20, 0.1, 20, 0.1, 0.5, 0.01]
-    r_mpc: [3, 2]
+    q_mpc:
+    - 20.0
+    - 0.0001
+    - 14.50136922944172
+    - 0.0001
+    - 0.0001
+    - 0.0001
+    r_mpc:
+    - 1.862846289974233
+    - 3.238648152459772
     gp_model_path: null
     test_data_ratio: 0.2
     soft_constraints: null
     optimization_iterations:
-      - 500 # 1200
-      - 500 # 1200
+      - 1000 # 1200
+      - 1000 # 1200
     learning_rate:
-      - 0.001
-      - 0.001
+      - 0.005
+      - 0.005
     normalize_training_data: False
     # normalize_training_data: True
     prior_info:

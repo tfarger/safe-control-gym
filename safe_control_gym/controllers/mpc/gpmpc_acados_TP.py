@@ -509,8 +509,8 @@ class GPMPC_ACADOS_TP(GPMPC):
         GP_T = GaussianProcess(
             model_type=ZeroMeanIndependentGPModel,
             likelihood=likelihood_T,
-            kernel='RBF_single', 
-            # kernel='Linear',
+            # kernel='RBF_single', 
+            kernel='Linear',
         )
 
         GP_P = GaussianProcess(
@@ -798,10 +798,9 @@ class GPMPC_ACADOS_TP(GPMPC):
         # ocp.solver_options.integrator_type = 'ERK'
 
         ocp.solver_options.nlp_solver_type = 'SQP' if not self.use_RTI else 'SQP_RTI'
-        ocp.solver_options.nlp_solver_max_iter = 10 if not self.use_RTI else 1
-        ocp.solver_options.qp_solver_iter_max = 10
-        ocp.solver_options.qp_tol = 1e-4
-        ocp.solver_options.tol = 1e-4
+        ocp.solver_options.nlp_solver_max_iter = 25 if not self.use_RTI else 1
+        # ocp.solver_options.qp_tol = 1e-4
+        # ocp.solver_options.tol = 1e-4
         ocp.solver_options.as_rti_level = 0 if not self.use_RTI else 4
         ocp.solver_options.as_rti_iter = 1 if not self.use_RTI else 1
 
