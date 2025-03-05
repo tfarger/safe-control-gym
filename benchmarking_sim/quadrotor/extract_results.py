@@ -230,6 +230,7 @@ def extract_rollouts(notebook_dir, data_folder, controller_name, additional=''):
 
 if len(sys.argv) > 1:
     ctrl = sys.argv[1]
+    tag = sys.argv[2] if len(sys.argv) > 2 else ''
 else:
     # ctrl = 'pid'
     # ctrl = 'pid'
@@ -239,7 +240,7 @@ else:
     # ctrl = 'linear_mpc_acados'
     # ctrl = 'mpc_acados'
     ctrl = 'gpmpc_acados_TP'
-gp_model_tag = '_100_200'
+gp_model_tag = f'_100_200{tag}'
 SYS = 'quadrotor_2D_attitude'
 # SYS = 'quadrotor_3D_attitude'
 
@@ -261,8 +262,9 @@ for additional in ['9', '10', '11', '12', '13', '14', '15']:
     std_rmse = np.std(metrics)
     results[additional] = {'mean_rmse': mean_rmse, 'std_rmse': std_rmse}
 results['inference_time'] = np.mean(timing_data)
+print('mean inference time:', results['inference_time'])
 print('results', results)
-np.save(f'data/{ctrl}_{SYS}_gen_results.npy', results)
+np.save(f'data/{ctrl}{tag}_gen_results.npy', results)
 # print('metrics', metrics)
 # time_vector = (np.squeeze(timing_data)).flatten()
 # mean_exec_time = np.mean(time_vector)
