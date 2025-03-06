@@ -325,7 +325,8 @@ class FlatMPC_SOCP(BaseController):
                              'socp_dummy':[],
                              'socp_cost':[],
                              'socp_cost_linPart':[],  
-                             'socp_solve_time':[],                           
+                             'socp_solve_time':[],
+                             'thrust_dot':[],                           
                              }
 
     # @timing
@@ -384,7 +385,7 @@ class FlatMPC_SOCP(BaseController):
 
         # # data logging
         # self.results_dict['obs_x'].append(obs)
-        # self.results_dict['obs_z'].append(z_obs)
+        self.results_dict['obs_z'].append(z_obs)
         # self.results_dict['v'].append(v)
         self.results_dict['u'].append(action)
         # self.results_dict['horizon_v'].append(v_horizon)
@@ -403,6 +404,7 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['socp_cost'].append(socp_logging['cost'])
         self.results_dict['socp_cost_linPart'].append(socp_logging['cost_lin'])
         self.results_dict['socp_solve_time'].append(socp_logging['solve_time'])
+        self.results_dict['thrust_dot'].append(self.eta[1])
         
         return action
     

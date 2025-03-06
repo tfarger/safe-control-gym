@@ -57,18 +57,22 @@ def evaluateFMPC_SOCP(show_plots = False):
     cost_val = data_dict_fmpc['socp_cost'][0]
     cost_val_lin_part = data_dict_fmpc['socp_cost_linPart'][0]
     socp_solve_time = data_dict_fmpc['socp_solve_time'][0]
+    thrust_dot = data_dict_fmpc['thrust_dot'][0]
 
     print('Maximum thrust Tc')
     print(np.max(u, axis=0)[0])
     print('Maximum angle in deg')
     print(np.max(u, axis=0)[1]*180/np.pi)
 
+    z_obs = data_dict_fmpc['obs_z'][0]
+    plot_data(z_obs, np.arange(0, np.shape(z_obs)[0], 1), 'Flat States', 'index')
+
 
 
 
 
     if show_plots:
-        fig, ax = plt.subplots(7, 2)
+        fig, ax = plt.subplots(8, 2)
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_analytic_ext[:, 0], label='analytic, dynamic extension')
         ax[0, 0].plot(range(np.shape(u_analytic_ext)[0]), u_socp[:, 0], label='socp')
         ax[0, 0].set_title('Input extended system: Tc_ddot')
@@ -126,6 +130,9 @@ def evaluateFMPC_SOCP(show_plots = False):
 
         ax[6, 1].plot(range(np.shape(u_analytic_ext)[0]), d_slack3, label='SOCP Slack state const')
         ax[6, 1].set_title('SOCP slack variable state constraint')
+
+        ax[7, 0].plot(range(np.shape(u_analytic_ext)[0]), thrust_dot, label='Tc_dot')
+        ax[7, 0].set_title('Thrust dot in extension')
 
         plt.show()
 
