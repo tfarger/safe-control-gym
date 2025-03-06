@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 
 
 ######### Parameters ###############################
-RUN_NMPC=True
-RUN_FMPC=True
+RUN_NMPC=False
+RUN_FMPC=False
 RUN_FMPC_SOCP=True
 
 # fast run 
@@ -21,16 +21,16 @@ yaml_file_fmpc_socp = './config_overrides_fast/fmpc_socp_quadrotor_2D_attitude_t
 SHADE_STATE_CONSTRAINT = False
 SHADE_INPUT_CONSTRAINT = False
 
-# # constrained run
-yaml_file_base = './config_overrides_constrained/quadrotor_2D_attitude_tracking.yaml'
-yaml_file_nmpc = './config_overrides_constrained/mpc_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc = './config_overrides_constrained/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc_socp = './config_overrides_constrained/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
-SHADE_STATE_CONSTRAINT = True
-SHADE_INPUT_CONSTRAINT = True
+# # # constrained run
+# yaml_file_base = './config_overrides_constrained/quadrotor_2D_attitude_tracking.yaml'
+# yaml_file_nmpc = './config_overrides_constrained/mpc_quadrotor_2D_attitude_tracking.yaml'
+# yaml_file_fmpc = './config_overrides_constrained/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
+# yaml_file_fmpc_socp = './config_overrides_constrained/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
+# SHADE_STATE_CONSTRAINT = True
+# SHADE_INPUT_CONSTRAINT = True
 
 
-GUI = False
+GUI = True
 
 ctrl_freq = 50
 sample_time = 1/ctrl_freq
@@ -38,13 +38,13 @@ num_loops = 2
 
 
 constraint_state = -0.8
-
-
 constraint_input = 0.435
 
-fig_width = 3.4*2 # inches
-fig_height = 3.4*1.6
+fig_width = 3.4*2 *2# inches
+fig_height = 3.4*1.6 *2
 plt.rcParams.update({'font.size': 10})
+alpha_lines = 1.0
+alpha_constraint = 0.2
 
 #########################################
 data_path_nmpc = './temp-data/mpc_data_quadrotor_traj_tracking.pkl'
@@ -174,9 +174,9 @@ limits_y = [0.4, 1.6]
 # plot of figure 8 in 2D space
 plt.figure(figsize=(fig_width, fig_height))
 plt.plot(state_ref_mpc[0, :301, 0, 0], state_ref_mpc[0, :301, 2, 0], linestyle = 'dashed', color=ref_color, label=ref_label, linewidth=linewidth)
-plt.plot(state_mpc[:, 0], state_mpc[:, 2], color=mpc_color, label=mpc_label, linewidth=linewidth)
-plt.plot(state_x_fmpc[:, 0], state_x_fmpc[:, 2], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-plt.plot(state_x_fmpc_socp[:, 0], state_x_fmpc_socp[:, 2], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+plt.plot(state_mpc[:, 0], state_mpc[:, 2], color=mpc_color, label=mpc_label, linewidth=linewidth, alpha=alpha_lines)
+plt.plot(state_x_fmpc[:, 0], state_x_fmpc[:, 2], color=fmpc_color, label=fmpc_label, linewidth=linewidth, alpha=alpha_lines)
+plt.plot(state_x_fmpc_socp[:, 0], state_x_fmpc_socp[:, 2], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth, alpha=alpha_lines)
 plt.legend()
 plt.xlabel(r'Position x (m)')
 plt.ylabel(r'Position z (m)')
@@ -184,15 +184,15 @@ plt.xlim(limits_x)
 plt.ylim(limits_y)
 plt.grid()
 if SHADE_STATE_CONSTRAINT:
-    plt.axvspan(limits_x[0], constraint_state, color=tum_dia_red, alpha=0.2)
+    plt.axvspan(limits_x[0], constraint_state, color=tum_dia_red, alpha=alpha_constraint)
 plt.savefig("./plots/fig8.pdf", format="pdf", bbox_inches="tight")
 
 # plot errors over time
 time = np.arange(0, np.shape(error_mpc)[0]*sample_time, sample_time )
 plt.figure(figsize=(fig_width, fig_height))
-plt.plot(time, np.sqrt(error_mpc), color=mpc_color, label=mpc_label, linewidth=linewidth)
-plt.plot(time, np.sqrt(error_fmpc), color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-plt.plot(time, np.sqrt(error_fmpc_socp), color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+plt.plot(time, np.sqrt(error_mpc), color=mpc_color, label=mpc_label, linewidth=linewidth, alpha=alpha_lines)
+plt.plot(time, np.sqrt(error_fmpc), color=fmpc_color, label=fmpc_label, linewidth=linewidth, alpha=alpha_lines)
+plt.plot(time, np.sqrt(error_fmpc_socp), color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth, alpha=alpha_lines)
 plt.legend()
 plt.xlabel(r'Time (s)')
 plt.ylabel(r'Tracking error (m)')
@@ -225,36 +225,36 @@ print('      average RMSE: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(rmse_mpc*1000,
 limits_y1 = [0, 0.65]
 time = np.arange(0, np.shape(action_mpc)[0]*sample_time, sample_time )
 fig, ax = plt.subplots(2, figsize=(fig_width, fig_height))
-ax[0].plot(time, action_mpc[:, 0], color=mpc_color, label=mpc_label, linewidth=linewidth)
-ax[0].plot(time, action_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-ax[0].plot(time, action_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+ax[0].plot(time, action_mpc[:, 0], color=mpc_color, label=mpc_label, linewidth=linewidth, alpha=alpha_lines)
+ax[0].plot(time, action_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth, alpha=alpha_lines)
+ax[0].plot(time, action_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth, alpha=alpha_lines)
 ax[0].set_ylabel(r'Thrust $T_c$ (N)')
 ax[0].set_ylim(limits_y1)
 ax[0].legend()
 ax[0].grid()
-ax[1].plot(time, action_mpc[:, 1], color=mpc_color, label=mpc_label, linewidth=linewidth)
-ax[1].plot(time, action_fmpc[:, 1], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-ax[1].plot(time, action_fmpc_socp[:, 1], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+ax[1].plot(time, action_mpc[:, 1], color=mpc_color, label=mpc_label, linewidth=linewidth, alpha=alpha_lines)
+ax[1].plot(time, action_fmpc[:, 1], color=fmpc_color, label=fmpc_label, linewidth=linewidth, alpha=alpha_lines)
+ax[1].plot(time, action_fmpc_socp[:, 1], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth, alpha=alpha_lines)
 ax[1].set_ylabel(r'Angle $\theta_c$ (rad)')
 ax[1].grid()
 ax[1].set_xlabel(r'Time (s)')
 if SHADE_INPUT_CONSTRAINT:
-    ax[0].axhspan(constraint_input, limits_y1[1], color=tum_dia_red, alpha=0.2)
+    ax[0].axhspan(constraint_input, limits_y1[1], color=tum_dia_red, alpha=alpha_constraint)
 plt.savefig("./plots/inputs.pdf", format="pdf", bbox_inches="tight")
 
 # Tc_ddot in Flatness based controllers
 time = np.arange(0, np.shape(action_ext_fmpc)[0]*sample_time, sample_time )
 plt.figure(figsize=(fig_width, fig_height))
 # plt.plot(time, np.sqrt(error_mpc), color=mpc_color, label=mpc_label, linewidth=linewidth)
-plt.plot(time, action_ext_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-plt.plot(time, action_ext_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+plt.plot(time, action_ext_fmpc[:, 0], color=fmpc_color, label=fmpc_label, linewidth=linewidth, alpha=alpha_lines)
+plt.plot(time, action_ext_fmpc_socp[:, 0], color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth, alpha=alpha_lines)
 plt.legend()
 plt.xlabel('time in s')
 plt.ylabel(r'$\ddot{T_c}$ in $\frac{N}{s^2}$')
 plt.grid()
 print('\nMaximum of inputs')
 print('               NMPC   |  FMPC   | FMPC+SOCP')
-print('Thrust: {:.2f}N   | {:.2f}N   | {:.2f}N'.format(np.max(action_mpc[:, 0]), np.max(action_fmpc[:, 0]), np.max(action_fmpc_socp[:, 0])))
+print('Thrust: {:.5f}N   | {:.5f}N   | {:.5f}N'.format(np.max(action_mpc[:, 0]), np.max(action_fmpc[:, 0]), np.max(action_fmpc_socp[:, 0])))
 print(' Angle: {:.2f}rad | {:.2f}rad | {:.2f}rad'.format(np.max(action_mpc[:, 1]), np.max(action_fmpc[:, 1]), np.max(action_fmpc_socp[:, 1])))
 
 print('\nMaximum of extended input')
