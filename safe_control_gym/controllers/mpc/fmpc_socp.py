@@ -173,7 +173,11 @@ class FlatMPC_SOCP(BaseController):
             state_bound['quantile'] = flat_state_constraint.quantile
         else: 
             state_bound = None
-
+        # # add input constraint to test what happens
+        # b_input = np.array([100, 100]).T
+        # sym_fun_input = lambda x:  x - b_input
+        # sym_fun_input2 = lambda x:  -x - b_input
+        # self.mpc.input_constraints_sym = [sym_fun_input, sym_fun_input2]
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
 
