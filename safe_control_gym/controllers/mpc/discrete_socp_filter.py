@@ -326,8 +326,8 @@ def stab_filter_matrices(gam1,
     u_t2 = u_max.copy()
     u_t2[1] *= -1.0
     u_test = [u_max, -u_max, u_t1 , u_t2]
-    L1 = 2*W2[0,0]*max([(np.abs(gam1[0]-v_nom[0]+w4[0]+ gam2[0].T @ u)) for u in u_test])
-    L2 = 2*W2[1,1]*max([(np.abs(gam1[1]-v_nom[1]+w4[1]+ gam2[1].T @ u)) for u in u_test])
+    L1 = 2*W2[0,0]*max([(np.abs(gam1[0]-v_nom[0]+w4[0]+ gam2[0].T @ u)+2*np.sqrt(gam3[0]+gam4[0]@u + u@L_gam5[0]@L_gam5[0].T@u)) for u in u_test]) # TODO write as gam5, not L@L.T
+    L2 = 2*W2[1,1]*max([(np.abs(gam1[1]-v_nom[1]+w4[1]+ gam2[1].T @ u)+2*np.sqrt(gam3[1]+gam4[1]@u + u@L_gam5[1]@L_gam5[1].T@u)) for u in u_test])
 
     term_Linv_gam4_0 = 0.5*L_gam5_inv[0] @ gam4[0]
     term_Linv_gam4_1 = 0.5*L_gam5_inv[1] @ gam4[1]
