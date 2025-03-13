@@ -178,8 +178,17 @@ class FlatMPC_SOCP(BaseController):
         # sym_fun_input = lambda x:  x - b_input
         # sym_fun_input2 = lambda x:  -x - b_input
         # self.mpc.input_constraints_sym = [sym_fun_input, sym_fun_input2]
+
+        # bound on thrust: for SOCP and flat state observer
+        if socp_config.apply_thrust_constraint == True: 
+            thrust_max = socp_config.thrust_max
+            obs_limits = np.array([thrust_max, socp_config.input_bound[1]])
+        else:
+            thrust_max = None 
+            obs_limits = None
+            
         # setup flat state observer
-        self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
+        self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T, obs_limits)
 
         # setup double integrator for dynamic extension
         self.eta = np.zeros(2)
@@ -242,10 +251,6 @@ class FlatMPC_SOCP(BaseController):
         print(f'GP training data normalization vector: {normalization_vect}')
 
         d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext, socp_config.slack_weight_state] 
-        if socp_config.apply_thrust_constraint == True: 
-            thrust_max = socp_config.thrust_max
-        else:
-            thrust_max = None 
 
         # initialize SOCP Filter
         self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
@@ -417,7 +422,7 @@ class FlatMPC_SOCP(BaseController):
         self.mpc.close()
     
 class FlatStateObserver():    
-    def __init__(self,  QUAD_TYPE: QuadType, inertial_prop, g:float, dt: float, horizon:int):
+    def __init__(self,  QUAD_TYPE: QuadType, inertial_prop, g:float, dt: float, horizon:int, u_limit=None):
         '''Creates observer for flat state model
 
         Args:
@@ -432,6 +437,7 @@ class FlatStateObserver():
         self.GRAVITY = g
         self.dt = dt
         self.fmpc_horizon = horizon
+        self.u_limit = u_limit
 
         if self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
             self.action_from_flat_states_func = _get_u_from_flat_states_3D_SI_10State
@@ -486,6 +492,10 @@ class FlatStateObserver():
         
         for i in range(u_comp_length):
             u_horizon[:, i] = self.action_from_flat_states_func(self.z_horizon[:,i], self.v_horizon[:,i], self.inertial_prop, self.GRAVITY)
+
+        if self.u_limit is not None: # clip in case input constraints are applied
+            u_max = np.tile(np.atleast_2d(self.u_limit).T, u_comp_length)
+            np.clip(u_horizon, a_min=None, a_max=u_max)
 
         u_dot_central = (-u_horizon[:, 0]  + u_horizon[:, 2])/(2*self.dt)
        
