@@ -1,7 +1,7 @@
 # runs experiments for paper
 # plots the data for paper
 import os
-import sys
+import argparse
 from examples.mpc.runs_paper.mpc_experiment_paper import run
 import pickle
 import numpy as np
@@ -11,27 +11,42 @@ plt.rcParams['pdf.fonttype'] = 42
 plt.rcParams['ps.fonttype'] = 42
 
 
+
+parser = argparse.ArgumentParser(description="Run the script in different modes.")
+parser.add_argument(
+    '--mode',
+    type=str,
+    default='normal',  # Default unconstrained lemniscate
+    choices=['normal', 'constrained'],
+    help='Choose the mode: normal or constrained (default is normal).'
+)
+
+args = parser.parse_args()
+
+if args.mode == 'normal':
+    print("Running unconstrained lemniscate.")
+    yaml_file_base = './config_overrides_fast/quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_nmpc = './config_overrides_fast/mpc_quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_fmpc = './config_overrides_fast/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_fmpc_socp = './config_overrides_fast/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
+    SHADE_STATE_CONSTRAINT = False
+    SHADE_INPUT_CONSTRAINT = False
+
+elif args.mode == 'constrained':
+    print("Running constrained lemniscate.")
+    yaml_file_base = './config_overrides_constrained/quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_nmpc = './config_overrides_constrained/mpc_quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_fmpc = './config_overrides_constrained/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
+    yaml_file_fmpc_socp = './config_overrides_constrained/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
+    SHADE_STATE_CONSTRAINT = True
+    SHADE_INPUT_CONSTRAINT = True
+
+
+
 ######### Parameters ###############################
-RUN_NMPC=True
-RUN_FMPC=True
-RUN_FMPC_SOCP=True
-
-# fast run 
-yaml_file_base = './config_overrides_fast/quadrotor_2D_attitude_tracking.yaml'
-yaml_file_nmpc = './config_overrides_fast/mpc_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc = './config_overrides_fast/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc_socp = './config_overrides_fast/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
-SHADE_STATE_CONSTRAINT = False
-SHADE_INPUT_CONSTRAINT = False
-
-# # constrained run
-yaml_file_base = './config_overrides_constrained/quadrotor_2D_attitude_tracking.yaml'
-yaml_file_nmpc = './config_overrides_constrained/mpc_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc = './config_overrides_constrained/fmpc_ext_quadrotor_2D_attitude_tracking.yaml'
-yaml_file_fmpc_socp = './config_overrides_constrained/fmpc_socp_quadrotor_2D_attitude_tracking.yaml'
-SHADE_STATE_CONSTRAINT = True
-SHADE_INPUT_CONSTRAINT = True
-
+RUN_NMPC=False
+RUN_FMPC=False
+RUN_FMPC_SOCP=False
 
 GUI = False
 
@@ -53,11 +68,6 @@ alpha_constraint = 0.2
 data_path_nmpc = './temp-data/mpc_data_quadrotor_traj_tracking.pkl'
 data_path_fmpc = './temp-data/fmpc_ext_data_quadrotor_traj_tracking.pkl'
 data_path_fmpc_socp = './temp-data/fmpc_socp_data_quadrotor_traj_tracking.pkl'
-
-# debugger
-# data_path_nmpc = './examples/mpc/temp-data/mpc_data_quadrotor_traj_tracking.pkl'
-# data_path_fmpc = './examples/mpc/temp-data/fmpc_ext_data_quadrotor_traj_tracking.pkl'
-# data_path_fmpc_socp = './examples/mpc/temp-data/fmpc_socp_data_quadrotor_traj_tracking.pkl'
 
 if RUN_NMPC:
     if os.path.exists(data_path_nmpc):
