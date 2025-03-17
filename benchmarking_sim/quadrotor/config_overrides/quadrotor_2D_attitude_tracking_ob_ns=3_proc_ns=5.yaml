@@ -50,7 +50,7 @@ task_config:
     Iyy: 1.4e-05
     beta_1: 18.11
     beta_2: 3.68
-    beta_3: 0.0
+    beta_3: -0.008
     alpha_1: -140.8
     alpha_2: -13.4
     alpha_3: 124.8
@@ -69,13 +69,14 @@ task_config:
       # upper_bounds: [0.58212, 0.7]
       # lower_bounds: [0.09702, -0.7]
 
-  done_on_out_of_bound: False
+  done_on_out_of_bound: True
+  # done_on_out_of_bound: False
   done_on_violation: False
 
   disturbances:
-    dynamics:
+    action:
       - disturbance_func: white_noise
-        std: 0.005
+        std: [0.03116, 0.03450]
     observation:
       - disturbance_func: white_noise
-        std: [8.40e-04, 2.25e-01, 4.35e-04, 1.20e-01, 1.95e-02, 5.40e+00,]
+        std: [7.9e-5, 4.626e-4, 1.03e-5, 1.0626e-3, 3.924e-4, 2.4372e-3]
