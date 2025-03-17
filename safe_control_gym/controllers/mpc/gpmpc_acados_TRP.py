@@ -556,8 +556,8 @@ class GPMPC_ACADOS_TRP(GPMPC):
                     + cs.vertcat(0, T_pred * (cs.cos(acados_model.x[self.phi_idx]) * cs.sin(acados_model.x[self.theta_idx])),
                                  0, T_pred * (- cs.sin(acados_model.x[self.phi_idx])),
                                  0, T_pred * (cs.cos(acados_model.x[self.phi_idx]) * cs.cos(acados_model.x[self.theta_idx])),
-                                 0, R_pred,
-                                 0, P_pred)
+                                 0, 0,
+                                 R_pred, P_pred)
             f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u, acados_model.p], [f_cont])
             # use rk4 to discretize the continuous dynamics
             k1 = f_cont_func(acados_model.x, acados_model.u, acados_model.p)
