@@ -141,6 +141,24 @@ class PID(BaseController):
                                                                         target_rpy,
                                                                         target_vel
                                                                         )
+            if self.env.QUAD_TYPE in [4, 6, 8]:
+                if self.env.QUAD_TYPE == 4:  # 2D quadrotor with attitude control
+                    action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4, computed_target_rpy[1]])
+                
+                elif self.env.QUAD_TYPE == 6:  # 3D quadrotor with attitude control
+                    action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4,
+                                    computed_target_rpy[0],
+                                    computed_target_rpy[1],
+                                    computed_target_rpy[2]])
+                elif self.env.QUAD_TYPE == 8:  # 3D quadrotor with attitude control
+                    action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4,
+                                    computed_target_rpy[0],
+                                    computed_target_rpy[1],])
+                self.last_action = action
+                time_after = time.perf_counter()
+                self.results_dict['inference_time'].append(time_after - time_before)
+                return action
+            
             rpm = self._dslPIDAttitudeControl(thrust,
                                             cur_quat,
                                             computed_target_rpy,
@@ -157,17 +175,6 @@ class PID(BaseController):
         action = self.KF * action**2
         if self.env.QUAD_TYPE == 2:
             action = np.array([action[0] + action[3], action[1] + action[2]])
-        elif self.env.QUAD_TYPE == 4:  # 2D quadrotor with attitude control
-            action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4, computed_target_rpy[1]])
-        elif self.env.QUAD_TYPE == 6:  # 3D quadrotor with attitude control
-            action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4,
-                               computed_target_rpy[0],
-                               computed_target_rpy[1],
-                               computed_target_rpy[2]])
-        elif self.env.QUAD_TYPE == 8:  # 3D quadrotor with attitude control
-            action = np.array([self.env.attitude_control.pwm2thrust(thrust/3)*4,
-                               computed_target_rpy[0],
-                               computed_target_rpy[1],])
         self.last_action = action
         return action
 

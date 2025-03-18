@@ -115,6 +115,7 @@ class GPMPC_ACADOS_TP(GPMPC):
         self.input_mask = None
         self.target_mask = None
         self.rand_hist = {'task_rand': [], 'domain_rand': []}
+        self.new_GP_model = False
 
         # MPC params
         # self.use_linear_prior = use_linear_prior
@@ -532,7 +533,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             GP_P.train(train_input_P, train_target_P, test_inputs_P, test_targets_P,
                     n_train=self.optimization_iterations[1], learning_rate=self.learning_rate[1],
                     gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_P.pth'))
-
+        self.new_GP_model = True
         self.gaussian_process = [GP_T, GP_P]
 
         # self.gaussian_process = GaussianProcessCollection(ZeroMeanIndependentGPModel,
@@ -1616,6 +1617,7 @@ class GPMPC_ACADOS_TP(GPMPC):
             self.traj_step = 0
         # Dynamics model.
         self.setup_prior_dynamics()
+        self.prior_ctrl.reset()
         if self.gaussian_process is not None:
             # self.compute_terminal_cost_and_ancillary_gain()
             # sparse GP
@@ -1629,23 +1631,24 @@ class GPMPC_ACADOS_TP(GPMPC):
             # explicitly clear the previously generated c code, ocp and solver
             # otherwise the number of parameters will be incorrect
             # TODO: find a better way to handle this
-            self.acados_model = None
-            self.ocp = None
-            self.acados_ocp_solver = None
             # delete the generated c code directory
-            if os.path.exists(self.output_dir + '/gpmpc_c_generated_code'):
-                print('deleting the generated c code directory')
-                shutil.rmtree(self.output_dir + '/gpmpc_c_generated_code', ignore_errors=False)
-                assert not os.path.exists(self.output_dir + '/gpmpc_c_generated_code')
+            # if os.path.exists(self.output_dir + '/gpmpc_c_generated_code'):
+            #     print('deleting the generated c code directory')
+            #     shutil.rmtree(self.output_dir + '/gpmpc_c_generated_code', ignore_errors=False)
+            #     assert not os.path.exists(self.output_dir + '/gpmpc_c_generated_code')
+            if self.new_GP_model:
+                self.acados_model = None
+                self.ocp = None
+                self.acados_ocp_solver = None
+                # reinitialize the acados model and solver
+                self.setup_acados_model(n_ind_points)
+                self.setup_acados_optimizer(n_ind_points)
+                # get time in $ymd_HMS format
+                current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+                self.acados_ocp_solver = AcadosOcpSolver(self.ocp, 
+                                                         self.output_dir + f'/gpmpc_acados_ocp_solver_{current_time}.json')
+                self.new_GP_model = False
 
-            # reinitialize the acados model and solver
-            self.setup_acados_model(n_ind_points)
-            self.setup_acados_optimizer(n_ind_points)
-            # get time in $ymd_HMS format
-            current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/gpmpc_acados_ocp_solver_{current_time}.json')
-
-        self.prior_ctrl.reset()
         self.setup_results_dict()
         # Previously solved states & inputs, useful for warm start.
         self.x_prev = None

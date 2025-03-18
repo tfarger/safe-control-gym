@@ -50,7 +50,7 @@ task_config:
     Iyy: 1.4e-05
     beta_1: 18.11
     beta_2: 3.68
-    beta_3: 0.0
+    beta_3: -0.008
     alpha_1: -140.8
     alpha_2: -13.4
     alpha_3: 124.8
@@ -74,9 +74,9 @@ task_config:
   done_on_violation: False
 
   disturbances:
-    dynamics:
+    action:
       - disturbance_func: white_noise
-        std: 0.005
+        std: [0.03116, 0.03450]
     observation:
       - disturbance_func: white_noise
-        std: [2.80e-04, 7.50e-02, 1.45e-04, 4.00e-02, 6.50e-03, 1.80e+00,]
+        std: [3.9500e-04, 2.3130e-03, 5.1500e-05, 5.3130e-03, 1.9620e-03, 1.2186e-02]
