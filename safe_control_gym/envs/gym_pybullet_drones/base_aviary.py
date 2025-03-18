@@ -850,7 +850,7 @@ class BaseAviary(BenchmarkEnv):
         self.rpy_rates[nth_drone, :] = rpy_rates.copy()
         self.ang_v[nth_drone, :] = get_angularvelocity_rpy(self.rpy[nth_drone, :], self.rpy_rates[nth_drone, :])
 
-    def setup_dynamics_si_expression(self):
+    def setup_dynamics_si_expression(self, prop_values=None):
         # Casadi states
         z = cs.MX.sym('z')
         x = cs.MX.sym('x')
@@ -866,12 +866,20 @@ class BaseAviary(BenchmarkEnv):
         T = cs.MX.sym('T') # normlized thrust [N]
         P = cs.MX.sym('P')  # desired pitch angle [rad]
         U = cs.vertcat(T, P)
-        X_dot = cs.vertcat(x_dot,
-                            (18.112984649321753 * T+ 3.6800) * cs.sin(theta) + -0.008 + d[0] / self.MASS,
-                            z_dot,
-                            (18.112984649321753 * T + 3.6800) * cs.cos(theta) - g + d[1] / self.MASS,
-                            theta_dot,
-                            -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+        if prop_values is None:
+            X_dot = cs.vertcat(x_dot,
+                                (18.112984649321753 * T+ 3.6800) * cs.sin(theta) + d[0] / self.MASS,
+                                z_dot,
+                                (18.112984649321753 * T + 3.6800) * cs.cos(theta) - g + d[1] / self.MASS,
+                                theta_dot,
+                                -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+        else:
+            X_dot = cs.vertcat(x_dot,
+                                (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.sin(theta) + d[0] / self.MASS,
+                                z_dot,
+                                (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.cos(theta) - g + d[1] / self.MASS,
+                                theta_dot,
+                                prop_values['alpha_1'] * (theta) + prop_values['alpha_2'] * theta_dot + prop_values['alpha_3'] * P)
         self.X_dot_fun = cs.Function("X_dot", [X, U, d], [X_dot])
 
     def _dynamics_si_3d(self, action, nth_drone, disturbance_force=None):

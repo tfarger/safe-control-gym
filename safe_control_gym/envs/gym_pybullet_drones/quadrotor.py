@@ -567,6 +567,7 @@ class Quadrotor(BaseAviary):
             self.alpha_2 = prop_values['alpha_2']
             self.alpha_3 = prop_values['alpha_3']
             self._setup_symbolic(prop_values)
+            self.setup_dynamics_si_expression(prop_values)
 
         # Override inertial properties.
         p.changeDynamics(
