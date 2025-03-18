@@ -1690,10 +1690,12 @@ class GPMPC_ACADOS_TP(GPMPC):
         ax[0].set_xlim([0, num_data])
         ax[0].legend()
 
-        ax[1].scatter(train_inputs[:, 0], train_targets[:, 0], label='Target', color='gray')
-        ax[1].plot(train_inputs[:, 0], mean_T, label='GP mean', color='blue')
-        # ax[1].fill_between(train_inputs[:, 0], lower_T, upper_T, alpha=0.5, color='skyblue', label='2-$\sigma$')
-        ax[1].plot(train_inputs[:, 0], residual_T, label='Residual (analytical)', color='green')
+        # order train input by magnitude of T
+        idx = np.argsort(train_inputs[:, 0])
+        ax[1].scatter(train_inputs[idx][:, 0], train_targets[idx][:, 0], label='Target', color='gray')
+        ax[1].plot(train_inputs[idx][:, 0], mean_T[idx], label='GP mean', color='blue')
+        ax[1].fill_between(train_inputs[idx][:, 0], lower_T[idx], upper_T[idx], alpha=0.5, color='skyblue', label='2-$\sigma$')
+        ax[1].plot(train_inputs[idx][:, 0], residual_T[idx], label='Residual (analytical)', color='green')
         ax[1].legend()
         ax[1].set_ylabel('T residual [$m/s^2$]')
         ax[1].set_xlabel('$T_c$ [$N$]')

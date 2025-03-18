@@ -102,10 +102,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
         gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
         config.output_dir = os.path.join(config.output_dir, f'_{gp_model_tag}')
-        if seed%10 == 0:
-            config.algo_config.gp_model_path = gp_model_dirs[10-1]
-        else:
-            config.algo_config.gp_model_path = gp_model_dirs[seed%10-1]
+        idx = seed % len(gp_model_dirs)
+        config.algo_config.gp_model_path = gp_model_dirs[idx]
     # else:
     if eval_task == 'rollout':
         config.output_dir = config.output_dir + f'{ctrl_tag}_rollout_{SYS}{ADDITIONAL}'
@@ -127,10 +125,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     if ALGO in ['gpmpc_acados', 'gp_mpc', 'gpmpc_acados_TP', 'gpmpc_acados_TRP']:
         config.algo_config.gp_model_path = gp_model_dirs[seed-1]
     
-    # remove process noise if there is any
-    config.task_config.disturbances.dynamics[0]['std'] = 0.0000 \
-        if eval_task not in ['proc_noise'] \
-        else config.task_config.disturbances.dynamics[0]['std']
+    # # remove process noise if there is any
+    # config.task_config.disturbances.action[0]['std'] = 0.0000 \
+    #     if eval_task not in ['proc_noise'] \
+    #     else config.task_config.disturbances.action[0]['std']
     # amplify the observation noise std with a factor 
     if eval_task == 'obs_noise':
         default_noise_std = config.task_config.disturbances.observation[0]['std']
@@ -138,10 +136,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         config.task_config.disturbances.observation[0]['std'] = [noise_factor * default_noise_std[i] for i in range(len(default_noise_std))]
         print(f'Amplified observation noise std: {config.task_config.disturbances.observation[0]["std"]}')
     elif eval_task == 'proc_noise':
-        default_noise_std = config.task_config.disturbances.dynamics[0]['std']
+        default_noise_std = config.task_config.disturbances.action[0]['std']
         print(f'Original process noise std: {default_noise_std}')
-        config.task_config.disturbances.dynamics[0]['std'] = noise_factor * default_noise_std 
-        print(f'Amplified process noise std: {config.task_config.disturbances.dynamics[0]["std"]}')
+        config.task_config.disturbances.action[0]['std'] = noise_factor * default_noise_std 
+        print(f'Amplified process noise std: {config.task_config.disturbances.action[0]["std"]}')
     # downwash height scale
     elif eval_task == 'downwash':
         if dw_height is not None:
