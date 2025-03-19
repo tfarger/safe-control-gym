@@ -83,7 +83,7 @@ task_config:
         std: [0.03116, 0.03450]
     observation:
       - disturbance_func: white_noise
-        std: [7.9e-5, 4.626e-4, 1.03e-5, 1.0626e-3, 3.924e-4, 2.4372e-3]
+        std: [7.9e-6, 4.626e-4, 1.03e-5, 1.0626e-3, 3.924e-4, 2.4372e-3]
     downwash:
       - disturbance_func: uniform # dummy
         low:  1. # dummy

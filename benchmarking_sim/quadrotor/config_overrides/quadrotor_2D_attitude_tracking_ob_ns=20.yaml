@@ -76,7 +76,7 @@ task_config:
   disturbances:
     action:
       - disturbance_func: white_noise
-        std: [0.1558, 0.1725]
+        std: [0.03116, 0.03450]
     observation:
       - disturbance_func: white_noise
-        std: [3.9500e-04, 2.3130e-03, 5.1500e-05, 5.3130e-03, 1.9620e-03, 1.2186e-02]
+        std: [0.000158, 0.009252, 0.000206, 0.021252, 0.007848, 0.048744]
