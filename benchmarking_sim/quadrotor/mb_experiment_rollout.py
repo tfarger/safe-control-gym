@@ -36,24 +36,13 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
-    # ALGO = 'ilqr'
-    # ALGO = 'gp_mpc'
-    # ALGO = 'gpmpc_acados'
-    # ALGO = 'mpc'
-    # ALGO = 'mpc_acados'
     ALGO = ALGO
-    # ALGO = 'linear_mpc'
-    # ALGO = 'lqr'
-    # ALGO = 'lqr_c'
-    # ALGO = 'pid'
     SYS = SYS
     TASK = 'tracking'
-    # PRIOR = '200'
     PRIOR = '100'
-    agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 'quadrotor_3D_attitude'] else SYS
-    # ADDITIONAL = '_fast'
+    agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 
+                                   'quadrotor_3D_attitude'] else SYS
     ADDITIONAL = Additional
-    # ADDITIONAL = ''
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
 
@@ -107,12 +96,14 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     # else:
     if eval_task == 'rollout':
         config.output_dir = config.output_dir + f'{ctrl_tag}_rollout_{SYS}{ADDITIONAL}'
-    elif eval_task == 'obs_noise':
-        config.output_dir = config.output_dir + f'{ctrl_tag}_obs_noise_{SYS}/' + f'seed_{seed}'
-    elif eval_task == 'proc_noise':
-        config.output_dir = config.output_dir + f'{ctrl_tag}_proc_noise_{SYS}/' + f'seed_{seed}'
-    elif eval_task == 'downwash':
-        config.output_dir = config.output_dir + f'{ctrl_tag}_downwash_{SYS}/' + f'seed_{seed}'
+    # elif eval_task == 'obs_noise':
+    #     config.output_dir = config.output_dir + f'{ctrl_tag}_obs_noise_{SYS}/' + f'seed_{seed}'
+    # elif eval_task == 'proc_noise':
+    #     config.output_dir = config.output_dir + f'{ctrl_tag}_proc_noise_{SYS}/' + f'seed_{seed}'
+    # elif eval_task == 'downwash':
+    #     config.output_dir = config.output_dir + f'{ctrl_tag}_downwash_{SYS}/' + f'seed_{seed}'
+    elif eval_task in ['obs_noise', 'proc_noise', 'param', 'downwash']:
+        config.output_dir = config.output_dir + f'{ctrl_tag}_{eval_task}_{SYS}{ADDITIONAL}/' + f'seed_{seed}'
     else:
         raise ValueError('eval_task not recognized')
         
@@ -121,9 +112,9 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     config.algo_config.output_dir = config.output_dir
     mkdirs(config.output_dir)
 
-    config.algo_config.gp_model_path = None
-    if ALGO in ['gpmpc_acados', 'gp_mpc', 'gpmpc_acados_TP', 'gpmpc_acados_TRP']:
-        config.algo_config.gp_model_path = gp_model_dirs[seed-1]
+    # config.algo_config.gp_model_path = None
+    # if ALGO in ['gpmpc_acados', 'gp_mpc', 'gpmpc_acados_TP', 'gpmpc_acados_TRP']:
+    #     config.algo_config.gp_model_path = gp_model_dirs[seed-1]
     
     # amplify the observation noise std with a factor 
     if eval_task == 'obs_noise':
@@ -136,8 +127,19 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         print(f'Original process noise std: {default_noise_std}')
         config.task_config.disturbances.action[0]['std'] = [noise_factor * default_noise_std[i] for i in range(len(default_noise_std))]
         print(f'Amplified process noise std: {config.task_config.disturbances.action[0]["std"]}')
-    # downwash height scale
+    elif eval_task == 'param':
+        # parametric uncertainty
+        inertial_prop_rand_info = config.task_config.inertial_prop_randomization_info
+        print('Original inertial properties: ', inertial_prop_rand_info)
+        for key, value in inertial_prop_rand_info.items():
+            if value.distrib == 'uniform':
+                inertial_prop_rand_info[key].low = value.low + noise_factor * value.low
+                inertial_prop_rand_info[key].high = value.high + noise_factor * value.high
+        config.task_config.inertial_prop_randomization_info = inertial_prop_rand_info
+        print('Inertial properties: ', inertial_prop_rand_info)     
+            
     elif eval_task == 'downwash':
+        # downwash height scale
         if dw_height is not None:
             config.task_config.disturbances.downwash[0].pos[-1] = dw_height
             print('downwash height: ', config.task_config.disturbances.downwash[0].pos)
@@ -234,6 +236,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     metrics['dw_height'] = dw_height
     metrics['dw_height_scale'] = dw_height_scale
     max_dw_force = None
+    ctrl_params = ctrl.env.last_prop_values
+    env_params = experiment.env.last_prop_values
+    # metrics['ctrl_params'] = ctrl_params
+    # metrics['env_params'] = env_params
     if hasattr(experiment.env, 'dw_model') and eval_task == 'downwash':
         force_log = experiment.env.dw_model.get_force_log()
         max_dw_force = np.max(force_log)
@@ -246,7 +252,6 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         fig.savefig(f'./{config.output_dir}/downwash_force.png')
     metrics['max_dw_force'] = max_dw_force    
     all_trajs = dict(all_trajs)
-
 
     if save_data:
         results = {'trajs_data': all_trajs, 'metrics': metrics}

@@ -339,6 +339,9 @@ class Quadrotor(BaseAviary):
             elif self.DISTURBANCES['downwash'][0]['mode'] == 'track':
                 self.dw_model = Downwash() # update the position later
 
+        # store the last prop values (only for logging)
+        self.last_prop_values = None
+        
     def set_goals(self):
         # Create X_GOAL and U_GOAL references for the assigned task.
         # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
@@ -568,6 +571,7 @@ class Quadrotor(BaseAviary):
             self.alpha_3 = prop_values['alpha_3']
             self._setup_symbolic(prop_values)
             self.setup_dynamics_si_expression(prop_values)
+        self.last_prop_values = prop_values
 
         # Override inertial properties.
         p.changeDynamics(
