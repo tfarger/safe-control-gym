@@ -22,23 +22,31 @@ else
     SYS_NAME='quadrotor'
 fi
 
-Q=(15.0,0.1,15.0,0.1,0.1,0.001)
+TRAIN_LIST=('nominal')
+# shellcheck disable=SC2054
+Q=(3.0,0.1,3.0,0.1,0.1,0.001)
 
 # Train the unsafe controller/agent.
-for SEED in {1..1}
-do
-    python3 ../../safe_control_gym/experiments/train_rl_controller.py \
-        --algo ${ALGO} \
-        --task ${SYS_NAME} \
-        --overrides \
-            ./config_overrides/${SYS}/${ALGO}_${SYS}.yaml \
-            ./config_overrides/${SYS}/${SYS}_${TASK}.yaml \
-        --output_dir ./Results/${EXP_NAME} \
-        --tag ${SYS}_${ALGO}_data00 \
-        --seed ${SEED} \
-        --use_gpu \
-        --kv_overrides \
-            task_config.randomized_init=True \
-            task_config.normalized_rl_action_space=False\
-            task_config.rew_state_weight=${Q}
+for TRAIN in "${TRAIN_LIST[@]}"; do
+    if [ "${TRAIN}" == 'nominal' ]; then
+      CONFIG1="./config_overrides/${SYS}/${ALGO}_${SYS}.yaml"
+      CONFIG2="./config_overrides/${SYS}/${SYS}_${TASK}.yaml"
+    fi
+    for SEED in {0..0}; do
+        python3 ../../safe_control_gym/experiments/train_rl_controller.py \
+            --algo ${ALGO} \
+            --task ${SYS_NAME} \
+            --overrides \
+                "${CONFIG1}" \
+                "${CONFIG2}" \
+            --output_dir ./Results/${EXP_NAME} \
+            --tag ${SYS}_${ALGO}_data2 \
+            --seed "${SEED}" \
+            --use_gpu \
+            --kv_overrides \
+                task_config.randomized_init=True \
+                task_config.normalized_rl_action_space=False\
+                task_config.rew_state_weight=${Q} &
+    done
+    wait
 done

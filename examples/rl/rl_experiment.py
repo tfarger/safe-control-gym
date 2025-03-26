@@ -40,12 +40,12 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
         system = config.task
 
     # Experiment settings
-    if config.experiment_type == 'robustness':
+    if config.experiment_type == 'robustness_ob':
         config.task_config.disturbances.observation[0].std = [
             config.task_config.external_param*i for i in config.task_config.disturbances.observation[0].std
         ]
     elif config.experiment_type == 'robustness_ps':
-        config.task_config.disturbances.dynamics[0].std = (
+        config.task_config.disturbances.action[0].std = (
             config.task_config.external_param * config.task_config.disturbances.dynamics[0].std
         )
     elif config.experiment_type == 'robustness_dw':
@@ -72,7 +72,7 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
         # ctrl.load(config.pretrain_path + "model_latest.pt")
         ctrl.load(config.pretrain_path + "model_best.pt")
     else:
-        ctrl.load(f'{curr_path}/models/{config.algo}/model_latest.pt')
+        ctrl.load(f'{curr_path}/models/{config.algo}/model_best.pt')
 
     # Remove temporary files and directories
     shutil.rmtree(f'{curr_path}/temp', ignore_errors=True)
@@ -90,9 +90,9 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
         metrics['episode_len_sec'] = config.task_config.external_param
         temp = config.pretrain_path+"/transfer_metric_"+str(config.task_config.external_param)+".npy"
         np.save(temp, metrics, allow_pickle=True)
-    elif config.experiment_type == "robustness":
+    elif config.experiment_type == "robustness_ob":
         metrics['noise_scale'] = config.task_config.external_param
-        temp = config.pretrain_path+"/robust_metric_"+str(config.task_config.external_param)+".npy"
+        temp = config.pretrain_path+"/robust_metric_ob_"+str(config.task_config.external_param)+".npy"
         np.save(temp, metrics, allow_pickle=True)
     elif config.experiment_type == "robustness_ps":
         metrics['noise_scale'] = config.task_config.external_param

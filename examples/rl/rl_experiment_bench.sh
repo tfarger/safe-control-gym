@@ -24,8 +24,7 @@ fi
 NS=1
 T=11
 H=0
-# EVAL_LIST=('robustness' 'robustness_ps' 'robustness_dw' 'generalization')
-EVAL_LIST=('generalization')
+EVAL_LIST=('robustness' 'robustness_ps' 'robustness_dw' 'generalization')
 
 # RL Experiment
 for EVAL in "${EVAL_LIST[@]}"; do
@@ -61,7 +60,8 @@ for EVAL in "${EVAL_LIST[@]}"; do
                     task_config.noise_scale=${NS} \
                     task_config.downwash_height=${H} \
                     task_config.external_param=${EP} \
-                --pretrain_path ./Results/prefinal_ilqr_ref/${EXP_DATA}/${SYS}_${ALGO}_data/seed${SEED}_*/
+                --pretrain_path ./Results/prefinal_ilqr_ref/${EXP_DATA}/${SYS}_${ALGO}_data/seed${SEED}_*/ &
         done
+        wait
     done
 done
