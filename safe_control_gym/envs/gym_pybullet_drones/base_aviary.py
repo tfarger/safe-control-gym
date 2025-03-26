@@ -868,11 +868,11 @@ class BaseAviary(BenchmarkEnv):
         U = cs.vertcat(T, P)
         if prop_values is None:
             X_dot = cs.vertcat(x_dot,
-                                (18.112984649321753 * T+ 3.6800) * cs.sin(theta) + d[0] / self.MASS,
+                                (14.444835 * T+ 8.738323) * cs.sin(theta) + d[0] / self.MASS,
                                 z_dot,
-                                (18.112984649321753 * T + 3.6800) * cs.cos(theta) - g + d[1] / self.MASS,
+                                (14.444835 * T + 8.738323) * cs.cos(theta) - g + d[1] / self.MASS,
                                 theta_dot,
-                                -140.8 * theta - 13.4 * theta_dot + 124.8 * P)
+                                -149.998940 * theta -17.516742 * theta_dot + 129.306903 * P)
         else:
             X_dot = cs.vertcat(x_dot,
                                 (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.sin(theta) + d[0] / self.MASS,
