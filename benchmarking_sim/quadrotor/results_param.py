@@ -6,21 +6,22 @@ import numpy as np
 from multiprocessing import Pool
 from benchmarking_sim.quadrotor.benchmark_util.utils import run_rollouts
 
-# parallel = False
+parallel = False
 parallel = True
 
-# algo = sys.argv[1]
+algo = sys.argv[1]
+# algo = 'gpmpc_acados_TP'
 # algo = 'linear_mpc_acados'
 # algo = 'mpc_acados'
-algo = 'lqr'
+# algo = 'lqr'
 noise_type = sys.argv[2] if len(sys.argv) > 2 else 'param'
 gp_model_tag = sys.argv[3] if len(sys.argv) > 3 else ''
 
 # noise factor test
-additional = '_param'
+additional = '_11'
 # noise_factor_list = [0,1,2,3,4,5,10,15,20,25] #,\
                     #  30,40,50,60,70,80,90,100]
-noise_factor_list = np.arange(0, 1.0, 0.1)
+noise_factor_list = np.arange(0, 2.0, 0.1)
 num_seed = 5
 start_seed = 1
 seeds = range(start_seed, start_seed + num_seed)

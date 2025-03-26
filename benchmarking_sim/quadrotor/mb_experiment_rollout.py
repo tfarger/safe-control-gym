@@ -96,14 +96,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     # else:
     if eval_task == 'rollout':
         config.output_dir = config.output_dir + f'{ctrl_tag}_rollout_{SYS}{ADDITIONAL}'
-    # elif eval_task == 'obs_noise':
-    #     config.output_dir = config.output_dir + f'{ctrl_tag}_obs_noise_{SYS}/' + f'seed_{seed}'
-    # elif eval_task == 'proc_noise':
-    #     config.output_dir = config.output_dir + f'{ctrl_tag}_proc_noise_{SYS}/' + f'seed_{seed}'
-    # elif eval_task == 'downwash':
-    #     config.output_dir = config.output_dir + f'{ctrl_tag}_downwash_{SYS}/' + f'seed_{seed}'
     elif eval_task in ['obs_noise', 'proc_noise', 'param', 'downwash']:
-        config.output_dir = config.output_dir + f'{ctrl_tag}_{eval_task}_{SYS}{ADDITIONAL}/' + f'seed_{seed}'
+        config.output_dir = config.output_dir + f'{ctrl_tag}_{eval_task}_{SYS}/' + f'seed_{seed}'
     else:
         raise ValueError('eval_task not recognized')
         
@@ -129,12 +123,15 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         print(f'Amplified process noise std: {config.task_config.disturbances.action[0]["std"]}')
     elif eval_task == 'param':
         # parametric uncertainty
+        config.task_config.randomized_inertial_prop = True
         inertial_prop_rand_info = config.task_config.inertial_prop_randomization_info
         print('Original inertial properties: ', inertial_prop_rand_info)
         for key, value in inertial_prop_rand_info.items():
             if value.distrib == 'uniform':
-                inertial_prop_rand_info[key].low = value.low + noise_factor * value.low
-                inertial_prop_rand_info[key].high = value.high + noise_factor * value.high
+                inertial_prop_rand_info[key].low = noise_factor * value.low
+                inertial_prop_rand_info[key].high = noise_factor * value.high
+            elif value.distrib == 'normal':
+                inertial_prop_rand_info[key].scale = noise_factor * value.scale
         config.task_config.inertial_prop_randomization_info = inertial_prop_rand_info
         print('Inertial properties: ', inertial_prop_rand_info)     
             
