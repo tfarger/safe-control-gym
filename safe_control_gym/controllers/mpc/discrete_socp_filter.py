@@ -39,16 +39,18 @@ class DiscreteSOCPFilter:
         self.X = cp.Variable(shape=(7,))
         self.A1 = cp.Parameter(shape=(10, 7))
         self.A2 = cp.Parameter(shape=(9, 7))
-        self.A3 = cp.Parameter(shape=(2, 7))
+        self.A3 = cp.Parameter(shape=(3, 7))
         self.b1 = cp.Parameter(shape=(10,))
         self.b2 = cp.Parameter(shape=(9,))
-        self.b3 = np.zeros((2, 1))
+        self.b3 = np.zeros((3,))
+        self.b3[2] = 1
         self.c1 = cp.Parameter(shape=(1, 7))
         self.c2 = cp.Parameter(shape=(1, 7))
-        self.c3 = cp.Parameter(shape=(1, 7))
+        self.c3 = np.zeros((1, 7))
+        self.c3[0, 6] = 1
         self.d1 = cp.Parameter()
         self.d2 = cp.Parameter()
-        self.d3 = 0
+        self.d3 = 1
         # put into lists
         As = [self.A1, self.A2, self.A3]
         bs = [self.b1, self.b2, self.b3]
@@ -169,7 +171,7 @@ class DiscreteSOCPFilter:
         # Compute stablity filter coeffs
         e_k = z - z_ref
         v_nom = v_des # from equivalence of FMPC with closed form solution
-        A2, b2, c2, d2 , A3, c3 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
+        A2, b2, c2, d2 , A3 = stab_filter_matrices(gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
                                               self.Q, self.R, self.P, self.K, self.Bd, self.Ad, self.W3_mat, e_k,
                                               self.input_bound_normalized, v_nom, self.beta_sqrt)
         self.A2.value = A2
@@ -177,8 +179,7 @@ class DiscreteSOCPFilter:
         self.c2.value = c2
         self.d2.value = d2
 
-        self.A3.value = A3
-        self.c3.value = c3
+        self.A3.value = A3 # note: in thesis: A2 and A3 flipped
 
         # dynamic extension constraint: set previous value of extension states
         if self.thrust_bound_applied:
@@ -285,8 +286,8 @@ def dummy_var_matrices(gam2, L_gam5, d_weights): # for feedback linearization
     A = np.zeros((10,7))
     A[0, :2] = 2*gam2[0]
     A[1, :2] = 2*gam2[1]
-    A[2:4, :2] = 2*L_gam5[0]
-    A[4:6, :2] = 2*L_gam5[1]
+    A[2:4, :2] = 2*L_gam5[0].T
+    A[4:6, :2] = 2*L_gam5[1].T
     A[6, 2] = -1.0
     A[7, 3] = d_weights[0]
     A[8, 4] = d_weights[1]
@@ -341,8 +342,8 @@ def stab_filter_matrices(gam1,
     A[8, 6] = 1.0 # dummy variable to extend
 
     b = np.zeros((9,1))
-    b[0:2, 0] = -L1_beta_sqrt*term_Linv_gam4_0
-    b[4:6, 0] = -L2_beta_sqrt*term_Linv_gam4_1
+    b[0:2, 0] = L1_beta_sqrt*term_Linv_gam4_0
+    b[4:6, 0] = L2_beta_sqrt*term_Linv_gam4_1
 
     b[2, 0] = L1_beta_sqrt*np.sqrt(max((0.5*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10))
     b[3, 0] = L1_beta_sqrt*np.sqrt(max((0.5*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10))
@@ -359,7 +360,7 @@ def stab_filter_matrices(gam1,
     # tmp2 = W2[0,0]*((gam1[0]+w4[0]-v_nom[0])**2)
     # tmp3 = W2[1,1]*((gam1[1]+w4[1]-v_nom[1])**2)
 
-    A_dummy, c_dummy = stab_filter_dummy_matrices(gam2, [np.sqrt(W2[0,0]), np.sqrt(W2[1,1])])
+    A_dummy = stab_filter_dummy_matrices(gam2, [np.sqrt(W2[0,0]), np.sqrt(W2[1,1])])
 
     # # bound quadratic term
     # bound = np.zeros(2)
@@ -416,16 +417,14 @@ def stab_filter_matrices(gam1,
 
      
 
-    return A, b, c, d, A_dummy, c_dummy
+    return A, b, c, d, A_dummy
 
 def stab_filter_dummy_matrices(gam2, w2_sqrt):
-    A = np.zeros((2, 7))
+    A = np.zeros((3, 7))
     A[0, 0:2] = w2_sqrt[0] * gam2[0]
     A[1, 0:2] = w2_sqrt[1] * gam2[1]
-
-    c = np.zeros((1, 7))
-    c[0, 6] = 1
-    return A, c
+    A[2, 6] = -1
+    return A
 
 def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
                        h, b_con, Ad, Bd, w_s1, w_s2):
