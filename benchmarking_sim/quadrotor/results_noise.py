@@ -5,18 +5,21 @@ import munch
 from multiprocessing import Pool
 from benchmarking_sim.quadrotor.benchmark_util.utils import run_rollouts
 
-# parallel = False
-parallel = True
+parallel = False
+# parallel = True
 
 algo = sys.argv[1]
+# algo = 'lqr'
 noise_type = sys.argv[2] if len(sys.argv) > 2 else 'obs_noise'
 gp_model_tag = sys.argv[3] if len(sys.argv) > 3 else ''
 
 # noise factor test
 additional = '_11'
+# noise_factor_list = [0,1,2,3,4,5,10,15,20,25,\
+#                      30,40,50,60,70,80,90,100]
 noise_factor_list = [0,1,2,3,4,5,10,15,20,25,\
-                     30,40,50,60,70,80,90,100]
-num_seed = 5
+                     30,40,50]
+num_seed = 3
 start_seed = 1
 seeds = range(start_seed, start_seed + num_seed)
 
@@ -24,7 +27,7 @@ time1 = time.perf_counter()
 for noise_factor in noise_factor_list:
     if parallel:
         results = []
-        with Pool(processes=5) as pool:
+        with Pool(processes=3) as pool:
             async_results = [
                 pool.apply_async(run_rollouts, args=(munch.munchify({
                     'additional': additional,

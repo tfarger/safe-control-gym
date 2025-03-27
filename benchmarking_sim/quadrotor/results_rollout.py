@@ -12,17 +12,17 @@ print('notebook_dir', notebook_dir)
 additional = sys.argv[1]
 algo = sys.argv[2]
 gp_model_tag = sys.argv[3] if len(sys.argv) > 3 else ''
-parallel = True
-# parallel = False
+# parallel = True
+parallel = False
 
-num_seed = 50
+num_seed = 3
 start_seed = 1
 seeds = range(start_seed, start_seed + num_seed)
 
 
 if parallel:
     results = []
-    with Pool(processes=5) as pool:
+    with Pool(processes=3) as pool:
         async_results = [
             pool.apply_async(run_rollouts, args=(munch.munchify({
                 'additional': additional,

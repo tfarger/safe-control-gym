@@ -7,7 +7,7 @@ from multiprocessing import Pool
 from benchmarking_sim.quadrotor.benchmark_util.utils import run_rollouts
 
 parallel = False
-parallel = True
+# parallel = True
 
 algo = sys.argv[1]
 # algo = 'gpmpc_acados_TP'
