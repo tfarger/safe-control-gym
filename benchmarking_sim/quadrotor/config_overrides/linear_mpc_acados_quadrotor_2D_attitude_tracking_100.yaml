@@ -1,29 +1,30 @@
 algo: linear_mpc_acados
 algo_config:
-  horizon: 50
+  horizon: 30
   q_mpc:
-  - 20.0
-  - 0.0001
-  - 14.50136922944172
-  - 0.0001
-  - 0.0001
+  - 12
+  - 0.1
+  - 12
+  - 0.1
+  - 0.05
   - 0.0001
   r_mpc:
-  - 1.862846289974233
-  - 3.238648152459772
+  - 3
+  - 3
   
   # Prior info
-  prior_info:
-    # prior_prop: null
-    prior_prop: 
-      beta_1: 18.11298
-      beta_2: 3.6800
-      beta_3: 0
-      alpha_1: -140.8
-      alpha_2: -13.4
-      alpha_3: 124.8
-    #   pitch_bias: 0.0 # in radian
-    randomize_prior_prop: False
-    prior_prop_rand_info: null
+  # prior_info:
+  #   # prior_prop: null
+  #   prior_prop: 
+  #     M: 0.027
+  #     beta_1: 18.11298
+  #     beta_2: 3.6800
+  #     beta_3: -0.008
+  #     alpha_1: -140.8
+  #     alpha_2: -13.4
+  #     alpha_3: 124.8
+  #     pitch_bias: 0.0 # in radian
+  #   randomize_prior_prop: False
+  #   prior_prop_rand_info: null
   warmstart: True
   output_dir: ./linear_mpc_acados/results

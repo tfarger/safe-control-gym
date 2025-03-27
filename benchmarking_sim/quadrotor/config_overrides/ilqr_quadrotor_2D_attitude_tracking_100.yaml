@@ -2,15 +2,15 @@ algo: ilqr
 algo_config:
   # Cost parameters
   q_lqr:
-  - 20.0
-  - 0.0001
-  - 14.50136922944172
-  - 0.0001
-  - 0.0001
+  - 12
+  - 0.1
+  - 12
+  - 0.1
+  - 0.05
   - 0.0001
   r_lqr:
-  - 1.862846289974233
-  - 3.238648152459772
+  - 3
+  - 3
   # Model arguments
   # Note: Higher simulation frequency is required if using controller designed
   #       based on the continuous-time model
