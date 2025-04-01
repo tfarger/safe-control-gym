@@ -154,6 +154,21 @@ class FlatMPC(BaseController):
         self.mpc.state_constraints_sym = {}
         self.mpc.input_constraints_sym = {} 
 
+        # apply box constraint to acceleration, to simulate a thrust constraint
+        Tc_max = 0.5
+        h1 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 0, 0])).T # selects x_ddot
+        h2 = np.atleast_2d(np.array([0, 0, 0, 0, 0, 0, 1, 0])).T # selects z_ddot
+        b1 = (Tc_max*self.inertial_prop['beta_1'] + self.inertial_prop['beta_2']) # * 1/np.sqrt(2)
+        sym_func1 = lambda x: h1.T @ x -b1
+        sym_func2 = lambda x: -h1.T @ x -b1
+        sym_func3 = lambda x: h2.T @ x -b1 + 9.8
+        # # diagonal box on top
+        # h3 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 1, 0])).T # selects x_ddot + z_ddot
+        # sym_func4 = lambda x: h3.T @ x + 9.8 - b1*np.sqrt(2)
+        # sym_func5 = lambda x: -h3.T @ x - 9.8 - b1*np.sqrt(2)
+        self.mpc.state_constraints_sym = [sym_func1, sym_func2, sym_func3] #, sym_func4, sym_func5]
+
+
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
 
