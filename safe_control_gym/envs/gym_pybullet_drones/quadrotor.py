@@ -347,8 +347,12 @@ class Quadrotor(BaseAviary):
         # if self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE or self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_5S:
         use_ilqr_ref = getattr(self, 'TASK_INFO', {}).get('ilqr_ref', False)
         use_pitch_ref = getattr(self, 'TASK_INFO', {}).get('pitch_ref', False)
-        if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, QuadType.TWO_D_ATTITUDE_5S, QuadType.TWO_D_ATTITUDE_BODY]:
+        if self.QUAD_TYPE in [QuadType.TWO_D_ATTITUDE, 
+                              QuadType.TWO_D_ATTITUDE_5S, 
+                              QuadType.TWO_D_ATTITUDE_BODY,]:
             self.U_GOAL = np.array([self.MASS * self.GRAVITY_ACC, 0.0])
+        elif self.QUAD_TYPE == QuadType.THREE_D_ATTITUDE_10:
+            self.U_GOAL = np.array([self.MASS * self.GRAVITY_ACC, 0.0, 0.0])
         else:
             self.U_GOAL = np.ones(self.action_dim) * self.MASS * self.GRAVITY_ACC / self.action_dim
         if self.TASK == Task.STABILIZATION:
