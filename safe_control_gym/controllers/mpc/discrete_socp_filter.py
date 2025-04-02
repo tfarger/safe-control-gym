@@ -10,6 +10,8 @@ import gpytorch
 from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, GaussianProcess
 import matplotlib.pyplot as plt
 
+from time import time # for GP inference time logging
+
 class DiscreteSOCPFilter:
     def __init__(self, gps, ctrl_mat, input_bound, normalization_vect = np.ones((6,)), slack_weights=[25.0, 250000.0, 25.0], beta_sqrt = [2, 2], state_bound=None, thrust_bound=None, dyn_ext_mat=None):
 
@@ -145,8 +147,11 @@ class DiscreteSOCPFilter:
         gam5 = []
         L_gam5 = []
         Linv_gam5 = []
+        gp_time = []
         for i in [0, 1]: #range(len(gp_models)):
+            start_time = time()
             gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z_query, self.gps[i])
+            gp_time.append(time()-start_time)
             L_chol = np.linalg.cholesky(gamma5)
             L_chol_inv = np.linalg.inv(L_chol)
             gam1.append(gamma1)
@@ -156,6 +161,8 @@ class DiscreteSOCPFilter:
             gam5.append(gamma5)
             L_gam5.append(L_chol)
             Linv_gam5.append(L_chol_inv)
+        
+        gp_time_total = gp_time[0] + gp_time[1]
 
         # Compute cost coefficients
         cost = compute_cost(gam1, gam2, gam4, v_des)
@@ -257,6 +264,7 @@ class DiscreteSOCPFilter:
             # logging_dict['d1_slack'] = self.X.value[3]
             # logging_dict['d2_slack'] = self.X.value[4]
             logging_dict['solve_time'] = solve_time
+            logging_dict['gp_time'] = gp_time_total
 
             return self.X.value[0:2]*self.norm_u, success, self.X.value, logging_dict   
         
