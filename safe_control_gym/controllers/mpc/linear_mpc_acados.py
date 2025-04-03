@@ -81,7 +81,7 @@ class LinearMPC_ACADOS(MPC):
             constraint_tol=constraint_tol,
             output_dir=output_dir,
             additional_constraints=additional_constraints,
-            compute_initial_guess_method='ipopt',  # use ipopt initial guess by default
+            compute_initial_guess_method='lqr',  # use ipopt initial guess by default
             use_lqr_gain_and_terminal_cost=use_lqr_gain_and_terminal_cost,
             use_gpu=use_gpu,
             seed=seed,
@@ -95,34 +95,19 @@ class LinearMPC_ACADOS(MPC):
         self.u_lin = np.atleast_2d(self.model.U_EQ)[0, :].T
         # acados settings
         self.use_RTI = use_RTI
+        self.reset() # to init symbolic model
+        self.setup_acados_model()
+        self.setup_acados_optimizer()
+        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/linear_mpc_acados_ocp_solver.json')
+
 
     @timing
     def reset(self):
         '''Prepares for training or evaluation.'''
         print(colored('Resetting MPC', 'green'))
         super().reset()
-        # self.acados_model = None
-        # self.ocp = None
-        # self.acados_ocp_solver = None
-        if hasattr(self, 'acados_model'):
-            del self.acados_model
-        if hasattr(self, 'ocp'):
-            del self.ocp
         if hasattr(self, 'acados_ocp_solver'):
-            del self.acados_ocp_solver
-
-        # delete the generated c code directory
-        if os.path.exists(self.output_dir + '/mpc_c_generated_code'):
-            print('deleting the generated MPC c code directory')
-            shutil.rmtree(self.output_dir + '/mpc_c_generated_code')
-            assert not os.path.exists(self.output_dir + '/mpc_c_generated_code'), 'Failed to delete the generated c code directory'
-        # Dynamics model.
-        self.setup_acados_model()
-        # Acados optimizer.
-        self.setup_acados_optimizer()
-        # get time in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/mpc_acados_ocp_solver_{current_time}.json')
+            self.acados_ocp_solver.reset()
 
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
@@ -131,18 +116,6 @@ class LinearMPC_ACADOS(MPC):
         acados_model.x = self.model.x_sym
         acados_model.u = self.model.u_sym
         acados_model.name = self.env.NAME
-
-        # # continuous-time dynamics
-        # fc_func = self.model.fc_func
-        # x_dot = self.model.fc_linear_func(self.x_lin, self.u_lin, acados_model.x, acados_model.u)
-        # fc_func = cs.Function('fc_func', [acados_model.x, acados_model.u], 
-        #                                  [x_dot],)
-        # # set up rk4 (acados need symbolic expression of dynamics, not function)
-        # k1 = fc_func(acados_model.x, acados_model.u)
-        # k2 = fc_func(acados_model.x + self.dt / 2 * k1, acados_model.u)
-        # k3 = fc_func(acados_model.x + self.dt / 2 * k2, acados_model.u)
-        # k4 = fc_func(acados_model.x + self.dt * k3, acados_model.u)
-        # f_disc = acados_model.x + self.dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4) 
         
         f_disc = self.linear_dynamics_func(acados_model.x, acados_model.u)
 
@@ -159,8 +132,8 @@ class LinearMPC_ACADOS(MPC):
         acados_model.u_labels = self.env.ACTION_LABELS
         acados_model.t_label = 'time'
         # get current time stamp in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        acados_model.name = self.env.NAME + '_' + current_time
+        # current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        acados_model.name = self.env.NAME # + '_' + current_time
 
         self.acados_model = acados_model
 

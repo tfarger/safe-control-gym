@@ -92,34 +92,18 @@ class MPC_ACADOS(MPC):
         self.u_guess = None
         # acados settings
         self.use_RTI = use_RTI
+        self.reset() # to keep consisntency with linear_mpc_acados
+        self.setup_acados_model()
+        self.setup_acados_optimizer()
+        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
 
     @timing
     def reset(self):
         '''Prepares for training or evaluation.'''
         print(colored('Resetting MPC', 'green'))
         super().reset()
-        # self.acados_model = None
-        # self.ocp = None
-        # self.acados_ocp_solver = None
-        if hasattr(self, 'acados_model'):
-            del self.acados_model
-        if hasattr(self, 'ocp'):
-            del self.ocp
         if hasattr(self, 'acados_ocp_solver'):
-            del self.acados_ocp_solver
-
-        # delete the generated c code directory
-        if os.path.exists(self.output_dir + '/mpc_c_generated_code'):
-            print('deleting the generated MPC c code directory')
-            shutil.rmtree(self.output_dir + '/mpc_c_generated_code')
-            assert not os.path.exists(self.output_dir + '/mpc_c_generated_code'), 'Failed to delete the generated c code directory'
-        # Dynamics model.
-        self.setup_acados_model()
-        # Acados optimizer.
-        self.setup_acados_optimizer()
-        # get time in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/mpc_acados_ocp_solver_{current_time}.json')
+            self.acados_ocp_solver.reset()
 
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
@@ -152,8 +136,8 @@ class MPC_ACADOS(MPC):
         acados_model.u_labels = self.env.ACTION_LABELS
         acados_model.t_label = 'time'
         # get current time stamp in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        acados_model.name = self.env.NAME + '_' + current_time
+        # current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        acados_model.name = self.env.NAME # + '_' + current_time
 
         self.acados_model = acados_model
 
