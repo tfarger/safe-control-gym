@@ -441,12 +441,12 @@ def state_con_matrices(z, gam1, gam2, gam3, gam4, L_gam5, Linv_gam5,
     term_Linv_gam4_1 = 0.5*Linv_gam5[1] @ gam4[1]
     
     A = np.zeros((8,7))
-    A[0:2, 0:2] = w_s1*L_gam5[0]    
-    A[4:6, 0:2] = w_s2*L_gam5[1]
+    A[0:2, 0:2] = w_s1*L_gam5[0].T  
+    A[4:6, 0:2] = w_s2*L_gam5[1].T
 
     b = np.zeros((8,1))
-    b[0:2, 0] = -w_s1*term_Linv_gam4_0
-    b[4:6, 0] = -w_s2*term_Linv_gam4_1
+    b[0:2, 0] = w_s1*term_Linv_gam4_0
+    b[4:6, 0] = w_s2*term_Linv_gam4_1
 
     b[2, 0] = w_s1*np.sqrt(max((0.4*gam3[0] - (term_Linv_gam4_0[0])**2), 1e-10)) # distribute gamma3 unevenly for numerical stability
     b[3, 0] = w_s1*np.sqrt(max((0.6*gam3[0] - (term_Linv_gam4_0[1])**2), 1e-10)) # max() is fine, as it only makes constraint more conservative
