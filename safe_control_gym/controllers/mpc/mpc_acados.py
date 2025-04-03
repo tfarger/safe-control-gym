@@ -1,8 +1,5 @@
 '''Model Predictive Control using Acados.'''
-import os
-import shutil
 from copy import deepcopy
-from datetime import datetime
 
 import casadi as cs
 import numpy as np
@@ -69,6 +66,7 @@ class MPC_ACADOS(MPC):
         for k, v in locals().items():
             if k != 'self' and k != 'kwargs' and '__' not in k:
                 self.__dict__.update({k: v})
+                
         super().__init__(
             env_func,
             horizon=horizon,
@@ -92,10 +90,13 @@ class MPC_ACADOS(MPC):
         self.u_guess = None
         # acados settings
         self.use_RTI = use_RTI
-        self.reset() # to keep consisntency with linear_mpc_acados
-        self.setup_acados_model()
-        self.setup_acados_optimizer()
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
+
+    def reset_before_run(self, obs=None, info=None, env=None):
+        super().reset_before_run(obs, info, env)
+        if not hasattr(self, 'acados_ocp_solver'):
+            self.setup_acados_model()
+            self.setup_acados_optimizer()
+            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
 
     @timing
     def reset(self):
@@ -105,6 +106,13 @@ class MPC_ACADOS(MPC):
         if hasattr(self, 'acados_ocp_solver'):
             self.acados_ocp_solver.reset()
 
+    @timing
+    def compute_initial_guess(self, init_state, goal_states=None):
+        '''Use IPOPT to get an initial guess of the solution.'''
+        x_val, u_val = super().compute_initial_guess(init_state, goal_states)
+        self.x_guess = x_val
+        self.u_guess = u_val
+
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
 
@@ -112,6 +120,14 @@ class MPC_ACADOS(MPC):
         acados_model.x = self.model.x_sym
         acados_model.u = self.model.u_sym
         acados_model.name = self.env.NAME
+
+        # store meta information # NOTE: unit is missing
+        acados_model.x_labels = self.env.STATE_LABELS
+        acados_model.u_labels = self.env.ACTION_LABELS
+        acados_model.t_label = 'time'
+        # get current time stamp in $ymd_HMS format
+        # current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        acados_model.name = self.env.NAME # + '_' + current_time
 
         # continuous-time dynamics
         fc_func = self.model.fc_func
@@ -131,22 +147,7 @@ class MPC_ACADOS(MPC):
         model.f_impl_expr = f_impl
         model.f_expl_expr = f_expl
         '''
-        # store meta information # NOTE: unit is missing
-        acados_model.x_labels = self.env.STATE_LABELS
-        acados_model.u_labels = self.env.ACTION_LABELS
-        acados_model.t_label = 'time'
-        # get current time stamp in $ymd_HMS format
-        # current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        acados_model.name = self.env.NAME # + '_' + current_time
-
         self.acados_model = acados_model
-
-    @timing
-    def compute_initial_guess(self, init_state, goal_states=None):
-        '''Use IPOPT to get an initial guess of the solution.'''
-        x_val, u_val = super().compute_initial_guess(init_state, goal_states)
-        self.x_guess = x_val
-        self.u_guess = u_val
 
     def setup_acados_optimizer(self):
         '''Sets up nonlinear optimization problem.'''
@@ -233,59 +234,6 @@ class MPC_ACADOS(MPC):
         ocp.code_export_directory = self.output_dir + '/mpc_c_generated_code'
 
         self.ocp = ocp
-
-    def processing_acados_constraints_expression(self, ocp: AcadosOcp, h0_expr, h_expr, he_expr) -> AcadosOcp:
-        '''Preprocess the constraints to be compatible with acados.
-            Args:
-                ocp (AcadosOcp): acados ocp object
-                h0_expr (casadi expression): initial state constraints
-                h_expr (casadi expression): state and input constraints
-                he_expr (casadi expression): terminal state constraints
-            Returns:
-                ocp (AcadosOcp): acados ocp object with constraints set.
-
-        An alternative way to set the constraints is to use bounded constraints of acados:
-        # bounded input constraints
-        idxbu = np.where(np.sum(self.env.constraints.input_constraints[0].constraint_filter, axis=0) != 0)[0]
-        ocp.constraints.Jbu = np.eye(nu)
-        ocp.constraints.lbu = self.env.constraints.input_constraints[0].lower_bounds
-        ocp.constraints.ubu = self.env.constraints.input_constraints[0].upper_bounds
-        ocp.constraints.idxbu = idxbu # active constraints dimension
-        '''
-
-        ub = {'h': set_acados_constraint_bound(h_expr, 'ub', self.constraint_tol),
-              'h0': set_acados_constraint_bound(h0_expr, 'ub', self.constraint_tol),
-              'he': set_acados_constraint_bound(he_expr, 'ub', self.constraint_tol), }
-
-        lb = {'h': set_acados_constraint_bound(h_expr, 'lb'),
-              'h0': set_acados_constraint_bound(h0_expr, 'lb'),
-              'he': set_acados_constraint_bound(he_expr, 'lb'), }
-
-        # make sure all the ub and lb are 1D numpy arrays
-        # (see: https://discourse.acados.org/t/infeasible-qps-when-using-nonlinear-casadi-constraint-expressions/1595/5?u=mxche)
-        for key in ub.keys():
-            ub[key] = ub[key].flatten() if ub[key].ndim != 1 else ub[key]
-            lb[key] = lb[key].flatten() if lb[key].ndim != 1 else lb[key]
-        # check ub and lb dimensions
-        for key in ub.keys():
-            assert ub[key].ndim == 1, f'ub[{key}] is not 1D numpy array'
-            assert lb[key].ndim == 1, f'lb[{key}] is not 1D numpy array'
-        assert ub['h'].shape == lb['h'].shape, 'h_ub and h_lb have different shapes'
-
-        # pass the constraints to the ocp object
-        ocp.model.con_h_expr_0, ocp.model.con_h_expr, ocp.model.con_h_expr_e = \
-            h0_expr, h_expr, he_expr
-        ocp.dims.nh_0, ocp.dims.nh, ocp.dims.nh_e = \
-            h0_expr.shape[0], h_expr.shape[0], he_expr.shape[0]
-        # assign constraints upper and lower bounds
-        ocp.constraints.uh_0 = ub['h0']
-        ocp.constraints.lh_0 = lb['h0']
-        ocp.constraints.uh = ub['h']
-        ocp.constraints.lh = lb['h']
-        ocp.constraints.uh_e = ub['he']
-        ocp.constraints.lh_e = lb['he']
-
-        return ocp
 
     @timing
     def select_action(self,
@@ -410,3 +358,56 @@ class MPC_ACADOS(MPC):
             action += self.lqr_gain @ (obs - self.x_prev[:, 0])
 
         return action
+
+    def processing_acados_constraints_expression(self, ocp: AcadosOcp, h0_expr, h_expr, he_expr) -> AcadosOcp:
+        '''Preprocess the constraints to be compatible with acados.
+            Args:
+                ocp (AcadosOcp): acados ocp object
+                h0_expr (casadi expression): initial state constraints
+                h_expr (casadi expression): state and input constraints
+                he_expr (casadi expression): terminal state constraints
+            Returns:
+                ocp (AcadosOcp): acados ocp object with constraints set.
+
+        An alternative way to set the constraints is to use bounded constraints of acados:
+        # bounded input constraints
+        idxbu = np.where(np.sum(self.env.constraints.input_constraints[0].constraint_filter, axis=0) != 0)[0]
+        ocp.constraints.Jbu = np.eye(nu)
+        ocp.constraints.lbu = self.env.constraints.input_constraints[0].lower_bounds
+        ocp.constraints.ubu = self.env.constraints.input_constraints[0].upper_bounds
+        ocp.constraints.idxbu = idxbu # active constraints dimension
+        '''
+
+        ub = {'h': set_acados_constraint_bound(h_expr, 'ub', self.constraint_tol),
+              'h0': set_acados_constraint_bound(h0_expr, 'ub', self.constraint_tol),
+              'he': set_acados_constraint_bound(he_expr, 'ub', self.constraint_tol), }
+
+        lb = {'h': set_acados_constraint_bound(h_expr, 'lb'),
+              'h0': set_acados_constraint_bound(h0_expr, 'lb'),
+              'he': set_acados_constraint_bound(he_expr, 'lb'), }
+
+        # make sure all the ub and lb are 1D numpy arrays
+        # (see: https://discourse.acados.org/t/infeasible-qps-when-using-nonlinear-casadi-constraint-expressions/1595/5?u=mxche)
+        for key in ub.keys():
+            ub[key] = ub[key].flatten() if ub[key].ndim != 1 else ub[key]
+            lb[key] = lb[key].flatten() if lb[key].ndim != 1 else lb[key]
+        # check ub and lb dimensions
+        for key in ub.keys():
+            assert ub[key].ndim == 1, f'ub[{key}] is not 1D numpy array'
+            assert lb[key].ndim == 1, f'lb[{key}] is not 1D numpy array'
+        assert ub['h'].shape == lb['h'].shape, 'h_ub and h_lb have different shapes'
+
+        # pass the constraints to the ocp object
+        ocp.model.con_h_expr_0, ocp.model.con_h_expr, ocp.model.con_h_expr_e = \
+            h0_expr, h_expr, he_expr
+        ocp.dims.nh_0, ocp.dims.nh, ocp.dims.nh_e = \
+            h0_expr.shape[0], h_expr.shape[0], he_expr.shape[0]
+        # assign constraints upper and lower bounds
+        ocp.constraints.uh_0 = ub['h0']
+        ocp.constraints.lh_0 = lb['h0']
+        ocp.constraints.uh = ub['h']
+        ocp.constraints.lh = lb['h']
+        ocp.constraints.uh_e = ub['he']
+        ocp.constraints.lh_e = lb['he']
+
+        return ocp
