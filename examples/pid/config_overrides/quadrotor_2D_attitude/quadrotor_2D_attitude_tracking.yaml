@@ -14,7 +14,7 @@ task_config:
     init_z_dot: 0
     init_theta: 0
     init_theta_dot: 0
-  randomized_init: True
+  randomized_init: False
   randomized_inertial_prop: False
 
   init_state_randomization_info:
@@ -48,20 +48,21 @@ task_config:
     trajectory_type: figure8
     num_cycles: 2
     trajectory_plane: 'xz'
-    trajectory_position_offset: [ 0, 1. ]
-    trajectory_scale: 0.5
+    trajectory_position_offset: [ 0., 1.]
+    trajectory_scale: 1.
+    strings:
+      - start: [2., -1.1, 1.]
+        end: [2., 1.2, 1.]
+      - start: [3., -1.1, 2.]
+        end: [3., 1.2, 2.]
     waypoints:
       - time: 0
         position: [0.0, 0.0, 1.0]
-      - time: 2
-        position: [0.5, 0.0, 1.5]
       - time: 4
-        position: [0.5, 0.0, 1.8]
-      - time: 6
-        position: [0.2, 0.0, 1.2]
+        position: [2.0, 0.0, 1.]
       - time: 9
-        position: [0.2, 0.0, 1.0]
+        position: [5.0, 0.0, 1.0]
 
-  episode_len_sec: 9
+  episode_len_sec: 11
   cost: quadratic
   done_on_out_of_bound: False

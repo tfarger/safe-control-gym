@@ -24,6 +24,7 @@ import warnings
 from typing import NamedTuple
 
 import numpy as np
+import casadi as cs
 import scipy.linalg as la
 from scipy import optimize
 
@@ -118,8 +119,8 @@ def generate_trajectory(
         num_continuous_orders=3,
         algorithm='closed-form',
         optimize_options=None,
-        acc_limits=(-np.inf, np.inf), 
-    ):
+        acc_limits=(-np.inf, np.inf),
+):
     '''
     
     Args:
@@ -128,7 +129,7 @@ def generate_trajectory(
     '''
     if algorithm == "closed-form":
         print("Using closed-form solution for minimum snap, acceleration limits will be ignored")
-    
+
     if degree < 2:
         raise ValueError('Polynomial degree too low')
 
@@ -167,7 +168,7 @@ def generate_trajectory(
 
     poly_dim = PolynomialSize(
         n_poly=refs.shape[0] - 1, n_cfs=degree + 1, dim=refs.shape[2]
-    ) 
+    )
     '''
     n_poly: num of segments = num of references - 1
     n_cfs: num of coefficients = degree + 1
@@ -198,10 +199,10 @@ def generate_trajectory(
     else:
         raise ValueError('Unrecognized algorithm')
     polys = solver(
-        refs, # parsed references
-        durations, # time intervals between waypoints
-        poly_dim, # PolynomialSize object
-        derivative_weights, # weights for derivatives (e.g. minimum snap)
+        refs,  # parsed references
+        durations,  # time intervals between waypoints
+        poly_dim,  # PolynomialSize object
+        derivative_weights,  # weights for derivatives (e.g. minimum snap)
         num_continuous_orders,
         optimize_options,
     )
@@ -266,10 +267,10 @@ def _solve_closed_form(
         s = np.s_[poly_dim.n_cfs * i: poly_dim.n_cfs * (i + 1)]
         for r in range(r_cts):
             A[r_cts * 2 * i + r, s] = (
-                _compute_tvec(poly_dim.n_cfs, r, 0) / durations[i] ** r
+                    _compute_tvec(poly_dim.n_cfs, r, 0) / durations[i] ** r
             )
             A[r_cts * (2 * i + 1) + r, s] = (
-                _compute_tvec(poly_dim.n_cfs, r, 1) / durations[i] ** r
+                    _compute_tvec(poly_dim.n_cfs, r, 1) / durations[i] ** r
             )
 
     M = np.zeros((poly_dim.n_poly * 2 * r_cts, r_cts * (poly_dim.n_poly + 1)))
@@ -310,13 +311,13 @@ def _solve_closed_form(
 
 
 def _solve_constrained(
-    refs,
-    durations,
-    poly_dim,
-    derivative_weights,
-    r_cts,
-    optimize_options,
-    acc_limits=(-np.inf, np.inf), 
+        refs,
+        durations,
+        poly_dim,
+        derivative_weights,
+        r_cts,
+        optimize_options,
+        acc_limits=(-np.inf, np.inf),
 ):
     '''
     # reminder: 
@@ -343,8 +344,8 @@ def _solve_constrained(
 
     poly_coeffs = np.zeros(poly_dim)
     # for the continuity at the waypoints
-    Aeq_1, beq_1 = _compute_continuity_constraints(poly_dim, durations, r_cts) 
-    for d in range(poly_dim.dim): # for each dimension (x y z)
+    Aeq_1, beq_1 = _compute_continuity_constraints(poly_dim, durations, r_cts)
+    for d in range(poly_dim.dim):  # for each dimension (x y z)
         Aeq_0, beq_0 = _compute_dynamical_constraints(
             poly_dim, refs[:, :, d], durations
         )
@@ -373,6 +374,7 @@ def _solve_constrained(
             0, poly_dim.n_cfs
         ) * coeffs
     return poly_coeffs
+
 
 def _compute_continuity_constraints(poly_dim, durations, r_cts):
     n_vars = poly_dim.n_poly * poly_dim.n_cfs
@@ -407,10 +409,11 @@ def _compute_dynamical_constraints(poly_dim, refs, durations):
         s = np.s_[poly_dim.n_cfs * idx: poly_dim.n_cfs * (1 + idx)]
         for r in range(n_constrain_orders[i]):
             Aeq[row_its[i] + r, s] = (
-                _compute_tvec(poly_dim.n_cfs, r, tau) / durations[idx] ** r
+                    _compute_tvec(poly_dim.n_cfs, r, tau) / durations[idx] ** r
             )
             beq[row_its[i] + r] = refs[i, r]
     return Aeq, beq
+
 
 def _compute_acceleration_constraints(poly_dim, refs, durations, acc_limits):
     '''
@@ -424,11 +427,12 @@ def _compute_acceleration_constraints(poly_dim, refs, durations, acc_limits):
     bineq_lb = np.zeros(poly_dim.n_poly)
 
     for i in range(poly_dim.n_poly):
-        s = np.s_[poly_dim.n_cfs * i : poly_dim.n_cfs * (i + 1)]
+        s = np.s_[poly_dim.n_cfs * i: poly_dim.n_cfs * (i + 1)]
         Aineq[i, s] = _compute_tvec(poly_dim.n_cfs, 2, 1) / durations[i] ** 2
         bineq_ub[i] = acc_max
         bineq_lb[i] = acc_min
     return Aineq, bineq_ub, bineq_lb
+
 
 def _compute_Q(n_cfs, r, tau):  # pylint: disable=C0103
     Q = np.zeros((len(tau), n_cfs, n_cfs))
@@ -437,7 +441,7 @@ def _compute_Q(n_cfs, r, tau):  # pylint: disable=C0103
     m_seq = np.arange(0, r)[:, None, None]
     k = -2 * r + 1
     Q[:, i, l] = (
-        np.prod((i - m_seq) * (l - m_seq), axis=0) / (k + i + l) * tau[:, None, None] ** k
+            np.prod((i - m_seq) * (l - m_seq), axis=0) / (k + i + l) * tau[:, None, None] ** k
     )
     return Q
 
@@ -492,5 +496,130 @@ def _nd_polyvals(coeffs, time, r):
     n_seq = np.arange(r, n_cfs, dtype=np.int64)
     r_seq = np.arange(0, r, dtype=np.int64)
     return time ** (n_seq - r) @ (
-        np.prod(n_seq[None, :] - r_seq[:, None], axis=0)[..., None] * coeffs[n_seq, :]
+            np.prod(n_seq[None, :] - r_seq[:, None], axis=0)[..., None] * coeffs[n_seq, :]
     )
+
+
+def _distance_to_point(point1, point2):
+    return (point1 - point2).T @ (point1 - point2)
+
+
+def _distance_to_line(start, end, point):
+    cross = cs.cross(start - end, start - point)
+    string = start - end
+    return cs.sqrt((cross.T @ cross) / (string.T @ string))
+
+
+class TrajectoryPlanner:
+    def __init__(self, waypoint_list, string_list, N=30):
+        self.waypoint_list = waypoint_list
+        self.string_list = string_list
+        self.T = waypoint_list[-1]['time']  # Trajectory length in time
+        self.N = N  # number of waypoints
+        self.dt = self.T / N
+        self.string_discrete_point = 10
+
+        # waypoints
+        length_w = len(waypoint_list)
+        self.start_loc = waypoint_list[0]['position']
+        self.end_loc = waypoint_list[length_w - 1]['position']
+        pos_init = np.array([]).reshape(0, 6)
+        for i in range(length_w - 1):
+            dt = waypoint_list[i + 1]['time'] - waypoint_list[i]['time']
+            sub_waypoints = np.linspace(waypoint_list[i]['position'] + [0., 0., 0.],
+                                        waypoint_list[i + 1]['position'] + [0., 0., 0.],
+                                        round(dt * N / self.T))
+            pos_init = np.concatenate((pos_init, sub_waypoints), axis=0)
+        pos_init = np.concatenate((pos_init,
+                                   np.array(waypoint_list[-1]['position'] + [0., 0., 0.])[None, :]), axis=0)
+        self.dynamics_fn()
+        self.traj_solver = self.traj_optimizer()
+        x0 = np.concatenate((np.zeros((self.N * 3, 1)),
+                             pos_init.reshape(-1, 1),
+                             np.zeros(((self.N + 1) * len(self.string_list) * self.string_discrete_point, 1))), axis=0)
+
+        soln = self.traj_solver(x0=x0, p=[], lbg=self.lbg, ubg=self.ubg)
+        ref = soln['x'].full()
+        if not self.traj_solver.stats()['success']:
+            print('Trajectory planner failed')
+        # act_ref = ref[:self.N * 3, :].reshape(self.N, 3)
+        state_ref = ref[self.N * 3: self.N * 3 + 6 * (self.N + 1), :].reshape(self.N + 1, 6)
+        pos_ref = state_ref[:, :3].copy()
+        # vel_ref = state_ref[:, 3:].copy()
+
+        self.waypoints = []
+        for i in range(pos_ref.shape[0]):
+            self.waypoints.append(
+                Waypoint(
+                    time=i * self.dt,
+                    position=pos_ref[i, :],
+                    # velocity=vel_ref[i, :]
+                )
+            )
+
+    def dynamics_fn(self):
+        x = cs.MX.sym('x', 6)
+        u = cs.MX.sym('u', 3)
+
+        A = np.array([[1., 0., 0., self.dt, 0., 0.], [0., 1., 0., 0., self.dt, 0.], [0., 0., 1., 0., 0., self.dt],
+                      [0., 0., 0., 1., 0., 0.], [0., 0., 0., 0., 1., 0.], [0., 0., 0., 0., 0., 1.]])
+        B = np.array([[0., 0., 0.], [0., 0., 0.], [0., 0., 0.],
+                      [self.dt, 0., 0.], [0., self.dt, 0.], [0., 0., self.dt]])
+
+        self.dyn = cs.Function('dynamics', [x, u], [A @ x + B @ u])
+
+    def traj_optimizer(self):
+        X = cs.MX.sym('X', 6, self.N + 1)
+        U = cs.MX.sym('U', 3, self.N)
+        Sigma = cs.MX.sym('Sigma', len(self.string_list) * self.string_discrete_point, self.N + 1)
+
+        opt_vars = cs.vertcat(
+            cs.reshape(U, -1, 1),
+            cs.reshape(X, -1, 1),
+            cs.reshape(Sigma, -1, 1)
+        )
+        # acceleration limits
+        lb = np.array([-10.0, -10.0, -10.0])
+        ub = np.array([10.0, 10.0, 10.0])
+
+        cost = 0
+        g, h = [], []
+        g.append(X[:3, 0] - np.array(self.start_loc))
+        g.append(X[3:, 0])
+        g.append(X[:3, -1] - np.array(self.end_loc))
+        g.append(X[3:, -1])
+        for i in range(self.N):
+            cost += U[:, i].T @ U[:, i]
+            h.append(U[:, i] - ub)
+            h.append(lb - U[:, i])
+            x_next = self.dyn(X[:, i], U[:, i])
+            g.append(x_next - X[:, i + 1])
+
+            for j, string in enumerate(self.string_list):
+                for k, point in enumerate(np.linspace(string['start'], string['end'], self.string_discrete_point)):
+                    d = _distance_to_point(point, X[:3, i])
+                    h.append(0.5 - d - Sigma[j * k, i])
+                    h.append(-Sigma[j * k, i])
+            cost += 1e2 * Sigma[:, i].T @ Sigma[:, i]
+
+        G = cs.vertcat(*g)
+        H = cs.vertcat(*h)
+        G_con = cs.vertcat(*g, *h)
+        self.lbg = cs.vertcat(*([0] * G.shape[0] + [-np.inf] * H.shape[0]))
+        self.ubg = cs.vertcat(*([0] * G.shape[0] + [0] * H.shape[0]))
+
+        opts_setting = {
+            'print_time': 0,
+            'expand': True,
+            'fatrop.max_iter': 200,
+            'fatrop.print_level': 0,
+            'fatrop.acceptable_tol': 1e-5,
+        }
+        nlp_prob = {
+            'f': cost,
+            'x': opt_vars,
+            'p': [],
+            'g': G_con,
+        }
+        traj_solver = cs.nlpsol('traj_solver', 'fatrop', nlp_prob, opts_setting)
+        return traj_solver
