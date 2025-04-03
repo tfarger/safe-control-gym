@@ -44,7 +44,6 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=False):
                        config.task,
                        **config.task_config
                        )
-
     # Create controller.
     ctrl = make(config.algo,
                 env_func,
