@@ -118,6 +118,7 @@ def generate_trajectory(
         num_continuous_orders=3,
         algorithm='closed-form',
         optimize_options=None,
+        acc_limits=(-np.inf, np.inf), 
     ):
     '''
     
@@ -125,6 +126,9 @@ def generate_trajectory(
         references: List of Waypoint objectsm {-1: time, 0: position}
         degree: Degree of the polynomial
     '''
+    if algorithm == "closed-form":
+        print("Using closed-form solution for minimum snap, acceleration limits will be ignored")
+    
     if degree < 2:
         raise ValueError('Polynomial degree too low')
 
@@ -170,10 +174,27 @@ def generate_trajectory(
     dim: dimension of the trajectory = num of continuous orders
     '''
 
-    if algorithm == 'constrained':
+    if algorithm == "constrained":
         solver = _solve_constrained
-    elif algorithm == 'closed-form':
+        polys = solver(
+            refs,
+            durations,
+            poly_dim,
+            derivative_weights,
+            num_continuous_orders,
+            optimize_options,
+            acc_limits,
+        )
+    elif algorithm == "closed-form":
         solver = _solve_closed_form
+        polys = solver(
+            refs,
+            durations,
+            poly_dim,
+            derivative_weights,
+            num_continuous_orders,
+            optimize_options,
+        )
     else:
         raise ValueError('Unrecognized algorithm')
     polys = solver(
@@ -289,28 +310,30 @@ def _solve_closed_form(
 
 
 def _solve_constrained(
-        refs,
-        durations,
-        poly_dim,
-        derivative_weights,
-        r_cts,
-        optimize_options,
-    ):
+    refs,
+    durations,
+    poly_dim,
+    derivative_weights,
+    r_cts,
+    optimize_options,
+    acc_limits=(-np.inf, np.inf), 
+):
     '''
     # reminder: 
     n_poly: num of segments = num of references - 1
     n_cfs: num of coefficients = degree + 1
-    dim: dimension of the trajectory = num of continuous orders
+    dim: dimension of the trajectory (x y z)
     '''
     '''
     refs: np.ndarray, shape=(n_refs, r_cts, dim)
     durations: np.ndarray, shape=(n_refs-1,)
     poly_dim: PolynomialSize object (n_poly, n_cfs, dim)
     derivative_weights: np.ndarray, shape=(n_cfs,)
-    r_cts: int
+    r_cts: num of continuous orders
     optimize_options: dict
+    acc_limits: tuple, (min, max) acceleration limits
     '''
-    opts = {'method': 'SLSQP', 'tol': 1e-10}
+    opts = {"method": "SLSQP", "tol": 1e-10}
     if optimize_options is not None:
         opts.update(optimize_options)
     n_vars = poly_dim.n_poly * poly_dim.n_cfs
@@ -319,16 +342,25 @@ def _solve_constrained(
         Q += c_r * la.block_diag(*_compute_Q(poly_dim.n_cfs, r, durations))
 
     poly_coeffs = np.zeros(poly_dim)
-    Aeq_1, beq_1 = _compute_continuity_constraints(poly_dim, durations, r_cts)
-    for d in range(poly_dim.dim):
+    # for the continuity at the waypoints
+    Aeq_1, beq_1 = _compute_continuity_constraints(poly_dim, durations, r_cts) 
+    for d in range(poly_dim.dim): # for each dimension (x y z)
         Aeq_0, beq_0 = _compute_dynamical_constraints(
             poly_dim, refs[:, :, d], durations
         )
 
         Aeq = np.vstack([Aeq_0, Aeq_1])
         beq = np.concatenate([beq_0, beq_1])
+        # constr = optimize.LinearConstraint(Aeq, beq, beq)  # type: ignore
 
-        constr = optimize.LinearConstraint(Aeq, beq, beq)  # type: ignore
+        Aineq, bineq_ub, bineq_lb = _compute_acceleration_constraints(
+            poly_dim, refs[:, :, d], durations, acc_limits
+        )
+        Aeq = np.vstack([Aeq, Aineq])
+        bineq_ub = np.concatenate([beq, bineq_ub])
+        bineq_lb = np.concatenate([beq, bineq_lb])
+        constr = optimize.LinearConstraint(Aeq, bineq_lb, bineq_ub)  # type: ignore
+
         soln = optimize.minimize(
             lambda x: (x @ Q @ x) / 2,
             np.zeros(n_vars),
@@ -341,7 +373,6 @@ def _solve_constrained(
             0, poly_dim.n_cfs
         ) * coeffs
     return poly_coeffs
-
 
 def _compute_continuity_constraints(poly_dim, durations, r_cts):
     n_vars = poly_dim.n_poly * poly_dim.n_cfs
@@ -357,6 +388,14 @@ def _compute_continuity_constraints(poly_dim, durations, r_cts):
 
 
 def _compute_dynamical_constraints(poly_dim, refs, durations):
+    '''
+    compute the waypoints constraints for the trajectory (position, velocity, acceleration, etc.)
+
+    Args:
+        poly_dim: PolynomialSize object (n_poly, n_cfs, dim)
+        refs: np.ndarray (waypoints, r_cts, dim(x,y,z)
+        durations: np.ndarray, shape=(n_refs-1,)
+    '''
     n_vars = poly_dim.n_poly * poly_dim.n_cfs
     n_constrain_orders = np.count_nonzero(~np.isnan(refs), axis=1)
     Aeq = np.zeros((n_constrain_orders.sum(), n_vars))
@@ -373,6 +412,23 @@ def _compute_dynamical_constraints(poly_dim, refs, durations):
             beq[row_its[i] + r] = refs[i, r]
     return Aeq, beq
 
+def _compute_acceleration_constraints(poly_dim, refs, durations, acc_limits):
+    '''
+    compute the inequality constraint to limit the acceleration at waypoints
+    '''
+    acc_min, acc_max = acc_limits
+    n_vars = poly_dim.n_poly * poly_dim.n_cfs
+    # n_constrain_orders = 3 
+    Aineq = np.zeros((poly_dim.n_poly, n_vars))
+    bineq_ub = np.zeros(poly_dim.n_poly)
+    bineq_lb = np.zeros(poly_dim.n_poly)
+
+    for i in range(poly_dim.n_poly):
+        s = np.s_[poly_dim.n_cfs * i : poly_dim.n_cfs * (i + 1)]
+        Aineq[i, s] = _compute_tvec(poly_dim.n_cfs, 2, 1) / durations[i] ** 2
+        bineq_ub[i] = acc_max
+        bineq_lb[i] = acc_min
+    return Aineq, bineq_ub, bineq_lb
 
 def _compute_Q(n_cfs, r, tau):  # pylint: disable=C0103
     Q = np.zeros((len(tau), n_cfs, n_cfs))
@@ -387,6 +443,14 @@ def _compute_Q(n_cfs, r, tau):  # pylint: disable=C0103
 
 
 def _compute_tvec(n_cfs, r, tau):
+    '''
+    Compute the vector of monomials for a given order and time
+    
+    Args:
+        n_cfs: int, number of coefficients = degree + 1
+        r: int, order of the derivative (0 for position, 1 for velocity, etc.)
+        tau: float, time (0 for start, 1 for end)
+    '''
     tvec = np.zeros(n_cfs)
     n_seq = np.arange(r, n_cfs)
     r_seq = np.arange(0, r)[:, None]
