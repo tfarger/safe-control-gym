@@ -868,15 +868,15 @@ class Quadrotor(BaseAviary):
             self.T_mapping_func = cs.Function('T_mapping', [T], [T_mapping])
             self.P_mapping_func = cs.Function('P_mapping', [theta, theta_dot, P], [P_mapping])
 
-            mp = [18.112984649321753, 3.6800, 0.0, 140.8, 13.4, 124.8, 0.0]
-            lr_param = cs.MX.sym('learnable_param', 6)
+            # mp = [18.112984649321753, 3.6800, 0.0, 140.8, 13.4, 124.8, 0.0]
+            lr_param = cs.MX.sym('learnable_param', 5)
             parameterized_X_dot = cs.vertcat(
                 x_dot,
-                (lr_param[0] * mp[0] * T + lr_param[1] * mp[1]) * cs.sin(theta) + lr_param[2] * mp[2],
+                (lr_param[0] * self.beta_1 * T + lr_param[1] * self.beta_2) * cs.sin(theta),
                 z_dot,
-                (lr_param[0] * mp[0] * T + lr_param[1] * mp[1]) * cs.cos(theta) - g,
+                (lr_param[0] * self.beta_1 * T + lr_param[1] * self.beta_2) * cs.cos(theta) - g,
                 theta_dot,
-                -lr_param[3] * mp[3] * theta - lr_param[4] * mp[4] * theta_dot + lr_param[5] * mp[5] * P
+                lr_param[2] * self.alpha_1 * theta + lr_param[3] * self.alpha_2 * theta_dot + lr_param[4] * self.alpha_3 * P
             )
 
         elif self.QUAD_TYPE == QuadType.TWO_D_ATTITUDE_BODY:
