@@ -244,7 +244,7 @@ class MPC(BaseController):
 
     def setup_optimizer(self, solver='qrsqp'):
         '''Sets up nonlinear optimization problem.'''
-        print(colored(f'Setting up optimizer with {solver}', 'green'))
+        print(colored(f'Setting up casadi optimizer with {solver}', 'green'))
         nx, nu = self.model.nx, self.model.nu
         T = self.T
         # Define optimizer and variables.
@@ -409,7 +409,6 @@ class MPC(BaseController):
             action += self.lqr_gain @ (obs - x_val[:, 0])
         self.prev_action = action
         return action
-    @timing
 
     def get_references(self):
         '''Constructs reference states along mpc horizon.(nx, T+1).'''
