@@ -19,19 +19,24 @@ task_config:
   inertial_prop_randomization_info:
     beta_1: # Nominal: 14.444835
       distrib: 'normal'
-      scale: 0.02387283406599296
+      # scale: 0.02387283406599296
+      scale: 0.0011936417032996482
     beta_2: # Nominal: 8.738323
       distrib: 'normal'
-      scale: 2.437251
+      # scale: 2.437251
+      scale: 0.12186255
     alpha_1:  # Nominal: -149.998940
       distrib: 'normal'
-      scale: 31.589576
+      # scale: 31.589576
+      scale: 1.5794788000000002
     alpha_2: # Nominal: -17.516742
       distrib: 'normal'
-      scale: 3.317703
+      # scale: 3.317703
+      scale: 0.16588515
     alpha_3:  # Nominal: 129.306903
       distrib: 'normal'
-      scale: 34.976948
+      # scale: 34.976948
+      scale: 1.7488474
 
   init_state_randomization_info:
     init_x:
@@ -90,11 +95,3 @@ task_config:
 
   done_on_out_of_bound: True
   done_on_violation: False
-
-  disturbances:
-    dynamics:
-      - disturbance_func: white_noise
-        std: 0.005
-    observation:
-      - disturbance_func: white_noise
-        std: [5.6e-05, 1.5e-02, 2.9e-05, 8.0e-03, 1.3e-03, 3.5e-03]
