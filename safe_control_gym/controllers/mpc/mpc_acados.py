@@ -79,7 +79,7 @@ class MPC_ACADOS(MPC):
             constraint_tol=constraint_tol,
             output_dir=output_dir,
             additional_constraints=additional_constraints,
-            compute_initial_guess_method='ipopt',  # use ipopt initial guess by default
+            compute_initial_guess_method='lqr',  # use ipopt initial guess by default
             use_lqr_gain_and_terminal_cost=use_lqr_gain_and_terminal_cost,
             use_gpu=use_gpu,
             seed=seed,
@@ -94,11 +94,12 @@ class MPC_ACADOS(MPC):
     def reset_before_run(self, obs=None, info=None, env=None):
         super().reset_before_run(obs, info, env)
         if not hasattr(self, 'acados_ocp_solver'):
-            self.setup_acados_model()
-            self.setup_acados_optimizer()
-            self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + '/mpc_acados_ocp_solver.json')
+            acados_model = self.setup_acados_model()
+            acados_ocp = self.setup_acados_optimizer(acados_model)
+            self.acados_ocp_solver = AcadosOcpSolver(acados_ocp, 
+                                                     self.output_dir + '/mpc_acados_ocp_solver.json')
 
-    @timing
+    # @timing
     def reset(self):
         '''Prepares for training or evaluation.'''
         print(colored('Resetting MPC', 'green'))
@@ -106,7 +107,7 @@ class MPC_ACADOS(MPC):
         if hasattr(self, 'acados_ocp_solver'):
             self.acados_ocp_solver.reset()
 
-    @timing
+    # @timing
     def compute_initial_guess(self, init_state, goal_states=None):
         '''Use IPOPT to get an initial guess of the solution.'''
         x_val, u_val = super().compute_initial_guess(init_state, goal_states)
@@ -147,9 +148,9 @@ class MPC_ACADOS(MPC):
         model.f_impl_expr = f_impl
         model.f_expl_expr = f_expl
         '''
-        self.acados_model = acados_model
+        return acados_model
 
-    def setup_acados_optimizer(self):
+    def setup_acados_optimizer(self, acados_model: AcadosModel) -> AcadosOcp:
         '''Sets up nonlinear optimization problem.'''
         nx, nu = self.model.nx, self.model.nu
         ny = nx + nu
@@ -157,7 +158,7 @@ class MPC_ACADOS(MPC):
 
         # create ocp object to formulate the OCP
         ocp = AcadosOcp()
-        ocp.model = self.acados_model
+        ocp.model = acados_model
 
         # set dimensions
         ocp.dims.N = self.T  # prediction horizon
@@ -233,7 +234,7 @@ class MPC_ACADOS(MPC):
         # otherwise, Acados solver can read the wrong c code
         ocp.code_export_directory = self.output_dir + '/mpc_c_generated_code'
 
-        self.ocp = ocp
+        return ocp
 
     @timing
     def select_action(self,
@@ -276,7 +277,6 @@ class MPC_ACADOS(MPC):
         if self.mode == 'tracking':
             self.traj_step += 1
 
-        # y_ref = np.concatenate((goal_states[:, :-1], np.zeros((nu, self.T))))
         y_ref = np.concatenate((goal_states[:, :-1], np.repeat(self.U_EQ.reshape(-1, 1), self.T, axis=1)), axis=0)
         for idx in range(self.T):
             self.acados_ocp_solver.set(idx, 'yref', y_ref[:, idx])

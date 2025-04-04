@@ -93,34 +93,36 @@ class LinearMPC_ACADOS(MPC_ACADOS):
 
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
-        super().setup_acados_model()
-        f_disc = self.linear_dynamics_func(self.acados_model.x, 
-                                           self.acados_model.u)
+        acados_model = super().setup_acados_model()
+        # override the dynamics function with linearized dynamics
+        f_disc = self.linear_dynamics_func(acados_model.x, 
+                                           acados_model.u)
+        acados_model.disc_dyn_expr = f_disc
+        return acados_model
 
-        self.acados_model.disc_dyn_expr = f_disc
-
-    def setup_acados_optimizer(self):
+    def setup_acados_optimizer(self, acados_model: AcadosModel) -> AcadosOcp:
         '''Sets up linearized optimization problem.'''
-        super().setup_acados_optimizer()
-        # Constraints
+        ocp = super().setup_acados_optimizer(acados_model)
+        # Constraints are overridden with delta constraints
         # general constraint expressions
         state_constraint_expr_list = []
         input_constraint_expr_list = []
         for sc_i, state_constraint in enumerate(self.state_constraints_sym):
-            state_constraint_expr_list.append(state_constraint(self.ocp.model.x+self.x_lin))
+            state_constraint_expr_list.append(state_constraint(ocp.model.x+self.x_lin))
         for ic_i, input_constraint in enumerate(self.input_constraints_sym):
-            input_constraint_expr_list.append(input_constraint(self.ocp.model.u+self.u_lin))
+            input_constraint_expr_list.append(input_constraint(ocp.model.u+self.u_lin))
 
         h_expr_list = state_constraint_expr_list + input_constraint_expr_list
         h_expr = cs.vertcat(*h_expr_list)
         h0_expr = cs.vertcat(*h_expr_list)
         he_expr = cs.vertcat(*state_constraint_expr_list)  # terminal constraints are only state constraints
         # pass the constraints to the ocp object
-        self.ocp = self.processing_acados_constraints_expression(self.ocp, h0_expr, h_expr, he_expr)
-        self.ocp.code_export_directory = self.output_dir + '/linear_mpc_c_generated_code'
+        ocp = self.processing_acados_constraints_expression(ocp, h0_expr, h_expr, he_expr)
+        ocp.code_export_directory = self.output_dir + '/linear_mpc_c_generated_code'
 
+        return ocp
 
-    @timing
+    # @timing
     def select_action(self,
                       obs,
                       info=None
@@ -134,7 +136,6 @@ class LinearMPC_ACADOS(MPC_ACADOS):
         Returns:
             action (ndarray): Input/action to the task/env.
         
-        NOTE: The the previous solutions has the value of linearized dynamics
         '''
         nx, nu = self.model.nx, self.model.nu
         # set initial condition (0-th state)
@@ -163,7 +164,6 @@ class LinearMPC_ACADOS(MPC_ACADOS):
         if self.mode == 'tracking':
             self.traj_step += 1
 
-        # y_ref = np.concatenate((goal_states[:, :-1], np.zeros((nu, self.T))))
         x_ref = goal_states[:, :-1] - np.repeat(self.x_lin.reshape(-1, 1), self.T, axis=1)
         u_ref = np.repeat(self.U_EQ.reshape(-1, 1) - self.u_lin.reshape(-1, 1), self.T, axis=1)
         y_ref = np.concatenate((x_ref, u_ref), axis=0)
@@ -201,7 +201,7 @@ class LinearMPC_ACADOS(MPC_ACADOS):
             # get the solver status
             n_sqp_iter = self.acados_ocp_solver.get_stats('sqp_iter')
             n_qp_iter = self.acados_ocp_solver.get_stats('qp_iter')
-            print(f'acados returned status {status}. SQP iterations: {n_sqp_iter}. QP iterations: {n_qp_iter}.')
+            # print(f'acados returned status {status}. SQP iterations: {n_sqp_iter}. QP iterations: {n_qp_iter}.')
 
         except Exception:
             print(colored('Infeasible MPC Problem', 'red'))
@@ -209,9 +209,6 @@ class LinearMPC_ACADOS(MPC_ACADOS):
             self.acados_ocp_solver.print_statistics()
             status = self.acados_ocp_solver.get_stats('status')
             print(f'acados returned status {status}. ')
-            # OPTIONAL: shift the x_prev and u_prev and copy the last state
-            # self.x_prev = np.concatenate((self.x_guess[:, 1:], np.atleast_2d(self.x_guess[:, -1]).T), axis=1)
-            # self.u_prev = np.concatenate((self.u_guess[:, 1:], np.atleast_2d(self.u_guess[:, -1]).T), axis=1)
         action = self.acados_ocp_solver.get(0, 'u')
 
         self.x_guess = self.x_prev
