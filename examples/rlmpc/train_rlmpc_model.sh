@@ -1,17 +1,18 @@
 #!/bin/bash
 
-#SYS='cartpole'
-#SYS='quadrotor_2D'
+# SYS='cartpole'
+# SYS='quadrotor_2D'
 SYS='quadrotor_2D_attitude'
-#SYS='quadrotor_3D'
+# SYS='quadrotor_3D'
 
-#TASK='stab'
+# TASK='stab'
 TASK='track'
 
-#ALGO='q_mpc'
-#ALGO='td3_mpc'
+# ALGO='q_mpc'
+# ALGO='td3_mpc'
 ALGO='ppo_mpc'
-#ALGO='mpc_lstdq'
+# ALGO='appo_mpc'
+# ALGO='mpc_lstdq'
 
 EXP_NAME='ppo_mpc'
 

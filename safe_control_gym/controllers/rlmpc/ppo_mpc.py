@@ -58,7 +58,7 @@ class PPO_MPC(BaseController):
             model,
             hidden_dim=self.hidden_dim,
             activation=self.activation,
-            actor_config=self.ac_config,
+            actor_config=self.actor_config,
             use_clipped_value=self.use_clipped_value,
             clip_param=self.clip_param,
             target_kl=self.target_kl,
@@ -66,7 +66,7 @@ class PPO_MPC(BaseController):
             actor_lr=self.actor_lr,
             critic_lr=self.critic_lr,
             opt_epochs=self.opt_epochs,
-            mini_batch_size=self.mini_batch_size
+            mini_batch_size=self.mini_batch_size,
         )
         self.agent.to(self.device)
 
@@ -162,7 +162,7 @@ class PPO_MPC(BaseController):
 
     def learn(self, env=None, **kwargs):
         """Performs learning (pre-training, training, fine-tuning, etc.)."""
-
+        start = time.time()
         # Initial Evaluation.
         if self.eval_interval:
             results = defaultdict(list)
@@ -178,9 +178,14 @@ class PPO_MPC(BaseController):
         if self.num_checkpoints > 0:
             step_interval = np.linspace(0, self.max_env_steps, self.num_checkpoints)
             interval_save = np.zeros_like(step_interval, dtype=bool)
+        print("eval time")
+        print(time.time()-start)
 
         while self.total_steps < self.max_env_steps:
+            print("next iter")
+            start = time.time()
             results = self.train_step()
+            print(time.time() - start)
 
             # Checkpoint.
             if (self.total_steps >= self.max_env_steps
@@ -217,6 +222,7 @@ class PPO_MPC(BaseController):
             # Logging.
             if self.log_interval and self.total_steps % self.log_interval == 0:
                 self.log_step(results)
+            print(time.time() - start)
 
     def select_action(self, obs, info=None):
         """Determine the action to take at the current timestep.
@@ -284,8 +290,12 @@ class PPO_MPC(BaseController):
         # Prevent divide-by-0 for repetitive tasks.
         rollouts.adv = (adv - adv.mean()) / (adv.std() + 1e-6)
         results = defaultdict(list)
+        print("training rollouts done")
+        print(time.time() - start)
         results['train'] = self.agent.update(rollouts, self.device)
         results.update({'step': self.total_steps, 'elapsed_time': time.time() - start})
+        print(time.time() - start)
+        print("training done")
         return results
 
     def run(self,
@@ -365,7 +375,7 @@ class PPO_MPC(BaseController):
             self.logger.add_scalars(
                 {
                     k: results['train'][k]
-                    for k in ['policy_loss', 'value_loss', 'entropy_loss', 'approx_kl', 'cost_loss', 'model_loss']
+                    for k in ['policy_loss', 'value_loss', 'entropy_loss', 'approx_kl', 'theta_loss']
                 },
                 step,
                 prefix='loss')
