@@ -144,13 +144,14 @@ class PPO_MPC_Agent:
                 # Update only when no KL constraint or constraint is satisfied.
                 if (self.target_kl <= 0) or (self.target_kl > 0 and approx_kl <= 1.5 * self.target_kl):
                     self.actor_opt.zero_grad()
-                    theta = (self.ac.actor.mpc_param.repeat(batch_th['obs'].shape[0], 1) +
-                             0.1*self.ac.actor.param_net.forward(batch_th['obs']))
+                    theta = self.ac.actor.get_theta_param(batch_th['obs'])
+                    # theta = (self.ac.actor.mpc_param.repeat(batch_th['obs'].shape[0], 1) +
+                    #          0.1*self.ac.actor.param_net.forward(batch_th['obs']))
                     (policy_loss + self.entropy_coef * entropy_loss).backward()
 
                     theta_loss = action_th.grad.unsqueeze(1) @ nabla_pi_theta @ theta.unsqueeze(2)
                     # ref_loss = action_th.grad.unsqueeze(1) @ nabla_pi_ref @ theta.unsqueeze(2)
-                    theta_loss[0, 0].backward()
+                    theta_loss.mean().backward()
                     self.actor_opt.step()
 
                     p_loss_epoch += policy_loss.item()
@@ -270,17 +271,15 @@ class MPCActor(nn.Module):
                            'f': np.array(self.model_param)}
 
     def forward(self, obs, act=None):
+        theta = self.get_theta_param(obs)
         if obs.ndim > 1:
-            theta = self.mpc_param.repeat(obs.shape[0], 1) + 0.1*self.param_net.forward(torch.FloatTensor(obs))
-            action, info, results_dict, optimal_flag = self.mpc.select_action_batch(
-                obs, theta.numpy(), self.traj_param.numpy()
-            )
+            action, info, results_dict, optimal_flag = self.mpc.select_action_batch(obs, theta.numpy(),
+                                                                                    self.traj_param.numpy())
         else:
-            theta = self.mpc_param + 0.1*self.param_net.forward(torch.FloatTensor(obs))
-            action, info, results_dict, optimal_flag = self.mpc.select_action(
-                obs, theta.numpy(), self.traj_param.numpy()
-            )
-            action = torch.FloatTensor(action)
+            action, info, results_dict, optimal_flag = self.mpc.select_action(obs, theta.numpy(),
+                                                                              self.traj_param.numpy())
+        action = torch.FloatTensor(np.array(action))
+        optimal_flag = torch.FloatTensor(np.array(optimal_flag))
         dist = self.dist_fn(action)
         logp_a = None
         if act is not None:
@@ -288,7 +287,7 @@ class MPCActor(nn.Module):
         return dist, logp_a, info, results_dict, optimal_flag
 
     def forward_train(self, obs, act, info):
-        theta = self.mpc_param.repeat(obs.shape[0], 1)
+        theta = self.get_theta_param(obs)
         action, nabla_pi_ref, nabla_pi_theta, optimal_flag = self.mpc.select_action_batch_train(
             obs, theta.detach().numpy(), self.traj_param.detach().numpy(), info
         )
@@ -301,23 +300,30 @@ class MPCActor(nn.Module):
     def reset(self):
         self.mpc.reset()
 
-    def get_ref_param(self, traj_step, traj_ref):
-        if self.env.TASK == Task.TRAJ_TRACKING:
-            if traj_step is None:
-                traj_step = self.traj_step
-            if traj_ref is None:
-                traj_ref = self.traj
-            # Slice trajectory for horizon steps, if not long enough, repeat last state.
-            start = min(traj_step, self.traj.shape[-1])
-            end = min(traj_step + self.T + 1, self.traj.shape[-1])
-            remain = max(0, self.T + 1 - (end - start))
-            goal_states = np.concatenate([
-                traj_ref[:, start:end],
-                np.tile(traj_ref[:, -1:], (1, remain))
-            ], -1)
+    def get_theta_param(self, obs):
+        if obs.ndim > 1:
+            theta = self.mpc_param.repeat(obs.shape[0], 1) + 0.1 * self.param_net.forward(torch.FloatTensor(obs))
         else:
-            raise Exception('Reference for this mode is not implemented.')
-        return goal_states  # (nx, T+1).
+            theta = self.mpc_param + 0.1 * self.param_net.forward(torch.FloatTensor(obs))
+        return theta
+
+    # def get_ref_param(self, traj_step, traj_ref):
+    #     if self.env.TASK == Task.TRAJ_TRACKING:
+    #         if traj_step is None:
+    #             traj_step = self.traj_step
+    #         if traj_ref is None:
+    #             traj_ref = self.traj
+    #         # Slice trajectory for horizon steps, if not long enough, repeat last state.
+    #         start = min(traj_step, self.traj.shape[-1])
+    #         end = min(traj_step + self.T + 1, self.traj.shape[-1])
+    #         remain = max(0, self.T + 1 - (end - start))
+    #         goal_states = np.concatenate([
+    #             traj_ref[:, start:end],
+    #             np.tile(traj_ref[:, -1:], (1, remain))
+    #         ], -1)
+    #     else:
+    #         raise Exception('Reference for this mode is not implemented.')
+    #     return goal_states  # (nx, T+1).
 
 
 class MPCPolicyFunction:
@@ -647,7 +653,7 @@ class MPCPolicyFunction:
 
         # Generate sensitivity of the optimal solution
         dzdP = -cs.inv(dRdz) @ dRdP
-        dPi = cs.Function('dPi', [z, fixed_param, ref_param, theta], [dzdP[nx: nx+nu, :].T])
+        dPi = cs.Function('dPi', [z, fixed_param, ref_param, theta], [dzdP[nx: nx + nu, :].T])
 
         self.solver_dict = {
             'x_var': x_var,
@@ -844,8 +850,6 @@ class MPCPolicyFunction:
             action_batch.append(action)
             results_dict_batch.append(results_dict)
             info_batch.append(info)
-        action_batch = torch.FloatTensor(np.array(action_batch))
-        optimal_batch = torch.FloatTensor(np.array(optimal_batch))
         self.infos = deepcopy(info_batch)
         return action_batch, info_batch, results_dict_batch, optimal_batch
 
@@ -891,8 +895,8 @@ class MPCPolicyFunction:
         nabla_pi_ref_batch = []
         nabla_pi_theta_batch = []
         for i in range(obs_batch.shape[0]):
-            nabla_pi_ref_batch.append(dpi_cs[:ref_p.shape[0], 2*i: 2*(i+1)].T)
-            nabla_pi_theta_batch.append(dpi_cs[ref_p.shape[0]:, 2*i: 2*(i+1)].T)
+            nabla_pi_ref_batch.append(dpi_cs[:ref_p.shape[0], 2 * i: 2 * (i + 1)].T)
+            nabla_pi_theta_batch.append(dpi_cs[ref_p.shape[0]:, 2 * i: 2 * (i + 1)].T)
         action_batch = torch.FloatTensor(action_batch)
         nabla_pi_ref_batch = torch.FloatTensor(np.array(nabla_pi_ref_batch))
         nabla_pi_theta_batch = torch.FloatTensor(np.array(nabla_pi_theta_batch))
