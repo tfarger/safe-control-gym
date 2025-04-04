@@ -95,26 +95,26 @@ class BaseAviary(BenchmarkEnv):
         self.RECORD = record
         # Load the drone properties from the .urdf file.
         self.MASS, \
-        self.L, \
-        self.THRUST2WEIGHT_RATIO, \
-        self.J, \
-        self.J_INV, \
-        self.KF, \
-        self.KM, \
-        self.COLLISION_H, \
-        self.COLLISION_R, \
-        self.COLLISION_Z_OFFSET, \
-        self.MAX_SPEED_KMH, \
-        self.GND_EFF_COEFF, \
-        self.PROP_RADIUS, \
-        self.DRAG_COEFF, \
-        self.DW_COEFF_1, \
-        self.DW_COEFF_2, \
-        self.DW_COEFF_3, \
-        self.PWM2RPM_SCALE, \
-        self.PWM2RPM_CONST, \
-        self.MIN_PWM, \
-        self.MAX_PWM = self._parse_urdf_parameters(self.URDF_PATH)
+            self.L, \
+            self.THRUST2WEIGHT_RATIO, \
+            self.J, \
+            self.J_INV, \
+            self.KF, \
+            self.KM, \
+            self.COLLISION_H, \
+            self.COLLISION_R, \
+            self.COLLISION_Z_OFFSET, \
+            self.MAX_SPEED_KMH, \
+            self.GND_EFF_COEFF, \
+            self.PROP_RADIUS, \
+            self.DRAG_COEFF, \
+            self.DW_COEFF_1, \
+            self.DW_COEFF_2, \
+            self.DW_COEFF_3, \
+            self.PWM2RPM_SCALE, \
+            self.PWM2RPM_CONST, \
+            self.MIN_PWM, \
+            self.MAX_PWM = self._parse_urdf_parameters(self.URDF_PATH)
         self.GROUND_PLANE_Z = -0.05
         if verbose:
             print(
@@ -283,7 +283,7 @@ class BaseAviary(BenchmarkEnv):
             # Between aggregate steps for certain types of update.
             if self.PYB_STEPS_PER_CTRL > 1 and self.PHYSICS in [
                 Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG,
-                Physics.PYB_DW, Physics.PYB_GND_DRAG_DW, Physics.RK4 #, Physics.DYN_2D
+                Physics.PYB_DW, Physics.PYB_GND_DRAG_DW, Physics.RK4  #, Physics.DYN_2D
             ]:
                 self._update_and_store_kinematic_information()
             # Step the simulation using the desired physics update.
@@ -333,12 +333,12 @@ class BaseAviary(BenchmarkEnv):
                         flags=p.WORLD_FRAME,
                         physicsClientId=self.PYB_CLIENT)
             # PyBullet computes the new state, unless Physics.DYN.
-            if self.PHYSICS not in [Physics.DYN, Physics.RK4, Physics.DYN_2D, Physics.DYN_SI, 
+            if self.PHYSICS not in [Physics.DYN, Physics.RK4, Physics.DYN_2D, Physics.DYN_SI,
                                     Physics.DYN_SI_3D, Physics.DYN_SI_3D_10]:
                 p.stepSimulation(physicsClientId=self.PYB_CLIENT)
             # Save the last applied action (e.g. to compute drag).
             self.last_clipped_action = clipped_action
-        if self.PHYSICS in [Physics.DYN_2D, Physics.DYN_SI, 
+        if self.PHYSICS in [Physics.DYN_2D, Physics.DYN_SI,
                             Physics.DYN_SI_3D, Physics.DYN_SI_3D_10]:
             # set the state of the drone after stepping with the analytical model
             self._set_pybullet_information()
@@ -379,7 +379,7 @@ class BaseAviary(BenchmarkEnv):
                         self.rpy[i, 2] * self.RAD2DEG),
                     '——— angular velocity {:+06.4f}, {:+06.4f}, {:+06.4f} ——— '.
                     format(self.ang_v[i, 0], self.ang_v[i, 1], self.ang_v[i,
-                                                                          2]))
+                    2]))
 
     def _set_pybullet_information(self):
         """Set pybullet state information from external simulation"""
@@ -689,7 +689,7 @@ class BaseAviary(BenchmarkEnv):
                         self.L / cs.sqrt(2.0) * (-f1 + f2 + f3 - f4),
                         gamma * (-f1 + f2 - f3 + f4))
         rate_dot = self.J_INV @ (
-                    Mb - (cs.skew(cs.vertcat(p_body, q_body, r_body)) @ self.J @ cs.vertcat(p_body, q_body, r_body)))
+                Mb - (cs.skew(cs.vertcat(p_body, q_body, r_body)) @ self.J @ cs.vertcat(p_body, q_body, r_body)))
         ang_dot = cs.blockcat([[1, cs.sin(phi) * cs.tan(theta), cs.cos(phi) * cs.tan(theta)],
                                [0, cs.cos(phi), -cs.sin(phi)],
                                [0, cs.sin(phi) / cs.cos(theta), cs.cos(phi) / cs.cos(theta)]]) @ cs.vertcat(p_body,
@@ -728,7 +728,7 @@ class BaseAviary(BenchmarkEnv):
         # update state with RK4
         # next_state = self.fd_func(x0=state, p=input)['xf'].full()[:, 0]
         X_dot = self.X_dot_fun(state, action).full()[:, 0]
-        next_state = state + X_dot*self.PYB_TIMESTEP
+        next_state = state + X_dot * self.PYB_TIMESTEP
 
         # Updated information
         pos = np.array([next_state[0], 0, next_state[4]])
@@ -796,8 +796,8 @@ class BaseAviary(BenchmarkEnv):
         rate_dot = self.J_INV @ (
                 Mb - (cs.skew(cs.vertcat(p_body, q_body, r_body)) @ self.J @ cs.vertcat(p_body, q_body, r_body)))
         ang_dot = (cs.blockcat([[1, cs.sin(phi) * cs.tan(theta), cs.cos(phi) * cs.tan(theta)],
-                               [0, cs.cos(phi), -cs.sin(phi)],
-                               [0, cs.sin(phi) / cs.cos(theta), cs.cos(phi) / cs.cos(theta)]]) @
+                                [0, cs.cos(phi), -cs.sin(phi)],
+                                [0, cs.sin(phi) / cs.cos(theta), cs.cos(phi) / cs.cos(theta)]]) @
                    cs.vertcat(p_body, q_body, r_body))
         X_dot = cs.vertcat(pos_dot[0], pos_ddot[0], pos_dot[1], pos_ddot[1], pos_dot[2], pos_ddot[2], ang_dot, rate_dot)
         self.X_dot_fun = cs.Function("X_dot", [X, U], [X_dot])
@@ -827,7 +827,7 @@ class BaseAviary(BenchmarkEnv):
         # update state
         if disturbance_force is not None:
             d = np.array([disturbance_force[0], disturbance_force[2]])
-        else: 
+        else:
             d = np.array([0, 0])
         # perform euler integration
         # next_state = state + self.PYB_TIMESTEP * self.X_dot_fun(state, action, d).full()[:, 0]
@@ -836,7 +836,7 @@ class BaseAviary(BenchmarkEnv):
         k2 = self.X_dot_fun(state + 0.5 * self.PYB_TIMESTEP * k1, action, d).full()[:, 0]
         k3 = self.X_dot_fun(state + 0.5 * self.PYB_TIMESTEP * k2, action, d).full()[:, 0]
         k4 = self.X_dot_fun(state + self.PYB_TIMESTEP * k3, action, d).full()[:, 0]
-        next_state = state + (self.PYB_TIMESTEP / 6) * (k1 + 2*k2 + 2*k3 + k4)
+        next_state = state + (self.PYB_TIMESTEP / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
 
         # Updated information
         pos = np.array([next_state[0], 0, next_state[2]])
@@ -860,26 +860,28 @@ class BaseAviary(BenchmarkEnv):
         theta_dot = cs.MX.sym('theta_dot')  # Pitch
         X = cs.vertcat(x, x_dot, z, z_dot, theta, theta_dot)
         g = self.GRAVITY_ACC
-        d = cs.MX.sym('d', 2, 1) # disturbance force
+        d = cs.MX.sym('d', 2, 1)  # disturbance force
 
         # Define inputs.
-        T = cs.MX.sym('T') # normlized thrust [N]
+        T = cs.MX.sym('T')  # normlized thrust [N]
         P = cs.MX.sym('P')  # desired pitch angle [rad]
         U = cs.vertcat(T, P)
         if prop_values is None:
             X_dot = cs.vertcat(x_dot,
-                                (14.444835 * T+ 8.738323) * cs.sin(theta) + d[0] / self.MASS,
-                                z_dot,
-                                (14.444835 * T + 8.738323) * cs.cos(theta) - g + d[1] / self.MASS,
-                                theta_dot,
-                                -149.998940 * theta -17.516742 * theta_dot + 129.306903 * P)
+                               (14.444835 * T + 8.738323) * cs.sin(theta) + d[0] / self.MASS,
+                               z_dot,
+                               (14.444835 * T + 8.738323) * cs.cos(theta) - g + d[1] / self.MASS,
+                               theta_dot,
+                               -149.998940 * theta - 17.516742 * theta_dot + 129.306903 * P)
         else:
             X_dot = cs.vertcat(x_dot,
-                                (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.sin(theta) + d[0] / self.MASS,
-                                z_dot,
-                                (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.cos(theta) - g + d[1] / self.MASS,
-                                theta_dot,
-                                prop_values['alpha_1'] * (theta) + prop_values['alpha_2'] * theta_dot + prop_values['alpha_3'] * P)
+                               (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.sin(theta) + d[0] / self.MASS,
+                               z_dot,
+                               (prop_values['beta_1'] * T + prop_values['beta_2']) * cs.cos(theta) - g + d[
+                                   1] / self.MASS,
+                               theta_dot,
+                               prop_values['alpha_1'] * theta + prop_values['alpha_2'] * theta_dot + prop_values[
+                                   'alpha_3'] * P)
         self.X_dot_fun = cs.Function("X_dot", [X, U, d], [X_dot])
 
     def _dynamics_si_3d(self, action, nth_drone, disturbance_force=None):
@@ -981,21 +983,23 @@ class BaseAviary(BenchmarkEnv):
         params_pitch_rate = [-99.94, -13.3, 84.73]
         params_yaw_rate = [0, 0, 0]
         X_dot = cs.vertcat(x_dot,
-                            (params_acc[0] * T + params_acc[1]) * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)) + d[0] / self.MASS,
-                            y_dot,
-                            (params_acc[0] * T + params_acc[1]) * (
-                                           cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
-                            z_dot,
-                            (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g + d[1] / self.MASS,
-                            phi_dot,
-                            theta_dot,
-                            psi_dot,
-                            params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
-                            params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
-                            params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y)
+                           (params_acc[0] * T + params_acc[1]) * (
+                                       cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)) + d[
+                               0] / self.MASS,
+                           y_dot,
+                           (params_acc[0] * T + params_acc[1]) * (
+                                   cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+                           z_dot,
+                           (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g + d[1] / self.MASS,
+                           phi_dot,
+                           theta_dot,
+                           psi_dot,
+                           params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+                           params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+                           params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y)
 
         self.X_dot_fun = cs.Function("X_dot", [X, U, d], [X_dot])
-    
+
     def _dynamics_si_3d_10(self, action, nth_drone, disturbance_force=None):
         '''Explicit dynamics implementation from the identified model.
            NOTE: The dynamics update is independent of the pybullet simulation.
@@ -1044,7 +1048,7 @@ class BaseAviary(BenchmarkEnv):
         self.ang_v[nth_drone, :] = ang_v.copy()
 
     def setup_dynamics_si_3d_10_expression(self):
-       # Casadi states
+        # Casadi states
         x = cs.MX.sym('x')
         y = cs.MX.sym('y')
         z = cs.MX.sym('z')
@@ -1091,16 +1095,18 @@ class BaseAviary(BenchmarkEnv):
         psi = 0
 
         X_dot = cs.vertcat(x_dot,
-                            (params_acc[0] * T + params_acc[1]) * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)) + d[0] / self.MASS,
-                            y_dot,
-                            (params_acc[0] * T + params_acc[1]) * (
-                                           cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
-                            z_dot,
-                            (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g + d[1] / self.MASS,
-                            phi_dot,
-                            theta_dot,
-                            params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
-                            params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+                           (params_acc[0] * T + params_acc[1]) * (
+                                       cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)) + d[
+                               0] / self.MASS,
+                           y_dot,
+                           (params_acc[0] * T + params_acc[1]) * (
+                                   cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+                           z_dot,
+                           (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g + d[1] / self.MASS,
+                           phi_dot,
+                           theta_dot,
+                           params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+                           params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
                            )
 
         self.X_dot_fun = cs.Function("X_dot", [X, U, d], [X_dot])
@@ -1175,5 +1181,5 @@ class BaseAviary(BenchmarkEnv):
         MIN_PWM = float(URDF_TREE[0].attrib['pwm_min'])
         MAX_PWM = float(URDF_TREE[0].attrib['pwm_max'])
         return M, L, THRUST2WEIGHT_RATIO, J, J_INV, KF, KM, COLLISION_H, COLLISION_R, COLLISION_Z_OFFSET, MAX_SPEED_KMH, \
-               GND_EFF_COEFF, PROP_RADIUS, DRAG_COEFF, DW_COEFF_1, DW_COEFF_2, DW_COEFF_3, \
-               PWM2RPM_SCALE, PWM2RPM_CONST, MIN_PWM, MAX_PWM
+            GND_EFF_COEFF, PROP_RADIUS, DRAG_COEFF, DW_COEFF_1, DW_COEFF_2, DW_COEFF_3, \
+            PWM2RPM_SCALE, PWM2RPM_CONST, MIN_PWM, MAX_PWM
