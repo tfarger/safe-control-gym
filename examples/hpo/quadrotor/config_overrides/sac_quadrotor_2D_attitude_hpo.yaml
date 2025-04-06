@@ -16,7 +16,7 @@ hpo_config:
   # hyperparameters
   hps_config:
     # model args
-    hidden_dim: 64
+    hidden_dim: 128
     activation: relu
 
     # loss args
@@ -27,9 +27,9 @@ hpo_config:
     # optim args
     train_interval: 200
     train_batch_size: 256
-    actor_lr: 0.001
-    critic_lr: 0.001
-    entropy_lr: 0.001
+    actor_lr: 0.003
+    critic_lr: 0.003
+    entropy_lr: 0.003
 
     # runner args
     max_env_steps: 660000

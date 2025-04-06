@@ -38,8 +38,8 @@ hpo_config:
     rollout_batch_size: 5
 
     # objective
-    rew_state_weight: [8.0, 0.1, 8.0, 0.1, 0.01, 0.01]
-    rew_act_weight: [0.08, 0.01]
+    rew_state_weight: [3., .1, 3., .1, .1, 0.001]
+    rew_act_weight: [.1, .1]
   proc_ns=5:
     activation: tanh
     actor_lr: 1.0e-05
