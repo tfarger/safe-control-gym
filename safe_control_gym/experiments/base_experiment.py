@@ -117,6 +117,9 @@ class BaseExperiment:
         ctrl_data = defaultdict(list)
         sf_data = defaultdict(list)
         inference_time_data = []
+        if isinstance(self.env.EPISODE_LEN_SEC, list):
+            # reset the max steps to handle task randomization
+            self.MAX_STEPS = int(self.env.CTRL_FREQ * self.env.episode_len)
 
         if n_episodes is not None:
             while trajs < n_episodes:
