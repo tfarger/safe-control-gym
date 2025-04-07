@@ -870,7 +870,7 @@ class BaseAviary(BenchmarkEnv):
             X_dot = cs.vertcat(x_dot,
                                (17.7906 * T + 4.2207) * cs.sin(theta) + d[0] / self.MASS,
                                z_dot,
-                               (17.7906 * T + 8.738323) * cs.cos(theta) - g + d[1] / self.MASS,
+                               (17.7906 * T + 4.2207) * cs.cos(theta) - g + d[1] / self.MASS,
                                theta_dot,
                                -135.052264 * theta - 15.771638 * theta_dot + 116.338942 * P)
         else:

@@ -330,7 +330,10 @@ class Quadrotor(BaseAviary):
             self.attitude_control = AttitudeControl(self.CTRL_TIMESTEP, self.PYB_TIMESTEP)
 
         # Set prior/symbolic info.
-        self._setup_symbolic(inertial_prop)
+        if inertial_prop is None:
+            self._setup_symbolic()
+        else:
+            self._setup_symbolic(inertial_prop)
 
         # initialize disturbance model
         if 'downwash' in self.disturbances:
