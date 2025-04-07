@@ -52,7 +52,7 @@ python3 ../../safe_control_gym/experiments/train_rl_controller.py \
     --task ${SYS_NAME} \
     --overrides \
         ./config_overrides/${SYS}/${ALGO}_${SYS}.yaml \
-        ./config_overrides/${SYS}/${SYS}_${TASK}.yaml \
+        ./config_overrides/${SYS}/${SYS}_${TASK}_pm.yaml \
     --output_dir ./Results/${EXP_NAME} \
     --tag ${SYS}_${ALGO}_data \
     --seed ${SEED} \

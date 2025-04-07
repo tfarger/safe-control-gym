@@ -32,6 +32,7 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
     # Create the configuration dictionary.
     fac = ConfigFactory()
     config = fac.merge()
+    config.seed += 110
 
     task = 'stab' if config.task_config.task == Task.STABILIZATION else 'track'
     if config.task == Environment.QUADROTOR:
@@ -45,9 +46,9 @@ def run(gui=False, plot=True, n_episodes=10, n_steps=None, curr_path='.'):
             config.task_config.external_param*i for i in config.task_config.disturbances.observation[0].std
         ]
     elif config.experiment_type == 'robustness_ps':
-        config.task_config.disturbances.action[0].std = (
-            config.task_config.external_param * config.task_config.disturbances.dynamics[0].std
-        )
+        config.task_config.disturbances.action[0].std = [
+            config.task_config.external_param*i for i in config.task_config.disturbances.action[0].std
+        ]
     elif config.experiment_type == 'robustness_dw':
         config.task_config.disturbances.downwash[0].pos[2] = config.task_config.external_param
     elif config.experiment_type == 'generalization':
