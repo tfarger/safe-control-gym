@@ -130,7 +130,13 @@ class FlatMPC(BaseController):
             self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_2D_att # map components of X_goal to flat state z
             # replace dynamics model with symbolic flat model
             self.mpc.model = _setup_flat_model_symbolic_2D_att(self.mpc.dt)
-            self.inertial_prop = self.mpc.env.INERTIAL_PROP
+            # self.inertial_prop = self.mpc.env.INERTIAL_PROP
+            self.inertial_prop = {}
+            self.inertial_prop['beta_1'] = self.env.beta_1
+            self.inertial_prop['beta_2'] = self.env.beta_2
+            self.inertial_prop['alpha_1'] = self.env.alpha_1
+            self.inertial_prop['alpha_2'] = self.env.alpha_2
+            self.inertial_prop['alpha_3'] = self.env.alpha_3
         else:
             raise NotImplementedError     
         
@@ -183,16 +189,12 @@ class FlatMPC(BaseController):
             z_ini = self.mpc.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
 
-        # all set in super().reset()
-        # # Dynamics model.
-        # self.set_dynamics_func()
-        # # CasADi optimizer.
-        # self.setup_optimizer()
-        # # Previously solved states & inputs, useful for warm start.
-        # self.x_prev = None
-        # self.u_prev = None
 
         # self.setup_results_dict()
+
+    def reset_before_run(self, obs=None, info=None, env=None):
+        super().reset_before_run(obs, info, env)
+        self.mpc.reset_before_run()
         
     def setup_results_dict(self):
         '''Setup the results dictionary to store run information.'''
