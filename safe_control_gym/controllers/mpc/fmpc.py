@@ -82,7 +82,7 @@ class FlatMPC(BaseController):
                                         q_mpc=[1],
                                         r_mpc=[1],
                                         warmstart=warmstart,
-                                        soft_constraints=soft_constraints,
+                                        soft_constraints=True,
                                         terminate_run_on_done=terminate_run_on_done,
                                         constraint_tol=constraint_tol,
                                         # prior_info=prior_info,
@@ -162,11 +162,11 @@ class FlatMPC(BaseController):
         sym_func1 = lambda x: h1.T @ x -b1
         sym_func2 = lambda x: -h1.T @ x -b1
         sym_func3 = lambda x: h2.T @ x -b1 + 9.8
-        # # diagonal box on top
-        # h3 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 1, 0])).T # selects x_ddot + z_ddot
-        # sym_func4 = lambda x: h3.T @ x + 9.8 - b1*np.sqrt(2)
-        # sym_func5 = lambda x: -h3.T @ x - 9.8 - b1*np.sqrt(2)
-        self.mpc.state_constraints_sym = [sym_func1, sym_func2, sym_func3] #, sym_func4, sym_func5]
+        # diagonal box on top
+        h3 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 1, 0])).T # selects x_ddot + z_ddot
+        sym_func4 = lambda x: h3.T @ x + 9.8 - b1*np.sqrt(2)
+        sym_func5 = lambda x: -h3.T @ x - 9.8 - b1*np.sqrt(2)
+        self.mpc.state_constraints_sym = [sym_func1, sym_func2, sym_func3, sym_func4, sym_func5]
 
 
         # setup flat state observer
