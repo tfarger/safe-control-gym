@@ -23,6 +23,7 @@ class PPOAgent:
                  clip_param=0.2,
                  target_kl=0.01,
                  entropy_coef=0.01,
+                 exploration_init=-0.5,
                  actor_lr=0.0003,
                  critic_lr=0.001,
                  opt_epochs=10,
@@ -44,7 +45,8 @@ class PPOAgent:
         self.ac = MLPActorCritic(obs_space,
                                  act_space,
                                  hidden_dims=[hidden_dim] * 2,
-                                 activation=self.activation)
+                                 activation=self.activation,
+                                 exploration_init=exploration_init)
         # Optimizers.
         self.actor_opt = torch.optim.Adam(self.ac.actor.parameters(), actor_lr)
         self.critic_opt = torch.optim.Adam(self.ac.critic.parameters(), critic_lr)
@@ -155,7 +157,8 @@ class MLPActor(nn.Module):
                  act_dim,
                  hidden_dims,
                  activation,
-                 discrete=False
+                 discrete=False,
+                 exploration_init=-0.5
                  ):
         super().__init__()
         self.pi_net = MLP(obs_dim, act_dim, hidden_dims, activation)
@@ -164,7 +167,7 @@ class MLPActor(nn.Module):
         if discrete:
             self.dist_fn = lambda x: Categorical(logits=x)
         else:
-            self.logstd = nn.Parameter(-0.5 * torch.ones(act_dim))
+            self.logstd = nn.Parameter(exploration_init * torch.ones(act_dim))
             self.dist_fn = lambda x: Normal(x, self.logstd.exp())
 
     def forward(self,
@@ -207,7 +210,8 @@ class MLPActorCritic(nn.Module):
                  obs_space,
                  act_space,
                  hidden_dims=(64, 64),
-                 activation='tanh'
+                 activation='tanh',
+                 exploration_init=-0.5
                  ):
         super().__init__()
         obs_dim = obs_space.shape[0]
@@ -218,7 +222,7 @@ class MLPActorCritic(nn.Module):
             act_dim = act_space.n
             discrete = True
         # Policy.
-        self.actor = MLPActor(obs_dim, act_dim, hidden_dims, activation, discrete)
+        self.actor = MLPActor(obs_dim, act_dim, hidden_dims, activation, discrete, exploration_init)
         # Value function.
         self.critic = MLPCritic(obs_dim, hidden_dims, activation)
 
