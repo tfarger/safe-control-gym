@@ -42,6 +42,7 @@ class MPC_ACADOS(MPC):
             use_gpu: bool = False,
             seed: int = 0,
             use_RTI: bool = False,
+            compute_initial_guess_method: str = 'ipopt',
             use_lqr_gain_and_terminal_cost: bool = False,
             **kwargs
     ):
@@ -79,7 +80,7 @@ class MPC_ACADOS(MPC):
             constraint_tol=constraint_tol,
             output_dir=output_dir,
             additional_constraints=additional_constraints,
-            compute_initial_guess_method='lqr',  # use ipopt initial guess by default
+            compute_initial_guess_method=compute_initial_guess_method,  # use ipopt initial guess by default
             use_lqr_gain_and_terminal_cost=use_lqr_gain_and_terminal_cost,
             use_gpu=use_gpu,
             seed=seed,
@@ -236,7 +237,7 @@ class MPC_ACADOS(MPC):
 
         return ocp
 
-    @timing
+    # @timing
     def select_action(self,
                       obs,
                       info=None
@@ -320,9 +321,6 @@ class MPC_ACADOS(MPC):
             self.acados_ocp_solver.print_statistics()
             status = self.acados_ocp_solver.get_stats('status')
             print(f'acados returned status {status}. ')
-            # OPTIONAL: shift the x_prev and u_prev and copy the last state
-            # self.x_prev = np.concatenate((self.x_guess[:, 1:], np.atleast_2d(self.x_guess[:, -1]).T), axis=1)
-            # self.u_prev = np.concatenate((self.u_guess[:, 1:], np.atleast_2d(self.u_guess[:, -1]).T), axis=1)
         action = self.acados_ocp_solver.get(0, 'u')
 
         self.x_guess = self.x_prev

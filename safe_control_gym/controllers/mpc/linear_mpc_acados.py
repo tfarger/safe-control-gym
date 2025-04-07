@@ -40,6 +40,7 @@ class LinearMPC_ACADOS(MPC_ACADOS):
             use_gpu: bool = False,
             seed: int = 0,
             use_RTI: bool = False,
+            compute_initial_guess_method = 'lqr',
             use_lqr_gain_and_terminal_cost: bool = False,
             **kwargs
     ):
@@ -76,7 +77,7 @@ class LinearMPC_ACADOS(MPC_ACADOS):
             constraint_tol=constraint_tol,
             output_dir=output_dir,
             additional_constraints=additional_constraints,
-            # compute_initial_guess_method='lqr',  # use ipopt initial guess by default
+            compute_initial_guess_method=compute_initial_guess_method,
             use_lqr_gain_and_terminal_cost=use_lqr_gain_and_terminal_cost,
             use_gpu=use_gpu,
             seed=seed,
@@ -201,7 +202,7 @@ class LinearMPC_ACADOS(MPC_ACADOS):
             # get the solver status
             n_sqp_iter = self.acados_ocp_solver.get_stats('sqp_iter')
             n_qp_iter = self.acados_ocp_solver.get_stats('qp_iter')
-            # print(f'acados returned status {status}. SQP iterations: {n_sqp_iter}. QP iterations: {n_qp_iter}.')
+            print(f'acados returned status {status}. SQP iterations: {n_sqp_iter}. QP iterations: {n_qp_iter}.')
 
         except Exception:
             print(colored('Infeasible MPC Problem', 'red'))
