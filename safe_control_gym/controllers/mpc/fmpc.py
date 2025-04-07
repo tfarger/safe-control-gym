@@ -218,6 +218,7 @@ class FlatMPC(BaseController):
                              'horizon_v': [],
                              'horizon_z': [],
                              'ctrl_run_time': [],
+                             'z_ref':[],
                              }
 
     # @timing
@@ -238,7 +239,7 @@ class FlatMPC(BaseController):
         # get flat state estimation from observer
         z_obs = self.fs_obs.compute_observation(obs)
         
-        # z_ref = self.get_references() # for debugging
+        z_ref = self.mpc.get_references().copy() # for debugging
 
         # run MPC controller 
         v = self.mpc.select_action(z_obs) 
@@ -264,6 +265,7 @@ class FlatMPC(BaseController):
         # self.results_dict['horizon_z'].append(z_horizon)
 
         # self.results_dict['ctrl_run_time'].append(te-ts)
+        self.results_dict['z_ref'].append(z_ref[:, 0])
         
         return action
     

@@ -2,7 +2,7 @@
 # plots the data for paper
 import os
 import argparse
-from examples.mpc.runs_paper.mpc_experiment_paper import run
+from examples.mpc.runs_thesis.mpc_experiment_paper import run
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
