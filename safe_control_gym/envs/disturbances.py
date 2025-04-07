@@ -310,7 +310,7 @@ class Downwash(Disturbance):
     Downwash model fitted with Gaussian distribution.
     '''
     def __init__(self,
-                 init_pos = np.array([0, 0, 0]), 
+                 init_pos = np.array([0, 0, -1]), # default heigh lower than the ground
                  rho=2267.18,
                  prop_radius=23.1348e-3,
                  rho1=-0.16,
