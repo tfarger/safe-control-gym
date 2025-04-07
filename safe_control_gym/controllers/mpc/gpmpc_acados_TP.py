@@ -7,6 +7,7 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from functools import partial
+# import threading
 
 import casadi as cs
 import gpytorch
@@ -292,14 +293,12 @@ class GPMPC_ACADOS_TP(GPMPC):
             self.env = train_envs[0]
             run_results = train_experiments[0].run_evaluation(n_episodes=1)
             train_runs[0].update({episode: munch.munchify(run_results)})
-            # self.reset()
         for test_ep in range(self.num_test_episodes_per_epoch):
             # run_results = self.run(env=test_envs[0],
             #                        terminate_run_on_done=self.terminate_test_on_done)
             self.env = test_envs[0]
             run_results = test_experiments[0].run_evaluation(n_episodes=1)
             test_runs[0].update({test_ep: munch.munchify(run_results)})
-        # self.reset()
         
         training_results = None
         for epoch in range(1, self.num_epochs):
@@ -366,13 +365,9 @@ class GPMPC_ACADOS_TP(GPMPC):
                     domain_rand_info[keys] = test_experiments[epoch].env.dw_model.pos
                 else:
                     domain_rand_info[keys] = values.disturbances[0].std
-            # env_dyn_params = {}
-            # env_dyn_params['beta_1'] =  train_experiments[epoch].env.beta_1
-            # env_dyn_params['beta_2'] =  train_experiments[epoch].env.beta_2
-            # env_dyn_params['alpha_1'] = train_experiments[epoch].env.alpha_1
-            # env_dyn_params['alpha_2'] = train_experiments[epoch].env.alpha_2
-            # env_dyn_params['alpha_3'] = train_experiments[epoch].env.alpha_3
-            # domain_rand_info['env_dyn_params'] = env_dyn_params
+            env_dyn_params = {}
+            env_dyn_params['prop_values'] =  train_experiments[epoch].env.last_prop_values
+            domain_rand_info['env_dyn_params'] = env_dyn_params
             self.rand_hist['domain_rand'].append(domain_rand_info)
             # TODO: fix data logging
             np.savez(os.path.join(self.output_dir, 'epoch_data'),
@@ -527,40 +522,25 @@ class GPMPC_ACADOS_TP(GPMPC):
             GP_T.init_with_hyperparam(train_input_T, train_target_T, gp_model[0])
             GP_P.init_with_hyperparam(train_input_P, train_target_P, gp_model[1])
         else:
+
             GP_T.train(train_input_T, train_target_T, test_inputs_T, test_targets_T,
                     n_train=self.optimization_iterations[0], learning_rate=self.learning_rate[0], 
                     gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_T.pth'))
             GP_P.train(train_input_P, train_target_P, test_inputs_P, test_targets_P,
                     n_train=self.optimization_iterations[1], learning_rate=self.learning_rate[1],
                     gpu=self.use_gpu, fname=os.path.join(self.output_dir, 'best_model_P.pth'))
+            
+            # # use thread to train the two GPs
+            # thread_T = threading.Thread(target=GP_T.train, args=(train_input_T, train_target_T, test_inputs_T, test_targets_T,
+            #         self.optimization_iterations[0], self.learning_rate[0], self.use_gpu, os.path.join(self.output_dir, 'best_model_T.pth')))
+            # thread_P = threading.Thread(target=GP_P.train, args=(train_input_P, train_target_P, test_inputs_P, test_targets_P,
+            #         self.optimization_iterations[1], self.learning_rate[1], self.use_gpu, os.path.join(self.output_dir, 'best_model_P.pth')))
+            # thread_T.start()
+            # thread_P.start()
+            # thread_T.join()
+            # thread_P.join()
         self.new_GP_model = True
         self.gaussian_process = [GP_T, GP_P]
-
-        # self.gaussian_process = GaussianProcessCollection(ZeroMeanIndependentGPModel,
-        #                                                   likelihood,
-        #                                                   len(self.target_mask),
-        #                                                   input_mask=self.input_mask,
-        #                                                   target_mask=self.target_mask,
-        #                                                   normalize=self.normalize_training_data,
-        #                                                   kernel=self.kernel,
-        #                                                   parallel=self.parallel
-        #                                                   )
-        # if gp_model:
-        #     self.gaussian_process.init_with_hyperparam(train_inputs_tensor,
-        #                                                train_targets_tensor,
-        #                                                gp_model)
-        #     print(colored(f'Loaded pretrained model from {gp_model}', 'green'))
-        # else:
-            # Train the GP.
-        # self.gaussian_process.train(train_inputs_tensor,
-        #                             train_targets_tensor,
-        #                             test_inputs_tensor,
-        #                             test_targets_tensor,
-        #                             n_train=self.optimization_iterations,
-        #                             learning_rate=self.learning_rate,
-        #                             gpu=self.use_gpu,
-        #                             output_dir=self.output_dir)
-        
 
         self.reset()
         # if self.train_data['train_targets'].shape[0] <= self.n_ind_points:
