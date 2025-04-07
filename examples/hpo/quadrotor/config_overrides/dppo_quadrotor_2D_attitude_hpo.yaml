@@ -11,7 +11,7 @@ hpo_config:
   save_n_best_hps: 1
   # budget
   trials: 60
-  hp_eval_list: ['proc_ns=5']
+  hp_eval_list: ['hps_config']
 
   # hyperparameters
   hps_config:
@@ -40,28 +40,3 @@ hpo_config:
     # objective
     rew_state_weight: [3., .1, 3., .1, .1, 0.001]
     rew_act_weight: [.1, .1]
-  proc_ns=5:
-    activation: tanh
-    actor_lr: 1.0e-05
-    clip_param: 0.2
-    critic_lr: 0.0007641108214685
-    entropy_coef: 3.946225412792475e-05
-    gae_lambda: 0.92
-    gamma: 0.98
-    hidden_dim: 256
-    max_env_steps: 456000
-    mini_batch_size: 128
-    opt_epochs: 20
-    quantile_count: 256
-    rew_act_weight:
-    - 9.516267312336597
-    - 10.298451892439441
-    rew_state_weight:
-    - 1.3998466841749142
-    - 0.5022003681625099
-    - 8.728836153075454
-    - 4.393369686368549
-    - 1.3417117604034574
-    - 5.822283989262226
-    rollout_batch_size: 3
-    target_kl: 0.3225293377462848
