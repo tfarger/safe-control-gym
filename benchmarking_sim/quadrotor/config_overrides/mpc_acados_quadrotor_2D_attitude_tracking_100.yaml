@@ -1,6 +1,6 @@
 algo: mpc_acados
 algo_config:
-  horizon: 30
+  horizon: 20
   q_mpc:
   - 12
   - 0.1
