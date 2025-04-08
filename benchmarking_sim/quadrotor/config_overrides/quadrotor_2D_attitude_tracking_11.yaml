@@ -19,19 +19,19 @@ task_config:
   inertial_prop_randomization_info:
     beta_1: # Nominal: 17.7906
       distrib: 'normal'
-      scale: 0.08086
+      scale: 0.8086
     beta_2: # Nominal: 4.2207
       distrib: 'normal'
-      scale: 0.02598
+      scale: 0.2598
     alpha_1:  # Nominal: -135.052264
       distrib: 'normal'
-      scale: 0.55866402
+      scale: 55.866402
     alpha_2: # Nominal: -15.771638
       distrib: 'normal'
-      scale: 0.06343344
+      scale: 6.343344
     alpha_3:  # Nominal: 116.338942
       distrib: 'normal'
-      scale: 0.52622572
+      scale: 52.622572
       
   init_state_randomization_info:
     init_x:
