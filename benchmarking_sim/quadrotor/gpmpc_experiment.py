@@ -1,7 +1,7 @@
 
 import os
 import sys
-
+import time
 import numpy as np
 
 from benchmarking_sim.quadrotor.mb_experiment import run
@@ -26,6 +26,8 @@ if __name__ == '__main__':
     start_seed = 1 # [1, 5, 6, 8, 9, 11, 12]
     suceeded = 0
     seed = start_seed
+
+    time1 = time.perf_counter()
     while suceeded < num_seed:  
         if seed > num_seed + start_seed:
             print(f'{suceeded} out of {num_seed} runs succeeded')
@@ -56,6 +58,7 @@ if __name__ == '__main__':
                 f.write(f'{exc_type} {fname} {exc_tb.tb_lineno}\n')
         seed += 1
 
-    print(f'Average runtime for {num_seed} runs: \
-          {np.mean(runtime_list):.3f} sec')
+    time2 = time.perf_counter()
+    print(f'Elapsed time: {time2 - time1:.3f} sec')
+    
 

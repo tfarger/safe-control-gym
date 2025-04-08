@@ -37,16 +37,17 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=1):
     if len(sys.argv) > 1:
         print('sys.argv', sys.argv)
         ALGO = sys.argv[1] 
+        ADDITIONAL = sys.argv[2] if len(sys.argv) > 2 else ''
+        CTRL_ADD = sys.argv[3] if len(sys.argv) > 3 else ''
         if generate_reference:
             TRAJ_LEN = sys.argv[2] if len(sys.argv) > 2 else None
             TRAJ_LEN = int(TRAJ_LEN) if TRAJ_LEN is not None else None
-        ADDITIONAL = sys.argv[2] if len(sys.argv) > 2 else ''
-
+            ADDITIONAL = ''
     else:
-        ALGO = 'ilqr'
+        # ALGO = 'ilqr'
         # ALGO = 'gp_mpc'
         # ALGO = 'gpmpc_acados'
-        # ALGO = 'gpmpc_acados_TP'
+        ALGO = 'gpmpc_acados_TP'
         # ALGO = 'gpmpc_acados_TRP'
         # ALGO = 'mpc'
         # ALGO = 'mpc_acados'
@@ -57,20 +58,13 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=1):
         # ALGO = 'pid'
         # ALGO = 'fmpc'
         ADDITIONAL = ''
-    CTRL_ADD = ''
+        CTRL_ADD = ''
+        # ADDITIONAL = '_param'
     # ADDITIONAL = ''
     # CTRL_ADD = '_tr'
     SYS = 'quadrotor_2D_attitude'
     # SYS = 'quadrotor_3D_attitude'
     TASK = 'tracking'
-
-    if generate_reference:
-        ALGO = 'ilqr'
-        # ALGO = 'mpc_acados'
-
-    # TASK = 'stab'
-    # PRIOR = '200'
-    # PRIOR = '150'
     # ADDITIONAL = ''
     # ADDITIONAL = '_tr'
     # ADDITIONAL = '_9'
@@ -123,6 +117,9 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=1):
     config.algo_config.output_dir = config.output_dir
     mkdirs(config.output_dir)
     if generate_reference:
+        config.task_config.disturbances = None
+        config.randomized_init = False
+        config.task_config.task_info.ilqr_ref = False
         if locals().get('TRAJ_LEN') is not None:
             config.task_config.episode_len_sec = int(TRAJ_LEN)
         # reconfigure the trajectory length for generating reference

@@ -6,9 +6,9 @@ from benchmarking_sim.quadrotor.mb_experiment import run
 
 script_path = os.path.dirname(os.path.realpath(__file__))
 
-def run_experiment(seed, algo, additional):
+def run_experiment(seed, algo, additional, control_add=''):
     try:
-        sys.argv[1:] = [algo, additional]
+        sys.argv[1:] = [algo, additional, control_add]
         run(seed=seed)
         return (seed, run.elapsed_time, None)  # Return seed, runtime, and no error
     except Exception as e:
@@ -24,19 +24,21 @@ def run_experiment(seed, algo, additional):
 if __name__ == '__main__':
     ALGO = sys.argv[1]
     ADDITIONAL = sys.argv[2] if len(sys.argv) > 2 else ''
+    CTRL_ADD = sys.argv[3] if len(sys.argv) > 3 else ''
 
-    num_seed = 5
+    num_seed = 1
     start_seed = 1
     seeds = range(start_seed, start_seed + num_seed)
 
     results = []
     
     parallel = True
+    parallel = False  # Set to True to run in parallel
     if parallel:
         # Run experiments in parallel
         with Pool(processes=3) as pool:
             async_results = [
-                pool.apply_async(run_experiment, args=(seed, ALGO, ADDITIONAL))
+                pool.apply_async(run_experiment, args=(seed, ALGO, ADDITIONAL, CTRL_ADD))
                 for seed in seeds
             ]
 
@@ -45,7 +47,7 @@ if __name__ == '__main__':
     else:
         # Run experiments sequentially
         for seed in seeds:
-            results.append(run_experiment(seed, ALGO, ADDITIONAL))
+            results.append(run_experiment(seed, ALGO, ADDITIONAL, CTRL_ADD))
 
     # Process results
     runtime_list = []
