@@ -336,7 +336,11 @@ class FlatMPC_SOCP(BaseController):
                              'socp_cost_linPart':[],  
                              'socp_solve_time':[],
                              'thrust_dot':[],   
-                             'gp_time':[],                        
+                             'gp_time':[],
+                             'fs_obs_time':[],
+                             'mpc_time':[],
+                             'safety_filt_time':[],  
+                             'dyn_ext_time':[],                      
                              }
 
     # @timing
@@ -354,29 +358,29 @@ class FlatMPC_SOCP(BaseController):
             action (ndarray): Input/action to the task/env.
         '''
 
-
-        # # to get initial state of drone on trajectory
-        # z_ref = self.mpc.get_references()
-        # x_ini = _get_x_from_flat_states_2D_att(z_ref[:, 0], 9.8)
-        # print(x_ini)
-        # exit()
-
-        # ts = time.time()    
+        start = time.perf_counter()    
         # get flat state estimation from observer
-        z_obs = self.fs_obs.compute_observation(obs)    
+        z_obs = self.fs_obs.compute_observation(obs)
+        time_fs_obs = time.perf_counter() -start    
 
+        start = time.perf_counter()
         # run MPC controller 
         v = self.mpc.select_action(z_obs) 
+        time_mpc = time.perf_counter() -start
         z_horizon = self.mpc.x_prev #8xN set in linearMPC
-        v_horizon = self.mpc.u_prev #2xN       
+        v_horizon = self.mpc.u_prev #2xN  
+               
         
+        start = time.perf_counter()
         # flat input transformation: z and v to action u        
         zd = z_horizon[:, 0].copy()
         vd = v_horizon[:, 0].copy()
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
         action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
+        time_safety = time.perf_counter()-start
 
+        start = time.perf_counter()
         action_extended_used = action_extended_socp
         # action_extended_used = action_extended
                 
@@ -388,7 +392,7 @@ class FlatMPC_SOCP(BaseController):
 
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
-
+        time_dynExt = time.perf_counter()-start
 
         # # log execution time                
         # te = time.time()
@@ -411,6 +415,10 @@ class FlatMPC_SOCP(BaseController):
         self.results_dict['socp_solve_time'].append(socp_logging['solve_time'])
         self.results_dict['thrust_dot'].append(self.eta[1])
         self.results_dict['gp_time'].append(socp_logging['gp_time'])
+        self.results_dict['fs_obs_time'].append(time_fs_obs)
+        self.results_dict['mpc_time'].append(time_mpc)
+        self.results_dict['safety_filt_time'].append(time_safety)
+        self.results_dict['dyn_ext_time'].append(time_dynExt)
         
         return action
     

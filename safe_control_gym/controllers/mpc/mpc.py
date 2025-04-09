@@ -409,7 +409,7 @@ class MPC(BaseController):
             action += self.lqr_gain @ (obs - x_val[:, 0])
         self.prev_action = action
         return action
-    @timing
+    # @timing
     def get_references(self):
         '''Constructs reference states along mpc horizon.(nx, T+1).'''
 

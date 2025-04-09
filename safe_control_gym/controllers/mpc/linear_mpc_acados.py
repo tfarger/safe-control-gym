@@ -164,7 +164,7 @@ class LinearMPC_ACADOS(MPC):
 
         self.acados_model = acados_model
 
-    @timing
+    # @timing
     def compute_initial_guess(self, init_state, goal_states=None):
         '''Use IPOPT to get an initial guess of the solution.'''
         x_val, u_val = super().compute_initial_guess(init_state, goal_states)

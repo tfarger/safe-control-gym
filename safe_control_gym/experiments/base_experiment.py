@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from copy import deepcopy
-from time import time
+from time import perf_counter, time
 
 import gymnasium as gym
 import numpy as np
@@ -112,9 +112,9 @@ class BaseExperiment:
 
         if n_episodes is not None:
             while trajs < n_episodes:
-                time_start = time()
+                time_start = perf_counter()
                 action = self._select_action(obs=obs, info=info)
-                inference_time_data.append(time() - time_start)
+                inference_time_data.append(perf_counter() - time_start)
                 # inner sim loop to accomodate different control frequencies
                 for _ in range(sim_steps):
                     steps += 1
@@ -131,9 +131,9 @@ class BaseExperiment:
                         break
         elif n_steps is not None:
             while steps < n_steps:
-                time_start = time()
+                time_start = perf_counter()
                 action = self._select_action(obs=obs, info=info)
-                inference_time_data.append(time() - time_start)
+                inference_time_data.append(perf_counter() - time_start)
                 # inner sim loop to accomodate different control frequencies
                 for _ in range(sim_steps):
                     steps += 1
