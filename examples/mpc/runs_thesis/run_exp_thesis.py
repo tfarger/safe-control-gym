@@ -150,10 +150,12 @@ def extract_data(data_file):
         action_ext = 0
         gp_time = 0
     return states, error, inference_time, rmse, state_ref, action, action_ext, gp_time
-
-state_mpc, error_mpc, inf_time_mpc, rmse_mpc, state_ref_mpc, action_mpc, _, _ = extract_data(data_path_nmpc)
-state_x_fmpc, error_fmpc, inf_time_fmpc, rmse_fmpc, state_ref_fmpc, action_fmpc, action_ext_fmpc, _ = extract_data(data_path_fmpc) 
-state_x_fmpc_socp, error_fmpc_socp, inf_time_fmpc_socp, rmse_fmpc_socp, state_ref_fmpc_socp, action_fmpc_socp, action_ext_fmpc_socp, gp_time_socp = extract_data(data_path_fmpc_socp)   
+if RUN_NMPC:
+    state_mpc, error_mpc, inf_time_mpc, rmse_mpc, state_ref_mpc, action_mpc, _, _ = extract_data(data_path_nmpc)
+if RUN_FMPC:
+    state_x_fmpc, error_fmpc, inf_time_fmpc, rmse_fmpc, state_ref_fmpc, action_fmpc, action_ext_fmpc, _ = extract_data(data_path_fmpc) 
+if RUN_FMPC_SOCP:
+    state_x_fmpc_socp, error_fmpc_socp, inf_time_fmpc_socp, rmse_fmpc_socp, state_ref_fmpc_socp, action_fmpc_socp, action_ext_fmpc_socp, gp_time_socp = extract_data(data_path_fmpc_socp)   
 
 
 
@@ -235,9 +237,16 @@ def compute_tracking_error(error, end_idx_first_loop):
     loop1_track_err = np.mean(np.sqrt(error[:end_idx_first_loop]))
     loop2_track_err = np.mean(np.sqrt(error[end_idx_first_loop:]))
     return mean_track_err, loop1_track_err, loop2_track_err
-mean_track_err_mpc, loop1_track_err_mpc, loop2_track_err_mpc = compute_tracking_error(error_mpc, end_idx_first_loop)
-mean_track_err_fmpc, loop1_track_err_fmpc, loop2_track_err_fmpc = compute_tracking_error(error_fmpc, end_idx_first_loop)
-mean_track_err_fmpc_socp, loop1_track_err_fmpc_socp, loop2_track_err_fmpc_socp = compute_tracking_error(error_fmpc_socp, end_idx_first_loop)
+if RUN_NMPC:
+    mean_track_err_mpc, loop1_track_err_mpc, loop2_track_err_mpc = compute_tracking_error(error_mpc, end_idx_first_loop)
+if RUN_FMPC:
+    mean_track_err_fmpc, loop1_track_err_fmpc, loop2_track_err_fmpc = compute_tracking_error(error_fmpc, end_idx_first_loop)
+else: 
+    mean_track_err_fmpc = 999
+    loop1_track_err_fmpc = 999
+    loop2_track_err_fmpc = 999
+if RUN_FMPC_SOCP:
+    mean_track_err_fmpc_socp, loop1_track_err_fmpc_socp, loop2_track_err_fmpc_socp = compute_tracking_error(error_fmpc_socp, end_idx_first_loop)
 
 print('\nTracking Error: mean(sqrt(sum of squares at each timestep))')
 print('                     NMPC   |  FMPC   | FMPC+SOCP')
@@ -247,7 +256,7 @@ print('2nd loop track_err: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(loop2_track_er
 
 print('\nRMSE: sqrt(mean(sum of squares at each timestep))')
 print('                     NMPC   |  FMPC   | FMPC+SOCP')
-print('      average RMSE: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(rmse_mpc*1000, rmse_fmpc*1000, rmse_fmpc_socp*1000))
+# print('      average RMSE: {:.2f}mm | {:.2f}mm | {:.2f}mm'.format(rmse_mpc*1000, rmse_fmpc*1000, rmse_fmpc_socp*1000))
 
 ##################################################################################
 # Inputs
@@ -303,14 +312,15 @@ if MAKE_THRUST_CLOSEUP:
 # plt.xlabel('time in s')
 # plt.ylabel(r'$\ddot{T_c}$ in $\frac{N}{s^2}$')
 # plt.grid()
-print('\nMaximum of inputs')
-print('               NMPC   |  FMPC   | FMPC+SOCP')
-print('Thrust: {:.5f}N   | {:.5f}N   | {:.5f}N'.format(np.max(action_mpc[:, 0]), np.max(action_fmpc[:, 0]), np.max(action_fmpc_socp[:, 0])))
-print(' Angle: {:.2f}rad | {:.2f}rad | {:.2f}rad'.format(np.max(action_mpc[:, 1]), np.max(action_fmpc[:, 1]), np.max(action_fmpc_socp[:, 1])))
 
-print('\nMaximum of extended input')
-print('               NMPC   |  FMPC   | FMPC+SOCP')
-print('Thrust_ddot: ------  | {:.2f}N/s^2 | {:.2f}N/s^2'.format(np.max(action_ext_fmpc[:, 0]), np.max(action_ext_fmpc_socp[:, 0])))
+# print('\nMaximum of inputs')
+# print('               NMPC   |  FMPC   | FMPC+SOCP')
+# print('Thrust: {:.5f}N   | {:.5f}N   | {:.5f}N'.format(np.max(action_mpc[:, 0]), np.max(action_fmpc[:, 0]), np.max(action_fmpc_socp[:, 0])))
+# print(' Angle: {:.2f}rad | {:.2f}rad | {:.2f}rad'.format(np.max(action_mpc[:, 1]), np.max(action_fmpc[:, 1]), np.max(action_fmpc_socp[:, 1])))
+
+# print('\nMaximum of extended input')
+# print('               NMPC   |  FMPC   | FMPC+SOCP')
+# print('Thrust_ddot: ------  | {:.2f}N/s^2 | {:.2f}N/s^2'.format(np.max(action_ext_fmpc[:, 0]), np.max(action_ext_fmpc_socp[:, 0])))
 
 
 ##################################################################################
@@ -325,36 +335,36 @@ time = np.arange(0, np.shape(inf_time_mpc)[1]*sample_time, sample_time )
 # plt.ylabel('inference time in s')
 # plt.grid()
 
-print('\nInference Time of each controller')
-print('               NMPC   |  FMPC   | FMPC+SOCP')
-print('average time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(np.mean(inf_time_mpc)*1000, np.mean(inf_time_fmpc)*1000, np.mean(inf_time_fmpc_socp)*1000))
-print('maximum time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(np.max(inf_time_mpc)*1000, np.max(inf_time_fmpc)*1000, np.max(inf_time_fmpc_socp)*1000))
+# print('\nInference Time of each controller')
+# print('               NMPC   |  FMPC   | FMPC+SOCP')
+# print('average time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(np.mean(inf_time_mpc)*1000, np.mean(inf_time_fmpc)*1000, np.mean(inf_time_fmpc_socp)*1000))
+# print('maximum time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(np.max(inf_time_mpc)*1000, np.max(inf_time_fmpc)*1000, np.max(inf_time_fmpc_socp)*1000))
 
-print('gp_infe time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(0, 0, np.mean(gp_time_socp)*1000))
+# print('gp_infe time: {:.2f}ms | {:.2f}ms | {:.2f}ms'.format(0, 0, np.mean(gp_time_socp)*1000))
 
 
 ######################################################################################
-print('Velocities of the quadrotor along the trajectory')
+# print('Velocities of the quadrotor along the trajectory')
 
-vel_mpc = np.sqrt(state_mpc[:, 1]**2 + state_mpc[:, 3]**2)
-vel_fmpc = np.sqrt(state_x_fmpc[:, 1]**2 + state_x_fmpc[:, 3]**2)
-vel_fmpc_socp = np.sqrt(state_x_fmpc_socp[:, 1]**2 + state_x_fmpc_socp[:, 3]**2)
+# vel_mpc = np.sqrt(state_mpc[:, 1]**2 + state_mpc[:, 3]**2)
+# vel_fmpc = np.sqrt(state_x_fmpc[:, 1]**2 + state_x_fmpc[:, 3]**2)
+# vel_fmpc_socp = np.sqrt(state_x_fmpc_socp[:, 1]**2 + state_x_fmpc_socp[:, 3]**2)
 
-# plot velocity over time
-# time = np.arange(0, np.shape(error_mpc)[0]*sample_time, sample_time )
-# plt.figure()
-# plt.plot(time, vel_mpc, color=mpc_color, label=mpc_label, linewidth=linewidth)
-# plt.plot(time, vel_fmpc, color=fmpc_color, label=fmpc_label, linewidth=linewidth)
-# plt.plot(time, vel_fmpc_socp, color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
-# plt.legend()
-# plt.xlabel('time in s')
-# plt.ylabel('velocity in m/s')
-# plt.grid()
+# # plot velocity over time
+# # time = np.arange(0, np.shape(error_mpc)[0]*sample_time, sample_time )
+# # plt.figure()
+# # plt.plot(time, vel_mpc, color=mpc_color, label=mpc_label, linewidth=linewidth)
+# # plt.plot(time, vel_fmpc, color=fmpc_color, label=fmpc_label, linewidth=linewidth)
+# # plt.plot(time, vel_fmpc_socp, color=fmpc_socp_color, label=fmpc_socp_label, linewidth=linewidth)
+# # plt.legend()
+# # plt.xlabel('time in s')
+# # plt.ylabel('velocity in m/s')
+# # plt.grid()
 
-print('\nVelocity on trajectory')
-print('                   NMPC   |  FMPC   | FMPC+SOCP')
-print('average velocity: {:.2f}m/s | {:.2f}m/s | {:.2f}m/s'.format(np.mean(vel_mpc), np.mean(vel_fmpc), np.mean(vel_fmpc_socp)))
-print('maximum velocity: {:.2f}m/s | {:.2f}m/s | {:.2f}m/s'.format(np.max(vel_mpc), np.max(vel_fmpc), np.max(vel_fmpc_socp)))
+# print('\nVelocity on trajectory')
+# print('                   NMPC   |  FMPC   | FMPC+SOCP')
+# print('average velocity: {:.2f}m/s | {:.2f}m/s | {:.2f}m/s'.format(np.mean(vel_mpc), np.mean(vel_fmpc), np.mean(vel_fmpc_socp)))
+# print('maximum velocity: {:.2f}m/s | {:.2f}m/s | {:.2f}m/s'.format(np.max(vel_mpc), np.max(vel_fmpc), np.max(vel_fmpc_socp)))
 
 
 
