@@ -201,6 +201,12 @@ class FlatMPC_SOCP(BaseController):
         dyn_ext_mat['Ad'] = self.Ad_dyn_ext
         dyn_ext_mat['Bd'] = self.Bd_dyn_ext
 
+        # selection matrices
+        self.C_dyn_ext = np.zeros((2, 2))
+        self.C_dyn_ext[0, 0] = 1
+        self.D_dyn_ext = np.zeros((2, 2))
+        self.D_dyn_ext[1, 1] = 1
+
 
         # setup discrete socp filter for dynamic feedback linearization with constraints
         # load two GPs
@@ -365,7 +371,7 @@ class FlatMPC_SOCP(BaseController):
 
         start = time.perf_counter()
         # run MPC controller 
-        v = self.mpc.select_action(z_obs) 
+        vd = self.mpc.select_action(z_obs) 
         time_mpc = time.perf_counter() -start
         z_horizon = self.mpc.x_prev #8xN set in linearMPC
         v_horizon = self.mpc.u_prev #2xN  
@@ -373,35 +379,24 @@ class FlatMPC_SOCP(BaseController):
         
         start = time.perf_counter()
         # flat input transformation: z and v to action u        
-        zd = z_horizon[:, 0].copy()
-        vd = v_horizon[:, 0].copy()
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
-        action_extended = _get_u_from_flat_states_2D_att_ext(zd, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(zd, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
+        # action_extended = _get_u_from_flat_states_2D_att_ext(z_obs, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
+        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(z_obs, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
         time_safety = time.perf_counter()-start
 
-        start = time.perf_counter()
-        action_extended_used = action_extended_socp
-        # action_extended_used = action_extended
-                
+        start = time.perf_counter()               
         # do double integration on first action Tc_ddot --> Tc
-        self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended_used
-        action = np.zeros(np.shape(action_extended))
-        action[0] = self.eta[0]
-        action[1] = action_extended_used[1]
+        self.eta = self.Ad_dyn_ext @ self.eta + self.Bd_dyn_ext @ action_extended_socp
+        action = self.C_dyn_ext @ self.eta + self.D_dyn_ext @ action_extended_socp
 
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)
         time_dynExt = time.perf_counter()-start
 
-        # # log execution time                
-        # te = time.time()
-
-        # # data logging
+        # data logging
         self.results_dict['obs_z'].append(z_obs)
-        self.results_dict['u'].append(action)
-       
-        self.results_dict['u_extFT'].append(action_extended)
+        self.results_dict['u'].append(action)       
+        # self.results_dict['u_extFT'].append(action_extended)
         self.results_dict['u_extSOCP'].append(action_extended_socp)
         self.results_dict['gp_means'].append(socp_logging['means'])
         self.results_dict['gp_covs'].append(socp_logging['covs'])

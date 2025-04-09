@@ -334,7 +334,6 @@ class GaussianProcess():
         self.model.K_plus_noise_inv = K_lazy_plus_noise.inv_matmul(torch.eye(n_samples).double())
 
         # for testing only: compute condition number of K + noise
-
         cond_number = torch.linalg.cond(K_lazy_plus_noise.evaluate()).item()
         print(f"Condition number of the covariance matrix + noise: {cond_number:.2e}")
 
@@ -421,34 +420,6 @@ class GaussianProcess():
         else:
             return mean, cov
 
-    def prediction_jacobian(self, query):
-        gammas = self.model.compute_gammas(query)
-        mean_der = gammas[1]
-        cov_der = gammas[4]
-        #mean_der, _ = torch.autograd.functional.jacobian(
-        #                        lambda x: self.predict(x, requires_grad=True, return_pred=False),
-        #                        query.double())
-        #k_query_query = torch.autograd.functional.hessian(
-        #                               lambda x: self.model.covar_module.kappa(x,x), query.double()
-        #)
-        #k_v_v = k_query_query.squeeze()[-1,-1]
-        #k_a_prime = torch.autograd.functional.jacobian(
-        #        lambda x: self.model.covar_module.kappa(x, self.model.train_inputs[0]), query.double()
-        #)
-        #k_a = k_a_prime.squeeze()[:,-1,None]
-        #cov_der = k_v_v - k_a.T @ self.model.K_plus_noise_inv @ k_a #+ self.model.likelihood.noise
-
-        #k_v_v = self.model.covar_module.kappa_beta(query[:,None,0:3], query[:,None,0:3])
-        #u_train = self.model.train_inputs[0][:, -1, None]
-        #k_b = self.model.covar_module.kappa_beta(query[:,None,0:3], self.model.train_inputs[0][:,0:3]).mul(u_train.T)
-        #if k_b.dim() == 1:
-        #    k_b = k_b.unsqueeze(0)
-        ##k_b = self.model.covar_module.kappa_beta(query[:,None,0:3],self.model.train_inputs[0][:,0:3]).unsqueeze(0)
-        #cov_der = k_v_v - k_b @ self.model.K_plus_noise_inv @ k_b.T  #+ self.model.likelihood.noise
-        #cov_der = k_v_v
-
-        return mean_der.detach(), cov_der.detach()
-
     def plot_trained_gp(self, t, fig_count=0):
         means, covs, preds = self.predict(self.model.train_inputs[0])
         lower, upper = preds.confidence_region()
@@ -465,58 +436,5 @@ class GaussianProcess():
 
         return fig_count
 
-# def affine_kernel(z1, z2, params_a, params_b):
-#     variance_a = params_a[0]
-#     length_scales_a = params_a[1:]
-#     variance_b = params_b[1]
-#     length_scales_b = params_b[1:]
-
-#     x1 = z1[:,0:-1]
-#     x2 = z2[:,0:-1]
-#     k_a = se_kernel(x1, x2, variance_a, length_scales_a)
-#     k_b = se_kernel_u(z1, z2, variance_b, length_scales_b)
-
-
-#     k = k_a + k_b
-#     return k
-
-# def se_kernel_u(z1, z2, variance, length_scales):
-#     """
-#     x1 = Nsamples x input
-#     x2 = Nsamples x inputs
-#     length_scales : size of input
-#     """
-#     N1, n = z1.shape
-#     N2, n = z2.shape
-#     x1 = z1[:,0:-1]
-#     x2 = z2[:,0:-1]
-#     u1 = z1[:,-1]
-#     u2 = z2[:,-1]
-#     L_inv = np.diag(1/length_scales**2)
-#     val = np.zeros((N1,N2))
-#     for i in range(N1):
-#         for j in range(N2):
-#             val[i,j] = u1[i]*u2[j]*variance*np.exp(-0.5*(x1[np.newaxis,i,:].T-x2[np.newaxis,j,:].T).T @ L_inv @ (x1[np.newaxis,i,:].T - x2[np.newaxis,j,:].T))
-
-#     val = val
-
-#     return val
-
-# def se_kernel(x1, x2, variance, length_scales):
-#     """
-#     x1 = Nsamples x input
-#     x2 = Nsamples x inputs
-#     length_scales : size of input
-#     """
-#     N1, n = x1.shape
-#     N2, n = x2.shape
-#     L_inv = np.diag(1/length_scales**2)/2.0
-#     val = np.zeros((N1,N2))
-#     for i in range(N1):
-#         for j in range(N2):
-#             val[i,j] = variance*np.exp(-0.5*(x1[np.newaxis,i,:].T-x2[np.newaxis,j,:].T).T @ L_inv @ (x1[np.newaxis,i,:].T - x2[np.newaxis,j,:].T))
-#     val = val
-
-#     return val
 
 
