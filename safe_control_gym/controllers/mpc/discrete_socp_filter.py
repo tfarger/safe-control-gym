@@ -42,15 +42,17 @@ class DiscreteSOCPFilter:
         self.A1 = cp.Parameter(shape=(10, 7))
         self.A2 = cp.Parameter(shape=(9, 7))
         self.A3 = cp.Parameter(shape=(3, 7))
-        self.b1 = cp.Parameter(shape=(10,))
+        self.b1 = np.zeros((10,))
+        self.b1[6] = 1.0
         self.b2 = cp.Parameter(shape=(9,))
         self.b3 = np.zeros((3,))
         self.b3[2] = 1
-        self.c1 = cp.Parameter(shape=(1, 7))
+        self.c1 = np.zeros((1, 7))
+        self.c1[0, 2] = 1.0
         self.c2 = cp.Parameter(shape=(1, 7))
         self.c3 = np.zeros((1, 7))
         self.c3[0, 6] = 1
-        self.d1 = cp.Parameter()
+        self.d1 = 1
         self.d2 = cp.Parameter()
         self.d3 = 1
         # put into lists
@@ -169,11 +171,8 @@ class DiscreteSOCPFilter:
         self.cost.value = cost
 
         # Compute dummy var mats (feedback linearization part)
-        A1, b1, c1, d1 = dummy_var_matrices(gam2, L_gam5, self.d_weights)
+        A1 = dummy_var_matrices(gam2, L_gam5, self.d_weights)
         self.A1.value = A1
-        self.b1.value = b1.squeeze()
-        self.c1.value = c1
-        self.d1.value = d1
 
         # Compute stablity filter coeffs
         e_k = z - z_ref
@@ -260,16 +259,7 @@ def dummy_var_matrices(gam2, L_gam5, d_weights): # for feedback linearization
     A[7, 3] = d_weights[0]
     A[8, 4] = d_weights[1]
     A[9, 5] = d_weights[2]
-
-    b = np.zeros((10,1))
-    b[6, 0] = 1.0
-
-    c = np.zeros((1, 7))
-    c[0, 2] = 1.0
-
-    d = 1
-
-    return A, b, c, d
+    return A
 
 def stab_filter_matrices(gam1,
                          gam2,
