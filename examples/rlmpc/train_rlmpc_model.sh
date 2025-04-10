@@ -11,6 +11,7 @@ TASK='track'
 # ALGO='q_mpc'
 # ALGO='td3_mpc'
 ALGO='ppo_mpc'
+# ALGO='ppo_vmpc'
 # ALGO='appo_mpc'
 # ALGO='mpc_lstdq'
 
@@ -33,7 +34,7 @@ do
             ./config_overrides/${SYS}/${SYS}_${TASK}.yaml \
         --output_dir ./Results/${EXP_NAME} \
         --tag ${SYS}_${ALGO}_data \
-        --seed ${SEED} \
+        --seed "${SEED}" \
         --kv_overrides \
             task_config.randomized_init=True
 done

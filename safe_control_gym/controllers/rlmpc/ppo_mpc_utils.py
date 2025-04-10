@@ -36,6 +36,7 @@ class PPO_MPC_Agent:
                  clip_param=0.2,
                  target_kl=0.02,
                  entropy_coef=0.002,
+                 exploration_init=-1.0,
                  actor_lr=0.001,
                  critic_lr=0.001,
                  opt_epochs=10,
@@ -51,6 +52,7 @@ class PPO_MPC_Agent:
         self.clip_param = clip_param
         self.target_kl = target_kl
         self.entropy_coef = entropy_coef
+        self.exploration_init = exploration_init
         self.opt_epochs = opt_epochs
         self.mini_batch_size = mini_batch_size
         self.activation = activation
@@ -144,11 +146,11 @@ class PPO_MPC_Agent:
                 # Update only when no KL constraint or constraint is satisfied.
                 if (self.target_kl <= 0) or (self.target_kl > 0 and approx_kl <= 1.5 * self.target_kl):
                     self.actor_opt.zero_grad()
-                    theta = self.ac.actor.get_theta_param(batch_th['obs'])
-                    # theta = (self.ac.actor.mpc_param.repeat(batch_th['obs'].shape[0], 1) +
-                    #          0.1*self.ac.actor.param_net.forward(batch_th['obs']))
                     (policy_loss + self.entropy_coef * entropy_loss).backward()
 
+                    # Passing the gradients through the mpc
+                    theta = self.ac.actor.get_theta_param(batch_th['obs'])
+                    # traj_ref = self.ac.actor.get_ref_param(batch['info'])
                     theta_loss = action_th.grad.unsqueeze(1) @ nabla_pi_theta @ theta.unsqueeze(2)
                     # ref_loss = action_th.grad.unsqueeze(1) @ nabla_pi_ref @ theta.unsqueeze(2)
                     theta_loss.mean().backward()
@@ -195,6 +197,7 @@ class MLPActorCritic(nn.Module):
                  gamma,
                  model,
                  hidden_dims=(64, 64),
+                 exploration_init=-1.0,
                  activation='tanh',
                  actor_config=None
                  ):
@@ -205,7 +208,9 @@ class MLPActorCritic(nn.Module):
         else:
             raise Exception('PPO-MPC is currently only implemented for continuous action spaces')
         # Policy.
-        self.actor = MPCActor(env, obs_dim, act_dim, hidden_dims, activation, gamma, model, actor_config)
+        self.actor = MPCActor(
+            env, obs_dim, act_dim, hidden_dims, activation, gamma, model, exploration_init, actor_config
+        )
         # Value function.
         self.critic = MLPCritic(obs_dim, hidden_dims, activation)
 
@@ -243,7 +248,7 @@ class MLPCritic(nn.Module):
 class MPCActor(nn.Module):
     '''Actor MPC model.'''
 
-    def __init__(self, env, obs_dim, act_dim, hidden_dims, activation, gamma, model, actor_config):
+    def __init__(self, env, obs_dim, act_dim, hidden_dims, activation, gamma, model, exploration_init, actor_config):
         super().__init__()
         # mpc actor
         self.mpc = MPCPolicyFunction(env, gamma, model, **actor_config['mpc_config'])
@@ -263,7 +268,7 @@ class MPCActor(nn.Module):
         self.traj_param = nn.Parameter(torch.FloatTensor(self.mpc.traj))
 
         # Construct output action distribution.
-        self.logstd = nn.Parameter(-2.0 * torch.ones(act_dim))
+        self.logstd = nn.Parameter(exploration_init * torch.ones(act_dim))
         self.dist_fn = lambda x: Normal(x, self.logstd.exp())
 
     def _init_param_val(self):
@@ -307,22 +312,22 @@ class MPCActor(nn.Module):
             theta = self.mpc_param + 0.1 * self.param_net.forward(torch.FloatTensor(obs))
         return theta
 
-    # def get_ref_param(self, traj_step, traj_ref):
-    #     if self.env.TASK == Task.TRAJ_TRACKING:
-    #         if traj_step is None:
-    #             traj_step = self.traj_step
-    #         if traj_ref is None:
-    #             traj_ref = self.traj
-    #         # Slice trajectory for horizon steps, if not long enough, repeat last state.
-    #         start = min(traj_step, self.traj.shape[-1])
-    #         end = min(traj_step + self.T + 1, self.traj.shape[-1])
-    #         remain = max(0, self.T + 1 - (end - start))
-    #         goal_states = np.concatenate([
-    #             traj_ref[:, start:end],
-    #             np.tile(traj_ref[:, -1:], (1, remain))
-    #         ], -1)
+    # def get_ref_param(self, info_batch):
+    #     if self.mpc.env.TASK == Task.TRAJ_TRACKING:
+    #         for info in info_batch:
+    #             traj_step = info['traj_step']
+    #             # Slice trajectory for horizon steps, if not long enough, repeat last state.
+    #             start = min(traj_step, self.mpc.traj.shape[-1])
+    #             end = min(traj_step + self.mpc.T + 1, self.mpc.traj.shape[-1])
+    #             remain = max(0, self.mpc.T + 1 - (end - start))
+    #             goal_states = torch.cat((
+    #                 self.traj_param[:, start:end],
+    #                 torch.tile(self.traj_param[:, -1:], (1, remain))
+    #             ), -1)
+    #             print(goal_states)
+    #             p()
     #     else:
-    #         raise Exception('Reference for this mode is not implemented.')
+    #         raise Exception('Reference update for this mode is not implemented.')
     #     return goal_states  # (nx, T+1).
 
 
@@ -389,7 +394,6 @@ class MPCPolicyFunction:
         self.dynamics_func = None
         self.set_dynamics_func()
         self.setup_optimizer()
-        self.temp = 0
 
     def reset(self):
         # Previously solved states & inputs, useful for warm start.
@@ -612,9 +616,10 @@ class MPCPolicyFunction:
             # 'jit_temp_suffix': False,
             # 'jit_options.flags': ['-03'],
             # 'jit_options.compiler': 'ccache gcc',
+            'fatrop.mu_init': etau,
             'fatrop.max_iter': 200,
             'fatrop.print_level': 0,
-            'fatrop.acceptable_tol': 1e-5,
+            'fatrop.acceptable_tol': 1e-4,
         }
         vnlp_prob = {
             'f': cost,
@@ -637,7 +642,7 @@ class MPCPolicyFunction:
         R_kkt = cs.vertcat(
             cs.transpose(dlag_dw),
             H_eq,
-            mu * H_ieq + etau,
+            mu * H_ieq,
         )
         # z contains all variables of the lagrangian
         z = cs.vertcat(opt_vars, lamb, mu)
