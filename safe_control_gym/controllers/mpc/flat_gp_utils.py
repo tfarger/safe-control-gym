@@ -301,13 +301,18 @@ class ZeroMeanAffineGP(AffineGP):
 
         k_beta12_diag = np.diag([k_b1_qq, k_b2_qq])
 
-        K_bar_k_a = self.np_K_bar@k_a.T
+        # K_bar_k_a = self.np_K_bar@k_a
+        K_bar_k_a = np.einsum('ij,j->i', self.np_K_bar, k_a)
+        k_b_K_bar = np.einsum('ij,jk->ik', k_b, self.np_K_bar)
         # compute gammas
         gamma_1 = k_a @ self.K_bar_Psi
         gamma_2 = k_b @ self.K_bar_Psi
         gamma_3 = k_a_qq - k_a @ K_bar_k_a
         gamma_4 = -2* k_b @ K_bar_k_a
-        gamma_5 = k_beta12_diag - k_b @ self.np_K_bar @ k_b.T
+        # gamma_4 = -2* np.einsum('ij,j->i', k_b_K_bar, k_a, optimize=True)
+        # gamma_5 = k_beta12_diag - k_b @ self.np_K_bar @ k_b.T
+        # gamma_5 = k_beta12_diag - np.einsum('ij,jk,mk->im', k_b, self.np_K_bar, k_b)
+        gamma_5 = k_beta12_diag - np.einsum('ij,kj->ik', k_b_K_bar, k_b, optimize=True)
         return gamma_1.squeeze(), gamma_2, gamma_3.squeeze(), gamma_4.squeeze(), gamma_5 
 class ConstantMeanAffineGP(AffineGP):
     def __init__(self, train_x, train_y, likelihood, mean_prior=None):
