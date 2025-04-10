@@ -659,6 +659,7 @@ class MPCPolicyFunction:
         # Generate sensitivity of the optimal solution
         dzdP = -cs.inv(dRdz) @ dRdP
         dPi = cs.Function('dPi', [z, fixed_param, ref_param, theta], [dzdP[nx: nx + nu, :].T])
+        dPi_train = dPi.map(self.n_train_solver, "thread")
 
         self.solver_dict = {
             'x_var': x_var,
@@ -681,6 +682,7 @@ class MPCPolicyFunction:
             'rkkt_fn_parallel': rkkt_fn_parallel,
             'rkkt_fn_train': rkkt_fn_parallel_train,
             'dpi_fn': dPi,
+            'dpi_fn_train': dPi_train
         }
 
     def get_references(self, traj_step=None, traj_ref=None):
@@ -867,6 +869,7 @@ class MPCPolicyFunction:
         rkkt_fn = solver_dict['rkkt_fn_train']
         opt_act_fn = solver_dict['opt_act_fn']
         dpi_fn = solver_dict['dpi_fn']
+        dpi_fn_train = solver_dict['dpi_fn_train']
 
         x0, fixed_p, ref_p = [], [], []
         lbg = con_lbg.full().repeat(obs_batch.shape[0], 1)
@@ -895,7 +898,7 @@ class MPCPolicyFunction:
                          range(obs_batch.shape[0])]
 
         action_batch = opt_act_fn(soln_batch['x']).full().T
-        dpi_fn_train = dpi_fn.map(sum(optimal_batch), "thread")
+        # dpi_fn_train = dpi_fn.map(sum(optimal_batch), "thread")
         dpi_cs = dpi_fn_train(z, fixed_p, ref_p, theta.T).full()
         nabla_pi_ref_batch = []
         nabla_pi_theta_batch = []
