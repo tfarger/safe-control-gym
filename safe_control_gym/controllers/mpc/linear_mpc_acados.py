@@ -170,6 +170,7 @@ class LinearMPC_ACADOS(MPC):
         x_val, u_val = super().compute_initial_guess(init_state, goal_states)
         self.x_guess = x_val
         self.u_guess = u_val
+        return x_val, u_val
 
     def setup_acados_optimizer(self):
         '''Sets up nonlinear optimization problem.'''

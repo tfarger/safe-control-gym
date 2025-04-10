@@ -348,6 +348,13 @@ class FlatMPC_SOCP(BaseController):
                              'safety_filt_time':[],  
                              'dyn_ext_time':[],                      
                              }
+        
+    def compute_initial_guess(self, init_state, goal_states=None):
+        z_ini = self.fs_obs.compute_observation(init_state)
+        z_val, v_val = self.mpc.compute_initial_guess(z_ini, goal_states)
+        vd = v_val[:, 0]
+        z_ref = self.mpc.get_references()[:, 0]
+        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(z_ini, z_ref, vd, self.eta)
 
     # @timing
     def select_action(self,
