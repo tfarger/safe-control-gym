@@ -5,6 +5,8 @@ import os
 import matplotlib.pyplot as plt
 from gpytorch.constraints import Positive
 
+from line_profiler import profile
+
 def weighted_distance(x1 : torch.Tensor, x2 : torch.Tensor, L : torch.Tensor) -> torch.Tensor:
     """Computes (x1-x2)^T L (x1-x2)
     Args:
@@ -30,6 +32,33 @@ def weighted_distance(x1 : torch.Tensor, x2 : torch.Tensor, L : torch.Tensor) ->
 
 def squared_exponential(x1,x2,L,var):
     return var * torch.exp(-0.5 * weighted_distance(x1, x2, L))
+
+@profile
+def squared_exponential_np(x1, x2, L, var):
+    """Evaluates a SE kernel with numpy
+    Designed for faster GP querying without gpytorch
+    For diagonal L matrices: (x1-x2)^T L (x1-x2) = sum(L_ii*(x1_i -x2_i)^2)
+    Args: 
+        x1: np.ndarray: Nxn=1xn (N is number of samples and n is dimension of vector)
+        x2: np.ndarray: Mxn 
+        L : np.ndarray: n,  diagonal components of the nxn weight tensor
+    
+    Returns: 
+        NxM weighted distances    
+    """
+    # # Compute pairwise differences via broadcasting
+    # diff = x1[:, None, :] - x2[None, :, :]  # shape (N, M, n)
+
+    # # Apply weights and sum over last axis
+    # dists = np.sum(L * diff**2, axis=-1)  # shape (N, M)
+    
+    # faster for N=1
+    diff = x2 -x1
+    dists = np.einsum('mk,k,mk->m', diff, L, diff)
+
+    # evaluate SE 
+    return var * np.exp(-0.5 * dists)
+
 
 class AffineKernel(gpytorch.kernels.Kernel):
     is_stationary = False
@@ -237,7 +266,49 @@ class ZeroMeanAffineGP(AffineGP):
             gamma_4 = -2*(k_b @ self.K_plus_noise_inv @ k_a_trans)
             gamma_5 = k_beta12_diag - k_b @ self.K_plus_noise_inv @ torch.transpose(k_b, 1, 2)
         return gamma_1, gamma_2, gamma_3, gamma_4, gamma_5 # nothing squeezed, all in full dimension n_query_samples x ** x **
+    
+    def precompute_np_quantities(self):
+         with torch.no_grad():
+            # precompute later
+            self.np_z_train = self.train_inputs[0][:,0:self.input_dim-2].detach().numpy()
+            self.np_u_train = self.train_inputs[0][:,-2:].detach().numpy().T
+            self.np_train_tar = self.train_targets.detach().numpy()
+            self.np_K_bar = self.K_plus_noise_inv.detach().numpy()
 
+            self.np_L_alpha = (1 / (self.covar_module.length[0:self.input_dim-2] ** 2)).detach().numpy()
+            self.np_var_alpha = self.covar_module.variance[0].detach().numpy()
+            self.np_L_beta1 = (1 / (self.covar_module.length[self.input_dim-2:2*(self.input_dim-2)] ** 2)).detach().numpy()
+            self.np_var_beta1 = self.covar_module.variance[1].detach().numpy()
+            self.np_L_beta2 = (1 / (self.covar_module.length[2*(self.input_dim-2):] ** 2)).detach().numpy()
+            self.np_var_beta2 = self.covar_module.variance[2].detach().numpy()
+
+            self.K_bar_Psi = self.np_K_bar@self.np_train_tar
+    @profile
+    def compute_gammas_np(self, z_query):
+        # same functionality, but in numpy and without batching it. 
+        # Dim z_query = 6, no more batches
+        z_query = z_query[np.newaxis, :]
+        k_a = squared_exponential_np(z_query, self.np_z_train, self.np_L_alpha, self.np_var_alpha)
+        k_b1 = squared_exponential_np(z_query, self.np_z_train, self.np_L_beta1, self.np_var_beta1)
+        k_b2 = squared_exponential_np(z_query, self.np_z_train, self.np_L_beta2, self.np_var_beta2)
+        k_a_qq = squared_exponential_np(z_query, z_query, self.np_L_alpha, self.np_var_alpha).squeeze()
+        k_b1_qq = squared_exponential_np(z_query, z_query, self.np_L_beta1, self.np_var_beta1).squeeze()
+        k_b2_qq = squared_exponential_np(z_query, z_query, self.np_L_beta2, self.np_var_beta2).squeeze()
+
+        k_beta = np.vstack([k_b1, k_b2])
+
+        k_b = k_beta * self.np_u_train
+
+        k_beta12_diag = np.diag([k_b1_qq, k_b2_qq])
+
+        K_bar_k_a = self.np_K_bar@k_a.T
+        # compute gammas
+        gamma_1 = k_a @ self.K_bar_Psi
+        gamma_2 = k_b @ self.K_bar_Psi
+        gamma_3 = k_a_qq - k_a @ K_bar_k_a
+        gamma_4 = -2* k_b @ K_bar_k_a
+        gamma_5 = k_beta12_diag - k_b @ self.np_K_bar @ k_b.T
+        return gamma_1.squeeze(), gamma_2, gamma_3.squeeze(), gamma_4.squeeze(), gamma_5 
 class ConstantMeanAffineGP(AffineGP):
     def __init__(self, train_x, train_y, likelihood, mean_prior=None):
         """Zero mean with Affine Kernel GP model for SISO systems

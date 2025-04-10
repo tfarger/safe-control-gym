@@ -16,6 +16,8 @@ class DiscreteSOCPFilter:
     def __init__(self, gps, ctrl_mat, input_bound, normalization_vect = np.ones((6,)), slack_weights=[25.0, 250000.0, 25.0], beta_sqrt = [2, 2], state_bound=None, thrust_bound=None, dyn_ext_mat=None):
 
         self.gps = gps
+        gps[0].model.precompute_np_quantities()
+        gps[1].model.precompute_np_quantities()
         self.d_weights = slack_weights # for slack variable, = 2*sqrt(rho) in formulas, 2 components        
         self.beta_sqrt = beta_sqrt # sqrt(beta_i) in formulas
 
@@ -152,8 +154,14 @@ class DiscreteSOCPFilter:
         gp_time = []
         for i in [0, 1]: #range(len(gp_models)):
             start_time = perf_counter()
-            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas(z_query, self.gps[i])
+            # gamma1_pt, gamma2_pt, gamma3_pt, gamma4_pt, gamma5_pt = get_gammas(z_query, self.gps[i])
+            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas_np(z_query, self.gps[i])
             gp_time.append(perf_counter()-start_time)
+            # print(gamma1_pt-gamma1)
+            # print(gamma2_pt-gamma2)
+            # print(gamma3_pt-gamma3)
+            # print(gamma4_pt-gamma4)
+            # print(gamma5_pt-gamma5)
             L_chol = np.linalg.cholesky(gamma5)
             L_chol_inv = np.linalg.inv(L_chol)
             gam1.append(gamma1)
@@ -240,6 +248,15 @@ def get_gammas(z_query, gp_model):
     gamma3 = gamma3.numpy().squeeze()
     gamma4 = gamma4.numpy().squeeze()
     gamma5 = gamma5.numpy().squeeze()
+    return gamma1, gamma2, gamma3, gamma4, gamma5
+
+def get_gammas_np(z_query, gp_model): 
+    gamma1, gamma2, gamma3, gamma4, gamma5 = gp_model.model.compute_gammas_np(z_query)
+    # gamma1 = gamma1.numpy().squeeze()
+    # gamma2 = gamma2.numpy().squeeze()
+    # gamma3 = gamma3.numpy().squeeze()
+    # gamma4 = gamma4.numpy().squeeze()
+    # gamma5 = gamma5.numpy().squeeze()
     return gamma1, gamma2, gamma3, gamma4, gamma5
 
 def compute_cost(gam1, gam2, gam4, v_des):
