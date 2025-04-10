@@ -11,6 +11,9 @@ from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, Gau
 import matplotlib.pyplot as plt
 
 from time import perf_counter # for GP inference time logging
+from line_profiler import profile
+
+import scipy.sparse as sp
 
 class DiscreteSOCPFilter:
     def __init__(self, gps, ctrl_mat, input_bound, normalization_vect = np.ones((6,)), slack_weights=[25.0, 250000.0, 25.0], beta_sqrt = [2, 2], state_bound=None, thrust_bound=None, dyn_ext_mat=None):
@@ -45,15 +48,20 @@ class DiscreteSOCPFilter:
         self.A2 = cp.Parameter(shape=(9, 7))
         self.A3 = cp.Parameter(shape=(3, 7))
         self.b1 = np.zeros((10,))
-        self.b1[6] = 1.0
+        self.b1[6] = 1.0        
+        # self.b1 = sp.csc_array((10,))
+        # self.b1[6, 0] = 1.0
         self.b2 = cp.Parameter(shape=(9,))
         self.b3 = np.zeros((3,))
         self.b3[2] = 1
+        # self.b3 = sp.csr_array(self.b3)
         self.c1 = np.zeros((1, 7))
         self.c1[0, 2] = 1.0
+        # self.c1 = sp.csr_array(self.c1)
         self.c2 = cp.Parameter(shape=(1, 7))
         self.c3 = np.zeros((1, 7))
         self.c3[0, 6] = 1
+        # self.c3 = sp.csr_array(self.c3)
         self.d1 = 1
         self.d2 = cp.Parameter()
         self.d3 = 1
@@ -130,6 +138,7 @@ class DiscreteSOCPFilter:
         # setup optimization problem      
         self.prob = cp.Problem(cp.Minimize(self.cost @ self.X), constraints)
 
+    # @profile
     def compute_feedback_input(self, z, z_ref, v_des, eta= np.zeros((2,)),  x_init=np.zeros((7,)), **kwargs): 
         """ Compute u so it can be used in feedback loop
         Args: 
@@ -144,35 +153,44 @@ class DiscreteSOCPFilter:
         z_query = np.delete(z, rows_to_remove)
         z_query = z_query/self.norm_z
 
-        gam1 = []
-        gam2 = []
-        gam3 = []
-        gam4 = []
-        gam5 = []
-        L_gam5 = []
-        Linv_gam5 = []
-        gp_time = []
-        for i in [0, 1]: #range(len(gp_models)):
-            start_time = perf_counter()
-            # gamma1_pt, gamma2_pt, gamma3_pt, gamma4_pt, gamma5_pt = get_gammas(z_query, self.gps[i])
-            gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas_np(z_query, self.gps[i])
-            gp_time.append(perf_counter()-start_time)
-            # print(gamma1_pt-gamma1)
-            # print(gamma2_pt-gamma2)
-            # print(gamma3_pt-gamma3)
-            # print(gamma4_pt-gamma4)
-            # print(gamma5_pt-gamma5)
-            L_chol = np.linalg.cholesky(gamma5)
-            L_chol_inv = np.linalg.inv(L_chol)
-            gam1.append(gamma1)
-            gam2.append(gamma2)
-            gam3.append(gamma3)
-            gam4.append(gamma4)
-            gam5.append(gamma5)
-            L_gam5.append(L_chol)
-            Linv_gam5.append(L_chol_inv)
+        start_time = perf_counter()
+        gamma1_0, gamma2_0, gamma3_0, gamma4_0, gamma5_0 = get_gammas_np(z_query, self.gps[0])
+        L_chol_0 = np.linalg.cholesky(gamma5_0)
+        L_chol_inv_0 = np.linalg.inv(L_chol_0)
+        gamma1_1, gamma2_1, gamma3_1, gamma4_1, gamma5_1 = get_gammas_np(z_query, self.gps[1])
+        L_chol_1 = np.linalg.cholesky(gamma5_1)
+        L_chol_inv_1 = np.linalg.inv(L_chol_1)
+        gp_time_total = perf_counter()-start_time
+
+        gam1 = [gamma1_0, gamma1_1]
+        gam2 = [gamma2_0, gamma2_1]
+        gam3 = [gamma3_0, gamma3_1]
+        gam4 = [gamma4_0, gamma4_1]
+        gam5 = [gamma5_0, gamma5_1]
+        L_gam5 = [L_chol_0, L_chol_1 ]
+        Linv_gam5 = [L_chol_inv_0, L_chol_inv_1]
+        # gp_time = []
+        # for i in [0, 1]: #range(len(gp_models)):
+        #     start_time = perf_counter()
+        #     # gamma1_pt, gamma2_pt, gamma3_pt, gamma4_pt, gamma5_pt = get_gammas(z_query, self.gps[i])
+        #     gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas_np(z_query, self.gps[i])
+        #     gp_time.append(perf_counter()-start_time)
+        #     # print(gamma1_pt-gamma1)
+        #     # print(gamma2_pt-gamma2)
+        #     # print(gamma3_pt-gamma3)
+        #     # print(gamma4_pt-gamma4)
+        #     # print(gamma5_pt-gamma5)
+        #     L_chol = np.linalg.cholesky(gamma5)
+        #     L_chol_inv = np.linalg.inv(L_chol)
+        #     gam1.append(gamma1)
+        #     gam2.append(gamma2)
+        #     gam3.append(gamma3)
+        #     gam4.append(gamma4)
+        #     gam5.append(gamma5)
+        #     L_gam5.append(L_chol)
+        #     Linv_gam5.append(L_chol_inv)
         
-        gp_time_total = gp_time[0] + gp_time[1]
+        # gp_time_total = gp_time[0] + gp_time[1]
 
         # Compute cost coefficients
         cost = compute_cost(gam1, gam2, gam4, v_des)

@@ -33,7 +33,7 @@ def weighted_distance(x1 : torch.Tensor, x2 : torch.Tensor, L : torch.Tensor) ->
 def squared_exponential(x1,x2,L,var):
     return var * torch.exp(-0.5 * weighted_distance(x1, x2, L))
 
-@profile
+# @profile
 def squared_exponential_np(x1, x2, L, var):
     """Evaluates a SE kernel with numpy
     Designed for faster GP querying without gpytorch
@@ -283,7 +283,7 @@ class ZeroMeanAffineGP(AffineGP):
             self.np_var_beta2 = self.covar_module.variance[2].detach().numpy()
 
             self.K_bar_Psi = self.np_K_bar@self.np_train_tar
-    @profile
+    # @profile
     def compute_gammas_np(self, z_query):
         # same functionality, but in numpy and without batching it. 
         # Dim z_query = 6, no more batches
