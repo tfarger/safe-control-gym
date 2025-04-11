@@ -355,6 +355,10 @@ class FlatMPC_SOCP(BaseController):
         vd = v_val[:, 0]
         z_ref = self.mpc.get_references()[:, 0]
         action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(z_ini, z_ref, vd, self.eta)
+    
+    def reset_before_run(self, obs=None, info=None, env=None):
+        super().reset_before_run(obs, info, env)
+        self.mpc.reset_before_run()
 
     # @timing
     def select_action(self,

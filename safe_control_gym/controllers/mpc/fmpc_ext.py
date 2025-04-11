@@ -250,6 +250,10 @@ class FlatMPC_EXT(BaseController):
         z_ini = self.fs_obs.compute_observation(init_state)
         z_val, v_val = self.mpc.compute_initial_guess(z_ini, goal_states)
 
+    def reset_before_run(self, obs=None, info=None, env=None):
+        super().reset_before_run(obs, info, env)
+        self.mpc.reset_before_run()
+
     # @timing
     def select_action(self,
                       obs,
