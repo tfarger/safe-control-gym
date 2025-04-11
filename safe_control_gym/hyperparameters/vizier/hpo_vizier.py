@@ -12,13 +12,15 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-import yaml
+import pandas as pd
+import yaml, json
 from vizier.service import clients
 from vizier.service import pyvizier as vz
 from vizier.service import servers
 
 from safe_control_gym.hyperparameters.base_hpo import BaseHPO
 from safe_control_gym.hyperparameters.hpo_search_space import HYPERPARAMS_DICT
+from safe_control_gym.hyperparameters.hpo_utils import get_smallest_and_latest_seed_folder
 
 
 class HPO_Vizier(BaseHPO):
@@ -32,7 +34,8 @@ class HPO_Vizier(BaseHPO):
                  output_dir='./results',
                  safety_filter=None,
                  sf_config=None,
-                 load_study=False):
+                 load_study=False,
+                 resume=False):
         """
         Hyperparameter Optimization (HPO) class using package Vizier.
 
@@ -46,8 +49,9 @@ class HPO_Vizier(BaseHPO):
             safety_filter (str): Safety filter to be applied (optional).
             sf_config: Safety filter configuration (optional).
             load_study (bool): Load existing study if True.
+            resume (bool): if resume from a trial file.
         """
-        super().__init__(hpo_config, task_config, algo_config, algo, task, output_dir, safety_filter, sf_config, load_study)
+        super().__init__(hpo_config, task_config, algo_config, algo, task, output_dir, safety_filter, sf_config, load_study, resume)
 
         self.client_id = f'client_{os.getpid()}'  # use process id as client id
         self.setup_problem()
@@ -111,6 +115,10 @@ class HPO_Vizier(BaseHPO):
         """ Hyperparameter optimization.
         """
         if self.load_study:
+            # try to load the study from the endpoint file periodically
+            while not os.path.exists(f'{self.study_name}_vizier_endpoint.yaml'):
+                self.logger.info('Endpoint file not found. Waiting for the endpoint file to be created.')
+                time.sleep(10)
             with open(f'{self.study_name}_vizier_endpoint.yaml', 'r') as config_file:
                 endpoint = yaml.safe_load(config_file)['endpoint']
             clients.environment_variables.server_endpoint = endpoint
@@ -122,13 +130,15 @@ class HPO_Vizier(BaseHPO):
             server = servers.DefaultVizierServer(database_url=f'sqlite:///{self.study_name}_vizier.db')
             clients.environment_variables.server_endpoint = server.endpoint
             endpoint = server.endpoint
+            if os.path.exists(f'{self.study_name}_vizier_endpoint.yaml'):
+                os.remove(f'{self.study_name}_vizier_endpoint.yaml')
             with open(f'{self.study_name}_vizier_endpoint.yaml', 'w') as config_file:
                 yaml.dump({'endpoint': endpoint}, config_file, default_flow_style=False)
 
             study_config = vz.StudyConfig.from_problem(self.problem)
             study_config.algorithm = 'GAUSSIAN_PROCESS_BANDIT'
             self.study_client = clients.Study.from_study_config(study_config, owner='owner', study_id=self.study_name)
-            self.warm_start(self.config_to_param(self.hps_config))
+            self.resume_trials() if self.resume else self.warm_start(self.config_to_param(self.hps_config))
 
         existing_trials = 0
         while existing_trials < self.hpo_config.trials:
@@ -147,7 +157,7 @@ class HPO_Vizier(BaseHPO):
                 # evaluate the suggested hyperparameters
                 materialized_suggestion = suggestion.materialize()
                 suggested_params = {key: val.value for key, val in materialized_suggestion.parameters._items.items()}
-                res = self.evaluate(suggested_params)
+                res = self.evaluate(suggested_params, seed_list=[num for num in range(self.hpo_config.repetitions)])
                 if res != self.none_handler():
                     trajs_data_list = self.trajs_data_list
                     metrics_list = self.metrics_list
@@ -194,7 +204,7 @@ class HPO_Vizier(BaseHPO):
             params (dict): Specified hyperparameters to be evaluated.
         """
         if hasattr(self, 'study_client'):
-            res = self.evaluate(params)
+            res = self.evaluate(params, seed_list=[num for num in range(self.hpo_config.repetitions)])
             if res != self.none_handler():
                 trajs_data_list = self.trajs_data_list
                 metrics_list = self.metrics_list
@@ -204,9 +214,36 @@ class HPO_Vizier(BaseHPO):
                     self.logger.info('Error plotting results: {}'.format(e))
                     self.logger.std_out_logger.logger.exception('Full exception traceback')
             objective_values = {obj: np.mean(res[obj]) for obj in self.hpo_config.objective}
+            params = self.remove_umoptimized_hps(params)
             trial = vz.Trial(parameters=params, final_measurement=vz.Measurement(objective_values))
             self.study_client._add_trial(trial)
             self.warmstart_trial_value = res
+
+    def resume_trials(self):
+        """
+        Resume trials from a trial file.
+        """
+        def helper(s):
+            try:
+                return json.loads(s)  
+            except:
+                return float(s)
+        # get previous and lastest seed folder
+        try:
+            folder_path = get_smallest_and_latest_seed_folder(self.output_dir)
+            csv_file = os.path.join(folder_path, 'hpo', 'trials.csv')
+            data = pd.read_csv(csv_file)
+            length = len(data)
+            for i in range(length):
+                config = {key: helper(data[key].iloc[i]) for key in self.hps_config.keys()}
+                params = self.config_to_param(config)
+                objective_values = {obj: data[obj].iloc[i] for obj in self.hpo_config.objective}
+                trial = vz.Trial(parameters=params, final_measurement=vz.Measurement(objective_values))
+                self.study_client._add_trial(trial)
+                self.logger.info(f'Resume trial {i} with hyperparameters: {params}')
+                self.logger.info(f'Returns: {objective_values}')
+        except:
+            self.logger.info('No trial file found to resume')
 
     def checkpoint(self):
         """
@@ -237,6 +274,7 @@ class HPO_Vizier(BaseHPO):
                 # Extract parameters
                 params = {key: val.value for key, val in optimal_trial.parameters._items.items()}
                 params = self.post_process_best_hyperparams(params)
+                params = self.add_unoptimized_hps(params)
                 
                 # Create filename with multiple objective values
                 objective_values = [
@@ -296,6 +334,7 @@ class HPO_Vizier(BaseHPO):
                 # Extract parameters for each trial
                 trial_params = {key: val.value for key, val in t.parameters._items.items()}
                 trial_params = self.post_process_best_hyperparams(trial_params)
+                trial_params = self.add_unoptimized_hps(trial_params)
                 parameter_keys.update(trial_params.keys())
                 
                 trial_data.append((trial_number, trial_objective_values, trial_params))
@@ -317,7 +356,7 @@ class HPO_Vizier(BaseHPO):
                     # Ensure objectives and parameters are in consistent order
                     row_values = [trial_number]
                     row_values.extend([objective_values.get(obj, '') for obj in self.hpo_config.objective])
-                    row_values.extend([trial_params.get(key, '') for key in parameter_keys])
+                    row_values.extend([json.dumps(trial_params.get(key, '')) for key in parameter_keys])
                     
                     writer.writerow(row_values)
         

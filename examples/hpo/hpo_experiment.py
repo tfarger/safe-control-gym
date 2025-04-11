@@ -14,6 +14,11 @@ def hpo(config):
         * to start HPO, use with `--func hpo`.
     '''
 
+    # initialize safety filter
+    if 'safety_filter' not in config:
+        config.safety_filter = None
+        config.sf_config = None
+
     # change the cost function for rl methods
     if config.algo == 'ppo' or config.algo == 'sac' or config.algo == 'dppo':
         config.task_config.cost = 'rl_reward'
@@ -25,7 +30,15 @@ def hpo(config):
                 config.task_config.disturbances.observation[0]['std'] += [0, 0, 0, 0, 0, 0]
         config.algo_config.log_interval = 10000000
         config.algo_config.eval_interval = 10000000
-    elif config.algo == 'fmpc' or config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'gpmpc_acados_TP' or config.algo == 'linear_mpc' or config.algo == 'mpc_acados':
+        if config.algo == 'ppo' and config.safety_filter == 'nl_mpsc':
+            config.sf_config.cost_function='one_step_cost'
+            config.sf_config.soften_constraints = True
+            config.algo_config.rollout_batch_size = 1
+            config.algo_config.filter_train_actions = False
+            config.algo_config.penalize_sf_diff = False
+            config.algo_config.sf_penalty = 0.03
+            # config.algo_config.training = True
+    elif config.algo == 'fmpc' or config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'gpmpc_acados_TP' or config.algo == 'linear_mpc' or config.algo == 'linear_mpc_acados' or config.algo == 'mpc_acados':
         pass
     elif config.algo == 'pid' or config.algo == 'lqr' or config.algo == 'ilqr':
         pass
@@ -36,11 +49,6 @@ def hpo(config):
     set_dir_from_config(config)
     set_seed_from_config(config)
     set_device_from_config(config)
-
-    # initialize safety filter
-    if 'safety_filter' not in config:
-        config.safety_filter = None
-        config.sf_config = None
 
     # HPO
     if config.sampler == 'optuna':
@@ -53,6 +61,7 @@ def hpo(config):
                          config.safety_filter,
                          config.sf_config,
                          config.load_study,
+                         config.resume
                          )
     elif config.sampler == 'vizier':
         hpo = HPO_Vizier(config.hpo_config,
@@ -64,6 +73,7 @@ def hpo(config):
                          config.safety_filter,
                          config.sf_config,
                          config.load_study,
+                         config.resume
                          )
     else:
         raise ValueError('Only optuna and vizier are supported for now.')
@@ -77,6 +87,11 @@ def eval(config):
     Usage:
         * to evaluate hyperparameters, use with `--func eval`.
     '''
+
+    # initialize safety filter
+    if 'safety_filter' not in config:
+        config.safety_filter = None
+        config.sf_config = None
     
     # change the cost function for rl methods
     if config.algo == 'ppo' or config.algo == 'sac' or config.algo == 'dppo':
@@ -89,18 +104,24 @@ def eval(config):
                 config.task_config.disturbances.observation[0]['std'] += [0, 0, 0, 0, 0, 0]
         config.algo_config.log_interval = 10000000
         config.algo_config.eval_interval = 10000000
-    elif config.algo == 'fmpc' or config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'gpmpc_acados_TP' or config.algo == 'linear_mpc' or config.algo == 'mpc_acados':
+        if config.algo == 'ppo' and config.safety_filter == 'nl_mpsc':
+            config.sf_config.cost_function='one_step_cost'
+            config.sf_config.soften_constraints = True
+            config.algo_config.rollout_batch_size = 1
+            config.algo_config.filter_train_actions = False
+            config.algo_config.penalize_sf_diff = False
+            config.algo_config.sf_penalty = 0.03
+            # config.algo_config.training = True
+    elif config.algo == 'fmpc' or config.algo == 'gp_mpc' or config.algo == 'gpmpc_acados' or config.algo == 'gpmpc_acados_TP' or config.algo == 'linear_mpc' or config.algo == 'linear_mpc_acados' or config.algo == 'mpc_acados':
         pass
     elif config.algo == 'pid' or config.algo == 'lqr' or config.algo == 'ilqr':
         pass
     else:
         raise ValueError('Only ppo, sac, dppo, fmpc, gp_mpc, gpmpc_acados, linear_mpc, mpc_acados, ilqr, lqr, pid are supported for now.')
 
-    # initialize safety filter
-    if 'safety_filter' not in config:
-        config.safety_filter = None
-        config.sf_config = None
-
+    appended_folder = config.overrides[0].split('quadrotor_2D_attitude_tracking')[-1].split('.')[0]
+    config.output_dir += f'/{appended_folder}'
+    
     hpo_eval = HPOEval(config.hpo_config,
                        config.task_config,
                        config.algo_config,
@@ -120,6 +141,7 @@ if __name__ == '__main__':
     fac.add_argument('--func', type=str, default='hpo', help='main function to run.')
     fac.add_argument('--load_study', type=bool, default=False, help='whether to load study from a previous HPO.')
     fac.add_argument('--sampler', type=str, default='optuna', help='which package to use in HPO.')
+    fac.add_argument('--resume', type=int, default=False, help='if to resume HPO.') # this is defined as int to be able to pass from bash command
     # merge config
     config = fac.merge()
 

@@ -1,6 +1,7 @@
 import os
 import sys
 
+import munch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
@@ -13,6 +14,9 @@ from safe_control_gym.utils.configuration import ConfigFactory
 from functools import partial
 from safe_control_gym.utils.registration import make
 
+# # get the default matplotlib color cycle
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+script_path = os.path.dirname(os.path.realpath(__file__))
 
 def plot_xz_trajectory_with_hull(ax, traj_data, label=None,
                                  traj_color='skyblue', hull_color='lightblue',
@@ -81,10 +85,11 @@ additional = '11'
 # get the config
 ALGO = 'mpc_acados'
 SYS = 'quadrotor_2D_attitude'
+# SYS = 'quadrotor_3D_attitude'
 TASK = 'tracking'
 # PRIOR = '200_hpo'
 PRIOR = '100'
-agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
+agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 'quadrotor_3D_attitude'] else SYS
 SAFETY_FILTER = None
 
 # check if the config file exists
@@ -117,194 +122,118 @@ env_func = partial(make,
                    )
 random_env = env_func(gui=False)
 X_GOAL = random_env.X_GOAL
+# rmse_state_idx = [0, 2] if SYS == 'quadrotor_2D_attitude' else [0, 1, 2]
 # print('X_GOAL.shape', X_GOAL.shape)
 # print('X_GOAL', X_GOAL)
 # exit()
 
-# # get the default matplotlib color cycle
-colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+# load Control-oriented data
+pid_data_path = os.path.join(script_path, f'../data/traj_results_pid_{SYS}_{additional}.npy')
+pid_traj_data = np.load(pid_data_path, allow_pickle=True)
+print(pid_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-script_path = os.path.dirname(os.path.realpath(__file__))
+lqr_data_path = os.path.join(script_path, f'../data/traj_results_lqr_{SYS}_{additional}.npy')
+lqr_traj_data = np.load(lqr_data_path, allow_pickle=True)
+print(lqr_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-##### GP MPC plot
-# if not generalization:
-#     gp_model_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_aggresive'
-# if generalization:
-#     gp_model_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/gpmpc_acados/results/100_400_rollout/temp'
-# # gp_model_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_rti/temp'
-# # get all directories in the gp_model_path
-# gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
-# gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
-#
-# traj_data_name = 'gpmpc_acados_data_quadrotor_traj_tracking.pkl'
-# data_name = [os.path.join(d, traj_data_name) for d in gp_model_dirs]
-#
-# # print(data_name)
-# # data = np.load(data_name[0], allow_pickle=True)
-# # print(data.keys())
-# # print(data['trajs_data'].keys())
-# # print(data['trajs_data']['obs'][0].shape) # (541, 6)
-# data = []
-# for d in data_name:
-#     data.append(np.load(d, allow_pickle=True))
-# gpmpc_traj_data = [d['trajs_data']['obs'][0] for d in data]
-# gpmpc_traj_data = np.array(gpmpc_traj_data)
-# if generalization:
-#     np.save('gpmpc_traj_data_gen.npy', gpmpc_traj_data)
-# else:
-#     np.save('gpmpc_traj_data.npy', gpmpc_traj_data)
-# print(gpmpc_traj_data.shape) # (10, 541, 6) seed, time_step, obs
-# # take average of all seeds
-# mean_traj_data = np.mean(gpmpc_traj_data, axis=0)
-# print(mean_traj_data.shape) # (mean_541, 6)
-#
-# ### plot the ilqr data
-# if not generalization:
-#     ilqr_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/ilqr/results/temp'
-# if generalization:
-#     ilqr_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/ilqr/results_rollout/temp'
-#
-# ilqr_data_dirs = [d for d in os.listdir(ilqr_data_path) if os.path.isdir(os.path.join(ilqr_data_path, d))]
-# ilqr_traj_data_name = 'ilqr_data_quadrotor_traj_tracking.pkl'
-# ilqr_traj_data_name = [os.path.join(d, ilqr_traj_data_name) for d in ilqr_data_dirs]
-#
-# ilqr_data = []
-# for d in ilqr_traj_data_name:
-#     ilqr_data.append(np.load(os.path.join(ilqr_data_path, d), allow_pickle=True))
-# ilqr_traj_data = [d['trajs_data']['obs'][0] for d in ilqr_data]
-# ilqr_traj_data = np.array(ilqr_traj_data)
-# print(ilqr_traj_data.shape) # (10, 541, 6) seed, time_step, obs
-# # take average of all seeds
-# ilqr_mean_traj_data = np.mean(ilqr_traj_data, axis=0)
-# print(ilqr_mean_traj_data.shape) # (mean_541, 6)
-#
-# ### plot the linear mpc data
-# if not generalization:
-#     lmpc_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/linear_mpc/results/temp'
-# if generalization:
-#     lmpc_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/linear_mpc/results_rollout/temp'
-# lmpc_data_path =
-# lmpc_data_dirs = [d for d in os.listdir(lmpc_data_path) if os.path.isdir(os.path.join(lmpc_data_path, d))]
-# lmpc_traj_data_name = 'linear_mpc_data_quadrotor_traj_tracking.pkl'
-# lmpc_traj_data_name = [os.path.join(d, lmpc_traj_data_name) for d in lmpc_data_dirs]
+ilqr_data_path = os.path.join(script_path, f'../data/traj_results_ilqr_{SYS}_{additional}.npy')
+ilqr_traj_data = np.load(ilqr_data_path, allow_pickle=True)
+print(ilqr_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-# lmpc_data = []
-# for d in lmpc_traj_data_name:
-#     lmpc_data.append(np.load(os.path.join(lmpc_data_path, d), allow_pickle=True))
-# lmpc_traj_data = [d['trajs_data']['obs'][0] for d in lmpc_data]
-# lmpc_traj_data = np.array(lmpc_traj_data)
-# print(lmpc_traj_data.shape)
-# # take average of all seeds
-# lmpc_mean_traj_data = np.mean(lmpc_traj_data, axis=0)
-# print(lmpc_mean_traj_data.shape)
-
-# ### plot the mpc data
-# if not generalization:
-#     mpc_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/mpc_acados/results/temp'
-# if generalization:
-#     mpc_data_path = '/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/mpc_acados/results_rollout/temp'
-# mpc_data_path =
-# mpc_data_dirs = [d for d in os.listdir(mpc_data_path) if os.path.isdir(os.path.join(mpc_data_path, d))]
-# mpc_traj_data_name = 'mpc_acados_data_quadrotor_traj_tracking.pkl'
-# mpc_traj_data_name = [os.path.join(d, mpc_traj_data_name) for d in mpc_data_dirs]
-
-# mpc_data = []
-# for d in mpc_traj_data_name:
-#     mpc_data.append(np.load(os.path.join(mpc_data_path, d), allow_pickle=True))
-# mpc_traj_data = [d['trajs_data']['obs'][0] for d in mpc_data]
-# mpc_traj_data = np.array(mpc_traj_data)
-# print(mpc_traj_data.shape) # (10, 541, 6) seed, time_step, obs
-# # take average of all seeds
-# mpc_mean_traj_data = np.mean(mpc_traj_data, axis=0)
-# print(mpc_mean_traj_data.shape) # (mean_541, 6)
-
-
-# # load Control-oriented data
-# pid_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/pid/results_rollout_{additional}/temp/traj_results_pid.npy'
-# pid_traj_data = np.load(pid_data_path, allow_pickle=True)
-# print(pid_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
-
-# lqr_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/lqr/results_rollout_{additional}/temp/traj_results_lqr.npy'
-# lqr_traj_data = np.load(lqr_data_path, allow_pickle=True)
-# print(lqr_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
-
-# ilqr_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/ilqr/results_rollout_{additional}/temp/traj_results_ilqr.npy'
-# ilqr_traj_data = np.load(ilqr_data_path, allow_pickle=True)
-# print(ilqr_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
-
-lmpc_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/linear_mpc_acados/results_rollout_{additional}/temp/traj_results_linear_mpc_acados.npy'
+lmpc_data_path = os.path.join(script_path, f'../data/traj_results_linear_mpc_acados_{SYS}_{additional}.npy')
 lmpc_traj_data = np.load(lmpc_data_path, allow_pickle=True)
 print(lmpc_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-
-mpc_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/mpc_acados/results_rollout_{additional}/temp/traj_results_mpc_acados.npy'
+mpc_data_path = os.path.join(script_path, f'../data/traj_results_mpc_acados_{SYS}_{additional}.npy')
 mpc_traj_data = np.load(mpc_data_path, allow_pickle=True)
 print(mpc_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-# fmpc
-fmpc_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/fmpc/results_rollout_{additional}/temp/traj_results_fmpc.npy'
+fmpc_data_path = os.path.join(script_path, f'../data/traj_results_fmpc_{SYS}_{additional}.npy')
 fmpc_traj_data = np.load(fmpc_data_path, allow_pickle=True)
 print(fmpc_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
+gpmpc_data_path = os.path.join(script_path, f'../data/traj_results_gpmpc_acados_TP_{SYS}_{additional}.npy')
+gpmpc_traj_data = np.load(gpmpc_data_path, allow_pickle=True)
+print(gpmpc_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-# gpmpc_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/data/traj_results_gpmpc_{additional}.npy'
-# gpmpc_traj_data = np.load(gpmpc_data_path, allow_pickle=True)
-# print(gpmpc_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
+ppo_data_path = os.path.join(script_path, f'../data/traj_results_ppo_{additional}.npy')
+ppo_data = np.load(ppo_data_path, allow_pickle=True).item()
+ppo_traj_data = np.array(ppo_data['obs'])
+print(ppo_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-# ppo_data_path = f'/home/tobias/Studium/masterarbeit/code/safe-control-gym/benchmarking_sim/quadrotor/data/traj_results_ppo_{additional}.npy'
-# ppo_data = np.load(ppo_data_path, allow_pickle=True).item()
-# print(ppo_data.keys())  # (x, 541, 6) seed, time_step, obs
-# print(ppo_data['obs'][0].shape)
-# ppo_traj_data = np.array(ppo_data['obs'])
-# print(ppo_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
+sac_data_path = os.path.join(script_path, f'../data/traj_results_sac_{additional}.npy')
+sac_data = np.load(sac_data_path, allow_pickle=True).item()
+sac_traj_data = np.array(sac_data['obs'])
+print(sac_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-# sac_data_path = f'/home/mingxuan/Repositories/scg_tsung/examples/rl/Data/traj_results_sac_{additional}.npy'
-# sac_data = np.load(sac_data_path, allow_pickle=True).item()
-# print(sac_data.keys())  # (x, 541, 6) seed, time_step, obs
-# print(sac_data['obs'][0].shape)
-# sac_traj_data = np.array(sac_data['obs'])
-# print(sac_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
+dppo_data_path = os.path.join(script_path, f'../data/traj_results_dppo_{additional}.npy')
+dppo_data = np.load(dppo_data_path, allow_pickle=True).item()
+dppo_traj_data = np.array(dppo_data['obs'])
+print(dppo_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
 
-
-# dppo_data_path = f'/home/mingxuan/Repositories/scg_tsung/examples/rl/Data/traj_results_dppo_{additional}.npy'
-# dppo_data = np.load(dppo_data_path, allow_pickle=True).item()
-# print(dppo_data.keys())  # (x, 541, 6) seed, time_step, obs
-# print(dppo_data['obs'][0].shape)
-# dppo_traj_data = np.array(dppo_data['obs'])
-# print(dppo_traj_data.shape)  # (10, 541, 6) seed, time_step, obs
-
-
-def compute_rmse(traj, ref):
+def compute_rmse(traj, ref, idx='xz'):
+    if idx == 'xyz':
+        state_idx = [0, 2, 4]
+    elif idx == 'xy':
+        state_idx = [0, 2]
+    elif idx == 'xz':
+        state_idx = [0, 2]
     min_length = min(traj.shape[0], ref.shape[0])
     traj = traj[:min_length]
     ref = ref[:min_length]
-    error = np.sum((traj[:, [0,2]] - ref[:, [0,2]]) ** 2, axis=1)
+    error = np.sum((traj[:, state_idx] - ref[:, state_idx]) ** 2, axis=1)
     instant_error = np.sqrt(error)
     rmse = np.sqrt(np.mean(error, axis=0))
     return rmse, instant_error
 
-def compute_mean_rmse(traj_data, ref, ctrl=None):
-    rmse = [compute_rmse(traj_data[i], ref)[0] for i in range(traj_data.shape[0])]
-    mean_rmse = np.mean(rmse)
-    std_rmse = np.std(rmse)
-    mean_error = np.mean(np.array([compute_rmse(traj_data[i], ref)[1] for i in range(traj_data.shape[0])]), axis=0)
-    std_error = np.std(np.array([compute_rmse(traj_data[i], ref)[1] for i in range(traj_data.shape[0])]), axis=0)
-    if ctrl is not None:
-        print(f'RMSE {ctrl}: {mean_rmse} +/- {std_rmse}')
-    return mean_rmse, std_rmse, mean_error, std_error
+def compute_mean_rmse(traj_data, ref, ctrl=None, SYS='quadrotor_2D_attitude'):
+    # result_dict = {}
+    if SYS == 'quadrotor_2D_attitude':
+        rmse = [compute_rmse(traj_data[i], ref)[0] for i in range(traj_data.shape[0])]
+        mean_rmse = np.mean(rmse)
+        std_rmse = np.std(rmse)
+        mean_error = np.mean(np.array([compute_rmse(traj_data[i], ref)[1] for i in range(traj_data.shape[0])]), axis=0)
+        std_error = np.std(np.array([compute_rmse(traj_data[i], ref)[1] for i in range(traj_data.shape[0])]), axis=0)
+        if ctrl is not None:
+            print(f'RMSE {ctrl}: {mean_rmse} +/- {std_rmse}')
+        return mean_rmse, std_rmse, mean_error, std_error
+    elif SYS == 'quadrotor_3D_attitude':
+        rmse_full = [compute_rmse(traj_data[i], ref, 'xyz')[0] for i in range(traj_data.shape[0])]
+        mean_rmse_full, std_rmse_full = np.mean(rmse_full), np.std(rmse_full)
+        mean_error_full = np.mean(np.array([compute_rmse(traj_data[i], ref, 'xyz')[1] for i in range(traj_data.shape[0])]), axis=0)
+        std_error_full = np.std(np.array([compute_rmse(traj_data[i], ref, 'xyz')[1] for i in range(traj_data.shape[0])]), axis=0)
+        rmse_xy = [compute_rmse(traj_data[i], ref, 'xy')[0] for i in range(traj_data.shape[0])]
+        mean_rmse_xy, std_rmse_xy = np.mean(rmse_xy), np.std(rmse_xy)
+        mean_error_xy = np.mean(np.array([compute_rmse(traj_data[i], ref, 'xy')[1] for i in range(traj_data.shape[0])]), axis=0)
+        std_error_xy = np.std(np.array([compute_rmse(traj_data[i], ref, 'xy')[1] for i in range(traj_data.shape[0])]), axis=0)
+        rmse_xz = [compute_rmse(traj_data[i], ref, 'xz')[0] for i in range(traj_data.shape[0])]
+        mean_rmse_xz, std_rmse_xz = np.mean(rmse_xz), np.std(rmse_xz)
+        mean_error_xz = np.mean(np.array([compute_rmse(traj_data[i], ref, 'xz')[1] for i in range(traj_data.shape[0])]), axis=0)
+        std_error_xz = np.std(np.array([compute_rmse(traj_data[i], ref, 'xz')[1] for i in range(traj_data.shape[0])]), axis=0)
+        if ctrl is not None:
+            print(f'RMSE {ctrl} full: {mean_rmse_full} +/- {std_rmse_full}')
+            print(f'RMSE {ctrl} xy: {mean_rmse_xy} +/- {std_rmse_xy}')
+            print(f'RMSE {ctrl} xz: {mean_rmse_xz} +/- {std_rmse_xz}')
+        return mean_rmse_full, std_rmse_full, mean_error_full, std_error_full, \
+               mean_rmse_xy, std_rmse_xy, mean_error_xy, std_error_xy, \
+               mean_rmse_xz, std_rmse_xz, mean_error_xz, std_error_xz
 
-# mean_rmse_pid, std_rmse_pid, mean_error_pid, std_error_pid = compute_mean_rmse(pid_traj_data, X_GOAL, 'PID')
-# mean_rmse_lqr, std_rmse_lqr, mean_error_lqr, std_error_lqr = compute_mean_rmse(lqr_traj_data, X_GOAL, 'LQR')
-# mean_rmse_ilqr, std_rmse_ilqr, mean_error_ilqr, std_error_ilqr = compute_mean_rmse(ilqr_traj_data, X_GOAL, 'iLQR')
-# mean_rmse_gpmpc, std_rmse_gpmpc, mean_error_gpmpc, std_error_gpmpc = compute_mean_rmse(gpmpc_traj_data, X_GOAL, 'GP-MPC')
-mean_rmse_lmpc, std_rmse_lmpc, mean_error_lmpc, std_error_lmpc = compute_mean_rmse(lmpc_traj_data, X_GOAL, 'Linear MPC')
-mean_rmse_mpc, std_rmse_mpc, mean_error_mpc, std_error_mpc = compute_mean_rmse(mpc_traj_data, X_GOAL, 'MPC')
-mean_rmse_fmpc, std_rmse_fmpc, mean_error_fmpc, std_error_fmpc = compute_mean_rmse(fmpc_traj_data, X_GOAL, 'F-MPC')
-# mean_rmse_ppo, std_rmse_ppo, mean_error_ppo, std_error_ppo = compute_mean_rmse(ppo_traj_data, X_GOAL, 'PPO')
-# mean_rmse_sac, std_rmse_sac, mean_error_sac, std_error_sac = compute_mean_rmse(sac_traj_data, X_GOAL, 'SAC')
-# mean_rmse_dppo, std_rmse_dppo, mean_error_dppo, std_error_dppo = compute_mean_rmse(dppo_traj_data, X_GOAL, 'DPPO')
-
-
+if SYS == 'quadrotor_2D_attitude':
+    mean_rmse_pid, std_rmse_pid, mean_error_pid, std_error_pid = compute_mean_rmse(pid_traj_data, X_GOAL, 'PID')
+    mean_rmse_lqr, std_rmse_lqr, mean_error_lqr, std_error_lqr = compute_mean_rmse(lqr_traj_data, X_GOAL, 'LQR')
+    mean_rmse_ilqr, std_rmse_ilqr, mean_error_ilqr, std_error_ilqr = compute_mean_rmse(ilqr_traj_data, X_GOAL, 'iLQR')
+    mean_rmse_gpmpc, std_rmse_gpmpc, mean_error_gpmpc, std_error_gpmpc = compute_mean_rmse(gpmpc_traj_data, X_GOAL, 'GP-MPC')
+    mean_rmse_lmpc, std_rmse_lmpc, mean_error_lmpc, std_error_lmpc = compute_mean_rmse(lmpc_traj_data, X_GOAL, 'Linear MPC')
+    mean_rmse_mpc, std_rmse_mpc, mean_error_mpc, std_error_mpc = compute_mean_rmse(mpc_traj_data, X_GOAL, 'MPC')
+    mean_rmse_fmpc, std_rmse_fmpc, mean_error_fmpc, std_error_fmpc = compute_mean_rmse(fmpc_traj_data, X_GOAL, 'F-MPC')
+    mean_rmse_ppo, std_rmse_ppo, mean_error_ppo, std_error_ppo = compute_mean_rmse(ppo_traj_data, X_GOAL, 'PPO')
+    mean_rmse_sac, std_rmse_sac, mean_error_sac, std_error_sac = compute_mean_rmse(sac_traj_data, X_GOAL, 'SAC')
+    mean_rmse_dppo, std_rmse_dppo, mean_error_dppo, std_error_dppo = compute_mean_rmse(dppo_traj_data, X_GOAL, 'DPPO')
+elif SYS == 'quadrotor_3D_attitude':
+    mean_rmse_pid_full, std_rmse_pid_full, mean_error_pid_full, std_error_pid_full, \
+    mean_rmse_pid_xy, std_rmse_pid_xy, mean_error_pid_xy, std_error_pid_xy, \
+    mean_rmse_pid_xz, std_rmse_pid_xz, mean_error_pid_xz, std_error_pid_xz = compute_mean_rmse(pid_traj_data, X_GOAL, 'PID', SYS)
+# exit()
 ##################################################
 # # plotting trajectory
 # gpmpc_color = 'blue'
@@ -419,9 +348,6 @@ else:
     print(f'Saved at {os.path.join(script_path, f"{file_name}"+".pdf")}')
     fig.savefig(os.path.join(script_path, f'{file_name}'+".png"), bbox_inches='tight', dpi=300)
     print(f'Saved at {os.path.join(script_path, f"{file_name}"+".png")}')
-# exit()
-
-
 
 ##################################################
 # plot the state path x, z [0, 2]
@@ -467,7 +393,7 @@ elif plot_name == 'Control-oriented':
                                  linewidth=1.5, alpha=alpha, padding_factor=k)
     plot_xz_trajectory_with_hull(ax, mpc_traj_data, label='Nonlinear MPC',
                                  traj_color=plot_colors['Nonlinear MPC'], hull_color=plot_colors['Nonlinear MPC'],
-                                 linewidth=1.5, alpha=alpha, padding_factor=k)
+                                 linewidth=2.0, alpha=alpha, padding_factor=k)
     plot_xz_trajectory_with_hull(ax, fmpc_traj_data, label='F-MPC',
                                     traj_color=plot_colors['F-MPC'], hull_color=plot_colors['F-MPC'],
                                     linewidth=1.5, alpha=alpha, padding_factor=k)   
@@ -513,11 +439,12 @@ the one in the bottom will not be visible.
 '''
 # plt.show()
 
-if not generalization:
-    fig.savefig(os.path.join(script_path, f'{plot_name}_xz_path_performance.pdf'), bbox_inches='tight')
-    print(f'Saved at {os.path.join(script_path, f"{plot_name}_xz_path_performance.pdf")}')
-    fig.savefig(os.path.join(script_path, f'{plot_name}_xz_path_performance.png'), bbox_inches='tight', dpi=300) 
-    print(f'Saved at {os.path.join(script_path, f"{plot_name}_xz_path_performance.png")}')
+# if not generalization:
+if additional == '11':
+    fig.savefig(os.path.join(script_path, f'{plot_name}_xz_path_performance_{additional}.pdf'), bbox_inches='tight')
+    print(f'Saved at {os.path.join(script_path, f"{plot_name}_xz_path_performance_{additional}.pdf")}')
+    fig.savefig(os.path.join(script_path, f'{plot_name}_xz_path_performance_{additional}.png'), bbox_inches='tight') 
+    print(f'Saved at {os.path.join(script_path, f"{plot_name}_xz_path_performance_{additional}.png")}')
 else:
     fig.savefig(os.path.join(script_path, f'{plot_name}_xz_path_generalization_{additional}.pdf'), bbox_inches='tight')
     print(f'Saved at {os.path.join(script_path, f"{plot_name}_xz_path_generalization_{additional}.pdf")}')

@@ -8,6 +8,29 @@ from matplotlib.patches import Polygon
 
 from benchmarking_sim.quadrotor.mb_experiment_rollout import run
 
+def load_gym_data(data_dir):
+    traj_data = np.load(data_dir, allow_pickle=True)
+    obs = traj_data['trajs_data']['obs'][0]
+    state = traj_data['trajs_data']['state'][0]
+    act = traj_data['trajs_data']['action'][0]
+    rew = traj_data['trajs_data']['reward'][0]
+    ref = traj_data['trajs_data']['info'][0][0]['x_reference']
+    error = []
+    for i in range(1, len(traj_data['trajs_data']['info'][0])):
+        error.append(np.sqrt(traj_data['trajs_data']['info'][0][i]['mse']))
+    error = np.array(error)
+    # = traj_data['trajs_data']['info'][0][0]['error']
+    rmse = traj_data['metrics']['rmse']
+    results = {'obs': obs, 
+               'state': state, 
+               'action': act, 
+               'rew': rew,
+               'ref': ref,
+               'rmse': rmse,
+               'error': error,
+               }
+    return results
+
 def extract_rollouts(notebook_dir, data_folder, controller_name, additional=''):
     # print('notebook_dir', notebook_dir)
     data_folder_path = os.path.join(notebook_dir, controller_name, data_folder)
@@ -63,7 +86,11 @@ def run_rollouts(task_description):
     SYS = getattr(task_description, 'SYS', 'quadrotor_2D_attitude')
     noise_factor = getattr(task_description, 'noise_factor', 1)
     eval_task = getattr(task_description, 'eval_task', None)
-
+    dw_height = getattr(task_description, 'dw_height', None)
+    dw_height_scale = getattr(task_description, 'dw_height_scale', None)
+    gp_model_tag = getattr(task_description, 'gp_model_tag', '')
+    ctrl_tag = getattr(task_description, 'ctrl_tag', '')
+    
     for seed in range(start_seed, num_seed + start_seed):
         run(n_episodes=num_runs_per_seed,
             seed=seed, 
@@ -71,7 +98,11 @@ def run_rollouts(task_description):
             ALGO=algo,
             SYS=SYS,
             noise_factor=noise_factor,
-            eval_task=eval_task)
+            dw_height=dw_height,
+            dw_height_scale=dw_height_scale,
+            eval_task=eval_task,
+            gp_model_tag=gp_model_tag,
+            )
 
 def plot_xz_trajectory_with_hull(ax, traj_data, label=None, 
                                  traj_color='skyblue', hull_color='lightblue',

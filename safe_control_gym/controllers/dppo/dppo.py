@@ -42,6 +42,7 @@ class DPPO(BaseController):
                  seed=0,
                  **kwargs):
         super().__init__(env_func, training, checkpoint_path, output_dir, use_gpu, seed, **kwargs)
+        torch.manual_seed(seed=seed)
 
         # Task.
         if self.training:
@@ -151,12 +152,15 @@ class DPPO(BaseController):
             self.env.set_env_random_state(state['env_random_state'])
             self.logger.load(self.total_steps)
 
+    def setup_results_dict(self):
+        '''Setup the results dictionary to store run information.'''
+        self.results_dict = {'inference_time': []}
+
     def learn(self,
               env=None,
               **kwargs
               ):
         """Performs learning (pre-training, training, fine-tuning, etc.)."""
-
         # Initial Evaluation.
         eval_results = self.run(env=self.eval_env, n_episodes=self.eval_batch_size)
         self.logger.info('Eval | ep_lengths {:.2f} +/- {:.2f} | ep_return {:.3f} +/- {:.3f}'.format(
@@ -164,10 +168,10 @@ class DPPO(BaseController):
             eval_results['ep_lengths'].std(),
             eval_results['ep_returns'].mean(),
             eval_results['ep_returns'].std()))
-
         if self.num_checkpoints > 0:
             step_interval = np.linspace(0, self.max_env_steps, self.num_checkpoints)
             interval_save = np.zeros_like(step_interval, dtype=bool)
+
         while self.total_steps < self.max_env_steps:
             results = self.train_step()
 
@@ -219,7 +223,9 @@ class DPPO(BaseController):
 
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
+            start = time.time()
             action = self.agent.ac.act(obs)
+            self.results_dict['inference_time'].append(time.time()-start)
         return action
 
     def train_step(self):

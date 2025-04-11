@@ -21,7 +21,9 @@ class BaseExperiment:
                  ctrl,
                  train_env=None,
                  safety_filter=None,
+                 learn_safety_filter=False,
                  verbose: bool = False,
+                 reset_when_created: bool = True,
                  ):
         '''Creates a generic experiment class to run evaluations and collect standard metrics.
 
@@ -36,7 +38,11 @@ class BaseExperiment:
         self.metric_extractor = MetricExtractor()
         self.verbose = verbose
         self.env = env
-        self.MAX_STEPS = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC)
+        # NOTE: a hack for task randomization, need to be removed
+        if isinstance(self.env.EPISODE_LEN_SEC, list):
+            self.MAX_STEPS = int(self.env.CTRL_FREQ * max(self.env.EPISODE_LEN_SEC))
+        else:
+            self.MAX_STEPS = int(self.env.CTRL_FREQ * self.env.EPISODE_LEN_SEC) 
         if not is_wrapped(self.env, RecordDataWrapper):
             self.env = RecordDataWrapper(self.env)
         self.ctrl = ctrl
@@ -45,8 +51,10 @@ class BaseExperiment:
         if train_env is not None and not is_wrapped(self.train_env, RecordDataWrapper):
             self.train_env = RecordDataWrapper(self.train_env)
         self.safety_filter = safety_filter
+        self.learn_safety_filter = learn_safety_filter
 
-        self.reset()
+        if reset_when_created:
+            self.reset()
 
     def run_evaluation(self, training=False, n_episodes=None, n_steps=None, done_on_max_steps=None, log_freq=None, verbose=True, **kwargs):
         '''Evaluate a trained controller.
@@ -109,6 +117,9 @@ class BaseExperiment:
         ctrl_data = defaultdict(list)
         sf_data = defaultdict(list)
         inference_time_data = []
+        if isinstance(self.env.EPISODE_LEN_SEC, list):
+            # reset the max steps to handle task randomization
+            self.MAX_STEPS = int(self.env.CTRL_FREQ * self.env.episode_len)
 
         if n_episodes is not None:
             while trajs < n_episodes:
@@ -221,7 +232,7 @@ class BaseExperiment:
         self.reset()
         self.ctrl.learn(env=self.train_env, **kwargs)
 
-        if self.safety_filter:
+        if self.safety_filter and self.learn_safety_filter:
             self.safety_filter.learn(env=self.train_env, **kwargs)
 
         print('Training done.')
@@ -527,7 +538,13 @@ class MetricExtractor:
         Returns:
             episode_inference_time (double): The average inference time of all episodes.
         '''
-        return self.get_episode_data('inference_time_data', postprocess_func=lambda x: np.mean(x))
+        # self.data['controller_data'] 
+        if hasattr(self.data['controller_data'][0], 'inference_time'):
+            return self.get_episode_data('controller_data', 
+                                        postprocess_func=lambda x: np.mean(x['inference_time'][0]))
+        else:
+            return self.get_episode_data('inference_time_data', 
+                                        postprocess_func=lambda x: np.mean(x))
     
     def get_episode_early_stop(self):
         '''Occurence of early stop in episodes.

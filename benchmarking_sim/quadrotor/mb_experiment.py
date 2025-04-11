@@ -22,7 +22,7 @@ from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 script_path = os.path.dirname(os.path.realpath(__file__))
 
 @timing
-def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
+def run(gui=False, n_episodes=1, n_steps=None, save_data=True, seed=1):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -31,15 +31,24 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
+    generate_reference = False
+    # generate_reference = True
     # read the additional arguments
     if len(sys.argv) > 1:
-        ALGO = sys.argv[1]
+        print('sys.argv', sys.argv)
+        ALGO = sys.argv[1] 
+        ADDITIONAL = sys.argv[2] if len(sys.argv) > 2 else ''
+        CTRL_ADD = sys.argv[3] if len(sys.argv) > 3 else ''
+        if generate_reference:
+            TRAJ_LEN = sys.argv[2] if len(sys.argv) > 2 else None
+            TRAJ_LEN = int(TRAJ_LEN) if TRAJ_LEN is not None else None
+            ADDITIONAL = ''
     else:
         # ALGO = 'ilqr'
         # ALGO = 'gp_mpc'
         # ALGO = 'gpmpc_acados'
-        # ALGO = 'gpmpc_acados_TP'
-        ALGO = 'gpmpc_acados_TRP'
+        ALGO = 'gpmpc_acados_TP'
+        # ALGO = 'gpmpc_acados_TRP'
         # ALGO = 'mpc'
         # ALGO = 'mpc_acados'
         # ALGO = 'linear_mpc_acados'
@@ -47,15 +56,19 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
         # ALGO = 'lqr'
         # ALGO = 'lqr_c'
         # ALGO = 'pid'
-    # SYS = 'quadrotor_2D_attitude'
-    SYS = 'quadrotor_3D_attitude'
-    TASK = 'tracking'
-    # TASK = 'stab'
-    # PRIOR = '200'
-    # PRIOR = '150'
+        # ALGO = 'fmpc'
+        ADDITIONAL = ''
+        CTRL_ADD = ''
+        # ADDITIONAL = '_param'
     # ADDITIONAL = ''
+    # CTRL_ADD = '_tr'
+    SYS = 'quadrotor_2D_attitude'
+    # SYS = 'quadrotor_3D_attitude'
+    TASK = 'tracking'
+    # ADDITIONAL = ''
+    # ADDITIONAL = '_tr'
     # ADDITIONAL = '_9'
-    ADDITIONAL = '_11'
+    # ADDITIONAL = '_11'
     # ADDITIONAL='_snap'
     PRIOR = '100'
     agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 'quadrotor_3D_attitude'] else SYS
@@ -64,14 +77,14 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
 
     # check if the config file exists
     assert os.path.exists(f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml'), f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml does not exist'
-    assert os.path.exists(f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml'), f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml does not exist'
+    assert os.path.exists(f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}{CTRL_ADD}.yaml'), f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}{CTRL_ADD}.yaml does not exist'
     if SAFETY_FILTER is None:
         sys.argv[1:] = ['--algo', ALGO,
                         '--task', agent,
                         '--overrides',
                             f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
-                            f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
-                        '--seed', '1',
+                            f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}{CTRL_ADD}.yaml',
+                        '--seed', repr(seed),
                         '--use_gpu', 'True',
                         '--output_dir', f'./{ALGO}/results',
                             ]
@@ -84,10 +97,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
                         '--safety_filter', SAFETY_FILTER,
                         '--overrides',
                             f'./config_overrides/{SYS}_{TASK}{ADDITIONAL}.yaml',
-                            f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}.yaml',
+                            f'./config_overrides/{ALGO}_{SYS}_{TASK}_{PRIOR}{CTRL_ADD}.yaml',
                             f'./config_overrides/{SAFETY_FILTER}_{SYS}_{TASK}_{PRIOR}.yaml',
                         '--kv_overrides', f'sf_config.cost_function={MPSC_COST}',
-                        '--seed', '2',
+                        '--seed', repr(seed),
                         '--use_gpu', 'True',
                         '--output_dir', f'./{ALGO}/results',
                             ]
@@ -96,13 +109,26 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     fac.add_argument('--n_episodes', type=int, default=1, help='number of episodes to run.')
     # merge config and create output directory
     config = fac.merge()
-    if ALGO in ['gpmpc_acados', 'gp_mpc' , 'gpmpc_acados_TP']:
+    if ALGO in ['gpmpc_acados', 'gp_mpc' , 'gpmpc_acados_TP', 'gpmpc_acados_TRP']:
         num_data_max = config.algo_config.num_epochs * config.algo_config.num_samples
-        config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max))
+        config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max)+ ADDITIONAL)
     # print('output_dir',  config.algo_config.output_dir)
     set_dir_from_config(config)
     config.algo_config.output_dir = config.output_dir
     mkdirs(config.output_dir)
+    if generate_reference:
+        config.task_config.disturbances = None
+        config.randomized_init = False
+        config.task_config.task_info.ilqr_ref = False
+        if locals().get('TRAJ_LEN') is not None:
+            config.task_config.episode_len_sec = int(TRAJ_LEN)
+        # reconfigure the trajectory length for generating reference
+        target_traj_length = config.task_config.episode_len_sec
+        ref_traj_length = target_traj_length * 1.5
+        config.task_config.task_info.num_cycles *= 1.5
+        config.task_config.episode_len_sec = ref_traj_length
+        if ALGO == 'mpc_acados':
+            config.algo_config.horizon = int(ref_traj_length * config.task_config.ctrl_freq)
 
     # Create an environment
     env_func = partial(make,
@@ -180,11 +206,6 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
                                     train_runs=train_runs, 
                                     trajectory=ctrl.traj.T,
                                     dir=ctrl.output_dir)
-        plot_quad_eval(trajs_data['obs'][0], 
-                       trajs_data['action'][0], 
-                    #    trajs_data['current_clipped_action'][0],
-                       ctrl.env, 
-                       config.output_dir)
 
 
         # Close environments
@@ -199,6 +220,21 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
     random_env.close()
     metrics = experiment.compute_metrics(all_trajs)
     all_trajs = dict(all_trajs)
+    if generate_reference:
+        ref_data={'obs': all_trajs['obs'][0], 
+                  'action': all_trajs['action'][0],
+                  'rmse': metrics['rmse']}
+        np.save(f'./data/{ALGO}_{SYS}_{target_traj_length}_ref_traj.npy', \
+                ref_data, allow_pickle=True)
+    
+    if hasattr(experiment.env, 'dw_model'):
+        force_log = experiment.env.dw_model.get_force_log()
+        fig, ax = plt.subplots()
+        ax.plot(np.arange(len(force_log))/60, force_log)
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('Downwash force [N]')
+        ax.set_title('Downwash force')
+        fig.savefig(f'./{config.output_dir}/downwash_force.png')
 
     if save_data:
         results = {'trajs_data': all_trajs, 'metrics': metrics}
@@ -212,15 +248,25 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True):
 
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
     print(f'pyb_client: {ctrl.env.PYB_CLIENT}')
+    if not isinstance(config.task_config.episode_len_sec, list):
+        plot_quad_eval(results, 
+                    experiment.env, 
+                    config.output_dir)
+    if hasattr(ctrl, 'rand_hist'):
+        with open(f'./{config.output_dir}/rand_hist.txt', 'w') as file:
+            for key, value in ctrl.rand_hist.items():
+                file.write(f'{key}: {value}\n')
 
 # def plot_quad_eval(state_stack, input_stack, clipped_action_stack, env, save_path=None):
-def plot_quad_eval(state_stack, input_stack, env, save_path=None):
+def plot_quad_eval(res, env, save_path=None):
     '''Plots the input and states to determine success.
 
     Args:
         state_stack (ndarray): The list of observations in the latest run.
         input_stack (ndarray): The list of inputs of in the latest run.
     '''
+    state_stack = res['trajs_data']['obs'][0]
+    input_stack = res['trajs_data']['action'][0]
     model = env.symbolic
     if env.QUAD_TYPE == QuadType.TWO_D_ATTITUDE:
         x_idx, z_idx = 0, 2
@@ -236,6 +282,7 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
     reference = env.X_GOAL
     if env.TASK == Task.STABILIZATION:
         reference = np.tile(reference.reshape(1, model.nx), (plot_length, 1))
+    action_bound = env.action_space
 
     # Plot states
     fig, axs = plt.subplots(model.nx, figsize=(8, model.nx*1))
@@ -262,6 +309,8 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
         axs[k].plot(times, np.array(input_stack).transpose()[k, 0:plot_length])
         # axs[k].plot(times, np.array(clipped_action_stack).transpose()[k, 0:plot_length], color='r')
         axs[k].set(ylabel=f'input {k}')
+        axs[k].hlines(action_bound.high[k], 0, times[-1], color='gray', linestyle='--')
+        axs[k].hlines(action_bound.low[k], 0, times[-1], color='gray', linestyle='--')
         axs[k].set(ylabel=env.ACTION_LABELS[k] + f'\n[{env.ACTION_UNITS[k]}]')
         axs[k].yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     axs[0].set_title('Input Trajectories')
@@ -272,15 +321,27 @@ def plot_quad_eval(state_stack, input_stack, env, save_path=None):
         plt.savefig(os.path.join(save_path, 'input_trajectories.png'))
 
     # plot the figure-eight
-    fig, axs = plt.subplots(1)
-    axs.plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
+    fig, axs = plt.subplots(2, figsize=(8, 8))
+    axs[0].plot(np.array(state_stack).transpose()[x_idx, 0:plot_length], 
              np.array(state_stack).transpose()[z_idx, 0:plot_length], label='actual')
-    axs.plot(reference.transpose()[x_idx, 0:plot_length], 
+    axs[0].plot(reference.transpose()[x_idx, 0:plot_length], 
              reference.transpose()[z_idx, 0:plot_length], color='r', label='desired')
-    axs.set_xlabel('x [m]')
-    axs.set_ylabel('z [m]')
-    axs.set_title('State path in x-z plane')
-    axs.legend()
+    axs[0].set_xlabel('x [m]')
+    axs[0].set_ylabel('z [m]')
+    axs[0].set_title('State path in x-z plane')
+    axs[0].legend()
+
+    error = []
+    for i in range(1, len(res['trajs_data']['info'][0])):
+        error.append(np.sqrt(res['trajs_data']['info'][0][i]['mse']))
+    error = np.array(error)
+    rmse = res['metrics']['rmse']
+    # plot the tracking error
+    axs[1].plot(times, error)
+    axs[1].set_xlabel('time [s]')
+    axs[1].set_ylabel('tracking error [m]')
+    axs[1].set_title(f'Tracking error {rmse:.4f} m')
+
     fig.tight_layout()
 
     if save_path is not None:

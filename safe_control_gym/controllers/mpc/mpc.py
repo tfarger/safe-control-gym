@@ -244,7 +244,7 @@ class MPC(BaseController):
 
     def setup_optimizer(self, solver='qrsqp'):
         '''Sets up nonlinear optimization problem.'''
-        print(colored(f'Setting up optimizer with {solver}', 'green'))
+        print(colored(f'Setting up casadi optimizer with {solver}', 'green'))
         nx, nu = self.model.nx, self.model.nu
         T = self.T
         # Define optimizer and variables.
@@ -409,19 +409,19 @@ class MPC(BaseController):
             action += self.lqr_gain @ (obs - x_val[:, 0])
         self.prev_action = action
         return action
-    # @timing
+
     def get_references(self):
         '''Constructs reference states along mpc horizon.(nx, T+1).'''
-
-        # if the task is to track a periodic trajectory (circle, square, figure 8)
-        # append the T+1 states of the trajectory to the goal_states 
-        # such that the vel states won't drop at the end of an episode
         if self.env.TASK == Task.STABILIZATION:
             # Repeat goal state for horizon steps.
             goal_states = np.tile(self.env.X_GOAL.reshape(-1, 1), (1, self.T + 1))
         elif self.env.TASK == Task.TRAJ_TRACKING:
+            # if the task is to track a periodic trajectory (circle, square, figure 8)
+            # append the T+1 states of the trajectory to the goal_states 
+            # such that the vel states won't drop at the end of an episode
             self.extended_ref_traj = deepcopy(self.traj)
-            if self.env.TASK_INFO['trajectory_type'] in ['circle', 'square', 'figure8']:
+            if self.env.TASK_INFO['trajectory_type'] in ['circle', 'square', 'figure8'] and \
+                not ('ilqr_ref' in self.env.TASK_INFO.keys() and self.env.TASK_INFO['ilqr_ref']):
                 self.extended_ref_traj = np.concatenate([self.extended_ref_traj, self.extended_ref_traj[:, :self.T+1]], axis=1)
             # Slice trajectory for horizon steps, if not long enough, repeat last state.
             start = min(self.traj_step, self.extended_ref_traj.shape[-1])
@@ -431,7 +431,7 @@ class MPC(BaseController):
             TODO: if using the extended reference trajectory, 
             variable remain will always be 0. Consider removing it.
             '''
-            print('start:', start, 'end:', end, 'remain:', remain)
+            # print('start:', start, 'end:', end, 'remain:', remain)
             goal_states = np.concatenate([
                 self.extended_ref_traj[:, start:end],
                 np.tile(self.extended_ref_traj[:, -1:], (1, remain))
@@ -455,7 +455,7 @@ class MPC(BaseController):
                              'common_cost': [],
                              'state': [],
                              'state_error': [],
-                             't_wall': []
+                             'inference_time': []
                              }
 
     def run(self,
@@ -558,12 +558,12 @@ class MPC(BaseController):
                             'Check to make sure initial conditions are feasible.')
         return deepcopy(self.results_dict)
 
-    def reset_before_run(self, obs, info=None, env=None):
-        '''Reinitialize just the controller before a new run.
+    # def reset_before_run(self, obs, info=None, env=None):
+    #     '''Reinitialize just the controller before a new run.
 
-        Args:
-            obs (ndarray): The initial observation for the new run.
-            info (dict): The first info of the new run.
-            env (BenchmarkEnv): The environment to be used for the new run.
-        '''
-        self.reset()
+    #     Args:
+    #         obs (ndarray): The initial observation for the new run.
+    #         info (dict): The first info of the new run.
+    #         env (BenchmarkEnv): The environment to be used for the new run.
+    #     '''
+    #     self.reset()

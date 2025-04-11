@@ -16,7 +16,7 @@ from matplotlib import pyplot as plt
 
 from safe_control_gym.envs.constraints import create_constraint_list
 from safe_control_gym.envs.disturbances import create_disturbance_list
-from safe_control_gym.envs.gym_pybullet_drones.trajectory_utils import (Waypoint,
+from safe_control_gym.envs.gym_pybullet_drones.trajectory_utils import (TrajectoryPlanner, Waypoint,
                                                                         compute_trajectory_derivatives,
                                                                         generate_trajectory)
 
@@ -77,6 +77,8 @@ class BenchmarkEnv(gym.Env, ABC):
                  inertial_prop=None,
                  randomized_inertial_prop: bool = False,
                  inertial_prop_randomization_info=None,
+                 randomized_disturbance=False,
+                 disturbance_randomization_info=None,
                  # Constraint.
                  constraints=None,
                  done_on_violation: bool = False,
@@ -115,6 +117,8 @@ class BenchmarkEnv(gym.Env, ABC):
             randomized_inertial_prop (bool, optional): Whether to randomize the inertial properties.
             inertial_prop_randomization_info (dict, optional): A dictionary with information used
                 to randomize the inert. properties.
+            randomized_noise (bool, optional): Whether to randomize the noise.
+            disturbance_randomization_info (dict, optional): A dictionary with information used to randomize the noise.
             constraints (Dict, optional): Dictionary to specify the constraints being used.
             done_on_violation (bool, optional): Whether to return done==True on a constraint violation.
             use_constraint_penalty (bool, optional): If to use shaped reward to penalize potential
@@ -163,6 +167,9 @@ class BenchmarkEnv(gym.Env, ABC):
         self.RANDOMIZED_INERTIAL_PROP = randomized_inertial_prop
         if inertial_prop_randomization_info is not None:
             self.INERTIAL_PROP_RAND_INFO = inertial_prop_randomization_info
+        self.RANDOMIZED_DISTURBANCE = randomized_disturbance
+        if disturbance_randomization_info is not None:
+            self.DISTURBABCE_RAND_INFO = disturbance_randomization_info
         # Set up action and observation space.
         self.NORMALIZED_RL_ACTION_SPACE = normalized_rl_action_space
         # Define cost-related quantities.
@@ -511,7 +518,8 @@ class BenchmarkEnv(gym.Env, ABC):
 
         # Apply penalized reward when close to constraint violation
         if self.COST == Cost.RL_REWARD:
-            if self.constraints is not None and self.use_constraint_penalty and self.constraints.is_violated(self, c_value=c_value):
+            if (self.constraints is not None and
+                    self.use_constraint_penalty and self.constraints.is_violated(self, c_value=c_value)):
                 if self.rew_exponential:
                     rew = np.log(rew)
                     rew += self.constraint_penalty
@@ -535,6 +543,7 @@ class BenchmarkEnv(gym.Env, ABC):
                              position_offset=np.array([0, 0]),
                              scaling=1.0,
                              sample_time=0.01,
+                             string_list=None,
                              waypoint_list=None
                              ):
         """Generates a 2D trajectory.
@@ -547,6 +556,8 @@ class BenchmarkEnv(gym.Env, ABC):
             position_offset (ndarray, optional): An initial position offset in the plane.
             scaling (float, optional): Scaling factor for the trajectory.
             sample_time (float, optional): The sampling timestep of the trajectory.
+            string_list (list, optional): List of string entries: start and end position
+            waypoint_list (list, optional): List of waypoints trajectory should go through
 
         Returns:
             ndarray: The positions in x, y, z of the trajectory sampled for its entire duration.
@@ -568,45 +579,64 @@ class BenchmarkEnv(gym.Env, ABC):
             coord_index_b = direction_list.index(traj_plane[1])
         else:
             raise ValueError('Trajectory plane should be in form of ab, where a and b can be {x, y, z}.')
-        # Generate time stamps.
-        times = np.arange(0, traj_length + sample_time, sample_time)  # sample time added to make reference one step longer than traj_length
+        # Generate time stamps. sample time added to make reference one step longer than traj_length
+        times = np.arange(0, traj_length + sample_time, sample_time)
         pos_ref_traj = np.zeros((len(times), 3))
         vel_ref_traj = np.zeros((len(times), 3))
         speed_traj = np.zeros((len(times), 1))
         # Initial trajectory for snap trajectory
         if traj_type == 'snap_figure8':
-            waypoint_times = np.arange(0, traj_length + traj_length / 50, traj_length / 50)
+            num_waypoints = 20
+            waypoint_times = np.arange(0, traj_length + traj_length / num_waypoints, traj_length / num_waypoints)
             waypoints = self._init_figure8(waypoint_times, traj_type, traj_period, coord_index_a,
                                            coord_index_b, position_offset[0], position_offset[1], scaling)
             polys = generate_trajectory(
                 waypoints,
-                degree=6,  # Polynomial degree
+                degree=5,  # Polynomial degree
                 idx_minimized_orders=4,  # Minimize derivatives in these orders (>= 2)
                 num_continuous_orders=3,  # Constrain continuity of derivatives up to order (>= 3)
-                algorithm='closed-form'   # "closed-form" Or "constrained"
+                algorithm='closed-form'  # "closed-form" Or "constrained"
                 # algorithm='constrained'   
             )
             # return information up to velocity (2nd derivative)
-            pva = compute_trajectory_derivatives(polys, times, 2)
+            pva = compute_trajectory_derivatives(polys, times, 3)
             pos_ref_traj = pva[0, :, :]
             vel_ref_traj = pva[1, :, :]
+            acc_ref_traj = pva[2, :, :]
             speed_traj = np.linalg.norm(vel_ref_traj, axis=1)
+            acc_mag = np.linalg.norm(acc_ref_traj, axis=1)
+            print(f"Max acceleration: {np.max(acc_mag)}")
+            print(f"Acc bound is: {0.3 * 9.81} to {1.8 * 9.81}")
+            print(f"Max velocity: {np.max(speed_traj)}")
+            print()
 
         elif traj_type == 'snap_custom':
             if waypoint_list is None:
                 raise ValueError('No waypoints defined for trajectory type snap_custom')
-            waypoints = self._init_custom(waypoint_list)
+            if waypoint_list is None and string_list is None:
+                raise ValueError('No waypoints defined for trajectory type snap_custom')
+            if string_list is not None:
+                traj = TrajectoryPlanner(waypoint_list, string_list)
+                waypoints = traj.waypoints.copy()
+            else:
+                waypoints = self._init_custom(waypoint_list)
             polys = generate_trajectory(
                 waypoints,
                 degree=6,  # Polynomial degree
                 idx_minimized_orders=4,  # Minimize derivatives in these orders (>= 2)
                 num_continuous_orders=3,  # Constrain continuity of derivatives up to order (>= 3)
-                algorithm='constrained'   # "closed-form" Or "constrained"
+                algorithm='closed-form'  # "closed-form" Or "constrained"
             )
             pva = compute_trajectory_derivatives(polys, times, 2)
             pos_ref_traj = pva[0, :, :]
             vel_ref_traj = pva[1, :, :]
+            # acc_ref_traj = pva[2, :, :]
             speed_traj = np.linalg.norm(vel_ref_traj, axis=1)
+            # acc_mag = np.linalg.norm(acc_ref_traj, axis=1)
+            # print(f"Max acceleration: {np.max(acc_mag)}")
+            print(f"Max velocity: {np.max(speed_traj)}")
+            print()
+
 
         else:
             # Compute trajectory points.
@@ -633,7 +663,7 @@ class BenchmarkEnv(gym.Env, ABC):
         # print(colored(f"Max velocity: {max_vel}, Max acceleration: {max_acc}", 'green'))
         # if max_acc > 1.8 * 9.81 or max_acc < 0.3 * 9.81:
         #     raise ValueError(f"Max acceleration is not in the range of 0.3g to 1.8g")
-            
+
         return pos_ref_traj, vel_ref_traj, speed_traj
 
     def _get_coordinates(self,
@@ -709,7 +739,7 @@ class BenchmarkEnv(gym.Env, ABC):
         coords_a = scaling * np.sin(traj_freq * t)
         coords_b = scaling * np.sin(traj_freq * t) * np.cos(traj_freq * t)
         coords_a_dot = scaling * traj_freq * np.cos(traj_freq * t)
-        coords_b_dot = scaling * traj_freq * (np.cos(traj_freq * t)**2 - np.sin(traj_freq * t)**2)
+        coords_b_dot = scaling * traj_freq * (np.cos(traj_freq * t) ** 2 - np.sin(traj_freq * t) ** 2)
         return coords_a, coords_b, coords_a_dot, coords_b_dot
 
     def _circle(self,

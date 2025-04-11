@@ -82,7 +82,7 @@ class FlatMPC(BaseController):
                                         q_mpc=[1],
                                         r_mpc=[1],
                                         warmstart=warmstart,
-                                        soft_constraints=soft_constraints,
+                                        soft_constraints=True,
                                         terminate_run_on_done=terminate_run_on_done,
                                         constraint_tol=constraint_tol,
                                         # prior_info=prior_info,
@@ -130,7 +130,13 @@ class FlatMPC(BaseController):
             self.transform_env_goal_to_flat_func = _transform_env_goal_to_flat_2D_att # map components of X_goal to flat state z
             # replace dynamics model with symbolic flat model
             self.mpc.model = _setup_flat_model_symbolic_2D_att(self.mpc.dt)
-            self.inertial_prop = self.mpc.env.INERTIAL_PROP
+            # self.inertial_prop = self.mpc.env.INERTIAL_PROP
+            self.inertial_prop = {}
+            self.inertial_prop['beta_1'] = self.env.beta_1
+            self.inertial_prop['beta_2'] = self.env.beta_2
+            self.inertial_prop['alpha_1'] = self.env.alpha_1
+            self.inertial_prop['alpha_2'] = self.env.alpha_2
+            self.inertial_prop['alpha_3'] = self.env.alpha_3
         else:
             raise NotImplementedError     
         
@@ -153,6 +159,23 @@ class FlatMPC(BaseController):
         self.mpc.constraints = {}
         self.mpc.state_constraints_sym = {}
         self.mpc.input_constraints_sym = {} 
+        
+        # apply box constraint to acceleration, to simulate a thrust constraint
+        Tc_max = self.env.physical_action_bounds[1][0]
+        Tc_min = self.env.physical_action_bounds[0][0]
+        h1 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 0, 0])).T # selects x_ddot
+        h2 = np.atleast_2d(np.array([0, 0, 0, 0, 0, 0, 1, 0])).T # selects z_ddot
+        b1 = (Tc_max*self.inertial_prop['beta_1'] + self.inertial_prop['beta_2'])
+        b2 = (Tc_min*self.inertial_prop['beta_1'] + self.inertial_prop['beta_2'])
+        sym_func1 = lambda x: h1.T @ x -b1
+        sym_func2 = lambda x: -h1.T @ x -b2
+        sym_func3 = lambda x: h2.T @ x -b1 + 9.8
+        sym_func4 = lambda x: -h2.T @ x +b2 - 9.8
+        # diagonal box on top
+        # h3 = np.atleast_2d(np.array([0, 0, 1, 0, 0, 0, 1, 0])).T # selects x_ddot + z_ddot
+        # sym_func4 = lambda x: h3.T @ x + 9.8 - b1*np.sqrt(2)
+        # sym_func5 = lambda x: -h3.T @ x - 9.8 - b1*np.sqrt(2)
+        self.mpc.state_constraints_sym = [sym_func1, sym_func2, sym_func3, sym_func4] #, sym_func5]
 
         # setup flat state observer
         self.fs_obs = FlatStateObserver(self.QUAD_TYPE, self.inertial_prop, self.mpc.env.GRAVITY_ACC, self.mpc.dt, self.mpc.T)
@@ -183,16 +206,12 @@ class FlatMPC(BaseController):
             z_ini = self.mpc.env.__dict__['init_z'.upper()]
             self.fs_obs.set_initial_hovering(x_ini, y_ini, z_ini)
 
-        # all set in super().reset()
-        # # Dynamics model.
-        # self.set_dynamics_func()
-        # # CasADi optimizer.
-        # self.setup_optimizer()
-        # # Previously solved states & inputs, useful for warm start.
-        # self.x_prev = None
-        # self.u_prev = None
 
         # self.setup_results_dict()
+
+    def reset_before_run(self, obs=None, info=None, env=None):
+        super().reset_before_run(obs, info, env)
+        self.mpc.reset_before_run()
         
     def setup_results_dict(self):
         '''Setup the results dictionary to store run information.'''
@@ -248,7 +267,7 @@ class FlatMPC(BaseController):
         
         # flat input transformation: z and v to action u        
         action = self.action_from_flat_states_func(z_horizon[:, 1], v_horizon[:, 0], self.inertial_prop, g=self.mpc.env.GRAVITY_ACC) 
-        
+        self.results_dict['inference_time'].append(self.mpc.acados_ocp_solver.get_stats("time_tot"))
 
         # feed data into observer
         self.fs_obs.input_FMPC_result(z_horizon, v_horizon, action)

@@ -71,6 +71,7 @@ class GPMPC_ACADOS_TRP(GPMPC):
             compute_ipopt_initial_guess: bool = True,
             use_RTI: bool = False,
             use_linear_prior: bool = True,
+            train_env_rand_info: dict = None,
             **kwargs
     ):
         super().__init__(
@@ -110,6 +111,8 @@ class GPMPC_ACADOS_TRP(GPMPC):
         self.Bd = np.eye(self.model.nx)[:, self.uncertain_dim]
         self.input_mask = None
         self.target_mask = None
+        self.train_env_rand_info = train_env_rand_info
+        self.rand_hist = {'task_rand': [], 'domain_rand': []}
 
         # MPC params
         # self.use_linear_prior = use_linear_prior
@@ -247,6 +250,11 @@ class GPMPC_ACADOS_TRP(GPMPC):
             train_env = self.env_func(randomized_init=True, seed=self.seed)
             train_env.action_space.seed(self.seed)
             train_envs = [train_env] * self.num_epochs
+        
+        # set up task randomization
+        if self.train_env_rand_info.type == 'task_rand':
+            for env in train_envs:
+                env.EPISODE_LEN_SEC = self.train_env_rand_info.episode_len_sec
         # init_test_states = get_random_init_states(env_func, num_test_episodes_per_epoch)
         test_envs = []
         if self.same_test_initial_state:
@@ -320,6 +328,8 @@ class GPMPC_ACADOS_TRP(GPMPC):
 
             # lengthscale, outputscale, noise, kern = self.gaussian_process.get_hyperparameters(as_numpy=True)
             # compute the condition number of the kernel matrix
+            self.rand_hist['task_rand'].append(train_envs[epoch].episode_len)
+            # self.rand_hist['noise
             # TODO: fix data logging
             np.savez(os.path.join(self.output_dir, 'data_%s'% epoch),
                     data_inputs=training_results['train_inputs'],
@@ -364,8 +374,9 @@ class GPMPC_ACADOS_TRP(GPMPC):
         '''
         data = np.load(f'{model_path}/data.npz')
         gp_model_path_T = f'{model_path}/best_model_T.pth'
+        gp_model_path_R = f'{model_path}/best_model_R.pth'
         gp_model_path_P = f'{model_path}/best_model_P.pth'
-        gp_model_path = [gp_model_path_T, gp_model_path_P]
+        gp_model_path = [gp_model_path_T, gp_model_path_R, gp_model_path_P]
         self.train_gp(input_data=data['data_inputs'], 
                         target_data=data['data_targets'],
                         gp_model=gp_model_path,)
@@ -545,8 +556,8 @@ class GPMPC_ACADOS_TRP(GPMPC):
                     + cs.vertcat(0, T_pred * (cs.cos(acados_model.x[self.phi_idx]) * cs.sin(acados_model.x[self.theta_idx])),
                                  0, T_pred * (- cs.sin(acados_model.x[self.phi_idx])),
                                  0, T_pred * (cs.cos(acados_model.x[self.phi_idx]) * cs.cos(acados_model.x[self.theta_idx])),
-                                 0, R_pred,
-                                 0, P_pred)
+                                 0, 0,
+                                 R_pred, P_pred)
             f_cont_func = cs.Function('f_cont_func', [acados_model.x, acados_model.u, acados_model.p], [f_cont])
             # use rk4 to discretize the continuous dynamics
             k1 = f_cont_func(acados_model.x, acados_model.u, acados_model.p)
@@ -881,7 +892,10 @@ class GPMPC_ACADOS_TRP(GPMPC):
         
         # Set the probabilistic state and input constraint set limits.
         # Tightening at the first step is possible if self.compute_initial_guess is used
+        # time_before_constraints = time.perf_counter()
         state_constraint_set_prev, input_constraint_set_prev = self.precompute_probabilistic_limits()
+        # time_after_constraints = time.perf_counter()
+        # print(f'gpmpc constraints time: {time_after_constraints - time_before_constraints:.3f}')
         # set acados parameters
         if self.sparse_gp:
             # sparse GP parameters
@@ -968,7 +982,8 @@ class GPMPC_ACADOS_TRP(GPMPC):
         print(f'gpmpc acados sol time: {time_after - time_before:.3f}; sol status {status}; nlp iter {self.acados_ocp_solver.get_stats("sqp_iter")}; qp iter {self.acados_ocp_solver.get_stats("qp_iter")}')
         if time_after - time_before > 1 / 60:
             print(colored(f'========= Warning: GPMPC ACADOS took {time_after - time_before:.3f} seconds =========', 'yellow'))
-
+        self.results_dict['inference_time'].append(self.acados_ocp_solver.get_stats("time_tot"))
+        
         if hasattr(self, 'K'):
             action += self.K @ (self.x_prev[:, 0] - obs)
             # self.u_prev = self.u_prev + self.K @ (self.x_prev - obs)

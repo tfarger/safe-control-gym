@@ -1,15 +1,11 @@
 '''Linear Time-Invariant (LTI) Model Predictive Control using Acados.'''
-import os
-import shutil
 from copy import deepcopy
-from datetime import datetime
 
 import casadi as cs
 import numpy as np
-import scipy
 from termcolor import colored
 
-from safe_control_gym.controllers.mpc.mpc import MPC
+from safe_control_gym.controllers.mpc.mpc_acados import MPC_ACADOS
 from safe_control_gym.controllers.mpc.mpc_utils import set_acados_constraint_bound
 from safe_control_gym.utils.utils import timing
 
@@ -23,8 +19,7 @@ except ImportError as e:
     print()
     exit()
 
-
-class LinearMPC_ACADOS(MPC):
+class LinearMPC_ACADOS(MPC_ACADOS):
     '''MPC with linear time-invariant (LIT) model.'''
 
     def __init__(
@@ -45,6 +40,7 @@ class LinearMPC_ACADOS(MPC):
             use_gpu: bool = False,
             seed: int = 0,
             use_RTI: bool = False,
+            compute_initial_guess_method = 'lqr',
             use_lqr_gain_and_terminal_cost: bool = False,
             **kwargs
     ):
@@ -81,7 +77,7 @@ class LinearMPC_ACADOS(MPC):
             constraint_tol=constraint_tol,
             output_dir=output_dir,
             additional_constraints=additional_constraints,
-            compute_initial_guess_method='ipopt',  # use ipopt initial guess by default
+            compute_initial_guess_method=compute_initial_guess_method,
             use_lqr_gain_and_terminal_cost=use_lqr_gain_and_terminal_cost,
             use_gpu=use_gpu,
             seed=seed,
@@ -96,110 +92,19 @@ class LinearMPC_ACADOS(MPC):
         # acados settings
         self.use_RTI = use_RTI
 
-    @timing
-    def reset(self):
-        '''Prepares for training or evaluation.'''
-        print(colored('Resetting MPC', 'green'))
-        super().reset()
-        # self.acados_model = None
-        # self.ocp = None
-        # self.acados_ocp_solver = None
-        if hasattr(self, 'acados_model'):
-            del self.acados_model
-        if hasattr(self, 'ocp'):
-            del self.ocp
-        if hasattr(self, 'acados_ocp_solver'):
-            del self.acados_ocp_solver
-
-        # delete the generated c code directory
-        if os.path.exists(self.output_dir + '/mpc_c_generated_code'):
-            print('deleting the generated MPC c code directory')
-            shutil.rmtree(self.output_dir + '/mpc_c_generated_code')
-            assert not os.path.exists(self.output_dir + '/mpc_c_generated_code'), 'Failed to delete the generated c code directory'
-        # Dynamics model.
-        self.setup_acados_model()
-        # Acados optimizer.
-        self.setup_acados_optimizer()
-        # get time in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.acados_ocp_solver = AcadosOcpSolver(self.ocp, self.output_dir + f'/mpc_acados_ocp_solver_{current_time}.json')
-
     def setup_acados_model(self) -> AcadosModel:
         '''Sets up symbolic model for acados.'''
-
-        acados_model = AcadosModel()
-        acados_model.x = self.model.x_sym
-        acados_model.u = self.model.u_sym
-        acados_model.name = self.env.NAME
-
-        # # continuous-time dynamics
-        # fc_func = self.model.fc_func
-        # x_dot = self.model.fc_linear_func(self.x_lin, self.u_lin, acados_model.x, acados_model.u)
-        # fc_func = cs.Function('fc_func', [acados_model.x, acados_model.u], 
-        #                                  [x_dot],)
-        # # set up rk4 (acados need symbolic expression of dynamics, not function)
-        # k1 = fc_func(acados_model.x, acados_model.u)
-        # k2 = fc_func(acados_model.x + self.dt / 2 * k1, acados_model.u)
-        # k3 = fc_func(acados_model.x + self.dt / 2 * k2, acados_model.u)
-        # k4 = fc_func(acados_model.x + self.dt * k3, acados_model.u)
-        # f_disc = acados_model.x + self.dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4) 
-        
-        f_disc = self.linear_dynamics_func(acados_model.x, acados_model.u)
-
+        acados_model = super().setup_acados_model()
+        # override the dynamics function with linearized dynamics
+        f_disc = self.linear_dynamics_func(acados_model.x, 
+                                           acados_model.u)
         acados_model.disc_dyn_expr = f_disc
-        '''
-        Other options to set up the model:
-        f_expl = self.model.x_dot (explicit continuous-time dynamics)
-        f_impl = self.model.x_dot_acados - f_expl (implicit continuous-time dynamics)
-        model.f_impl_expr = f_impl
-        model.f_expl_expr = f_expl
-        '''
-        # store meta information # NOTE: unit is missing
-        acados_model.x_labels = self.env.STATE_LABELS
-        acados_model.u_labels = self.env.ACTION_LABELS
-        acados_model.t_label = 'time'
-        # get current time stamp in $ymd_HMS format
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        acados_model.name = self.env.NAME + '_' + current_time
+        return acados_model
 
-        self.acados_model = acados_model
-
-    # @timing
-    def compute_initial_guess(self, init_state, goal_states=None):
-        '''Use IPOPT to get an initial guess of the solution.'''
-        x_val, u_val = super().compute_initial_guess(init_state, goal_states)
-        self.x_guess = x_val
-        self.u_guess = u_val
-        return x_val, u_val
-
-    def setup_acados_optimizer(self):
-        '''Sets up nonlinear optimization problem.'''
-        nx, nu = self.model.nx, self.model.nu
-        ny = nx + nu
-        ny_e = nx
-
-        # create ocp object to formulate the OCP
-        ocp = AcadosOcp()
-        ocp.model = self.acados_model
-
-        # set dimensions
-        ocp.dims.N = self.T  # prediction horizon
-
-        # set cost (NOTE: safe-control-gym uses quadratic cost)
-        ocp.cost.cost_type = 'LINEAR_LS'
-        ocp.cost.cost_type_e = 'LINEAR_LS'
-        ocp.cost.W = scipy.linalg.block_diag(self.Q, self.R)
-        ocp.cost.W_e = self.Q if not self.use_lqr_gain_and_terminal_cost else self.P
-        ocp.cost.Vx = np.zeros((ny, nx))
-        ocp.cost.Vx[:nx, :nx] = np.eye(nx)
-        ocp.cost.Vu = np.zeros((ny, nu))
-        ocp.cost.Vu[nx:(nx + nu), :nu] = np.eye(nu)
-        ocp.cost.Vx_e = np.eye(nx)
-        # placeholder y_ref and y_ref_e (will be set in select_action)
-        ocp.cost.yref = np.zeros((ny, ))
-        ocp.cost.yref_e = np.zeros((ny_e, ))
-
-        # Constraints
+    def setup_acados_optimizer(self, acados_model: AcadosModel) -> AcadosOcp:
+        '''Sets up linearized optimization problem.'''
+        ocp = super().setup_acados_optimizer(acados_model)
+        # Constraints are overridden with delta constraints
         # general constraint expressions
         state_constraint_expr_list = []
         input_constraint_expr_list = []
@@ -214,109 +119,16 @@ class LinearMPC_ACADOS(MPC):
         he_expr = cs.vertcat(*state_constraint_expr_list)  # terminal constraints are only state constraints
         # pass the constraints to the ocp object
         ocp = self.processing_acados_constraints_expression(ocp, h0_expr, h_expr, he_expr)
-
-        # slack costs for nonlinear constraints
-        if self.soft_constraints:
-            # slack variables for all constraints
-            ocp.constraints.Jsh_0 = np.eye(h0_expr.shape[0])
-            ocp.constraints.Jsh = np.eye(h_expr.shape[0])
-            ocp.constraints.Jsh_e = np.eye(he_expr.shape[0])
-            # slack penalty
-            L2_pen = self.soft_penalty
-            L1_pen = self.soft_penalty
-            ocp.cost.Zl_0 = L2_pen * np.ones(h0_expr.shape[0])
-            ocp.cost.Zu_0 = L2_pen * np.ones(h0_expr.shape[0])
-            ocp.cost.zl_0 = L1_pen * np.ones(h0_expr.shape[0])
-            ocp.cost.zu_0 = L1_pen * np.ones(h0_expr.shape[0])
-            ocp.cost.Zu = L2_pen * np.ones(h_expr.shape[0])
-            ocp.cost.Zl = L2_pen * np.ones(h_expr.shape[0])
-            ocp.cost.zl = L1_pen * np.ones(h_expr.shape[0])
-            ocp.cost.zu = L1_pen * np.ones(h_expr.shape[0])
-            ocp.cost.Zl_e = L2_pen * np.ones(he_expr.shape[0])
-            ocp.cost.Zu_e = L2_pen * np.ones(he_expr.shape[0])
-            ocp.cost.zl_e = L1_pen * np.ones(he_expr.shape[0])
-            ocp.cost.zu_e = L1_pen * np.ones(he_expr.shape[0])
-
-        # placeholder initial state constraint
-        x_init = np.zeros((nx))
-        ocp.constraints.x0 = x_init
-
-        # set up solver options
-        ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
-        ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
-        ocp.solver_options.integrator_type = 'DISCRETE'
-        ocp.solver_options.nlp_solver_type = 'SQP' if not self.use_RTI else 'SQP_RTI'
-        ocp.solver_options.nlp_solver_max_iter = 25 if not self.use_RTI else 1
-        # ocp.solver_options.globalization = 'FUNNEL_L1PEN_LINESEARCH' if not self.use_RTI else 'MERIT_BACKTRACKING'
-        # ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
-        ocp.solver_options.tf = self.T * self.dt  # prediction horizon
-
-        # c code generation
-        # NOTE: when using GP-MPC, a separated directory is needed;
-        # otherwise, Acados solver can read the wrong c code
         ocp.code_export_directory = self.output_dir + '/linear_mpc_c_generated_code'
-
-        self.ocp = ocp
-
-    def processing_acados_constraints_expression(self, ocp: AcadosOcp, h0_expr, h_expr, he_expr) -> AcadosOcp:
-        '''Preprocess the constraints to be compatible with acados.
-            Args:
-                ocp (AcadosOcp): acados ocp object
-                h0_expr (casadi expression): initial state constraints
-                h_expr (casadi expression): state and input constraints
-                he_expr (casadi expression): terminal state constraints
-            Returns:
-                ocp (AcadosOcp): acados ocp object with constraints set.
-
-        An alternative way to set the constraints is to use bounded constraints of acados:
-        # bounded input constraints
-        idxbu = np.where(np.sum(self.env.constraints.input_constraints[0].constraint_filter, axis=0) != 0)[0]
-        ocp.constraints.Jbu = np.eye(nu)
-        ocp.constraints.lbu = self.env.constraints.input_constraints[0].lower_bounds
-        ocp.constraints.ubu = self.env.constraints.input_constraints[0].upper_bounds
-        ocp.constraints.idxbu = idxbu # active constraints dimension
-        '''
-
-        ub = {'h': set_acados_constraint_bound(h_expr, 'ub', self.constraint_tol),
-              'h0': set_acados_constraint_bound(h0_expr, 'ub', self.constraint_tol),
-              'he': set_acados_constraint_bound(he_expr, 'ub', self.constraint_tol), }
-
-        lb = {'h': set_acados_constraint_bound(h_expr, 'lb'),
-              'h0': set_acados_constraint_bound(h0_expr, 'lb'),
-              'he': set_acados_constraint_bound(he_expr, 'lb'), }
-
-        # make sure all the ub and lb are 1D numpy arrays
-        # (see: https://discourse.acados.org/t/infeasible-qps-when-using-nonlinear-casadi-constraint-expressions/1595/5?u=mxche)
-        for key in ub.keys():
-            ub[key] = ub[key].flatten() if ub[key].ndim != 1 else ub[key]
-            lb[key] = lb[key].flatten() if lb[key].ndim != 1 else lb[key]
-        # check ub and lb dimensions
-        for key in ub.keys():
-            assert ub[key].ndim == 1, f'ub[{key}] is not 1D numpy array'
-            assert lb[key].ndim == 1, f'lb[{key}] is not 1D numpy array'
-        assert ub['h'].shape == lb['h'].shape, 'h_ub and h_lb have different shapes'
-
-        # pass the constraints to the ocp object
-        ocp.model.con_h_expr_0, ocp.model.con_h_expr, ocp.model.con_h_expr_e = \
-            h0_expr, h_expr, he_expr
-        ocp.dims.nh_0, ocp.dims.nh, ocp.dims.nh_e = \
-            h0_expr.shape[0], h_expr.shape[0], he_expr.shape[0]
-        # assign constraints upper and lower bounds
-        ocp.constraints.uh_0 = ub['h0']
-        ocp.constraints.lh_0 = lb['h0']
-        ocp.constraints.uh = ub['h']
-        ocp.constraints.lh = lb['h']
-        ocp.constraints.uh_e = ub['he']
-        ocp.constraints.lh_e = lb['he']
 
         return ocp
 
-    @timing
+    # @timing
     def select_action(self,
                       obs,
                       info=None
                       ):
-        '''Solves nonlinear mpc problem to get next action.
+        '''Solves linear mpc problem to get next action.
 
         Args:
             obs (ndarray): Current state/observation.
@@ -325,7 +137,6 @@ class LinearMPC_ACADOS(MPC):
         Returns:
             action (ndarray): Input/action to the task/env.
         
-        NOTE: The the previous solutions has the value of linearized dynamics
         '''
         nx, nu = self.model.nx, self.model.nu
         # set initial condition (0-th state)
@@ -354,7 +165,6 @@ class LinearMPC_ACADOS(MPC):
         if self.mode == 'tracking':
             self.traj_step += 1
 
-        # y_ref = np.concatenate((goal_states[:, :-1], np.zeros((nu, self.T))))
         x_ref = goal_states[:, :-1] - np.repeat(self.x_lin.reshape(-1, 1), self.T, axis=1)
         u_ref = np.repeat(self.U_EQ.reshape(-1, 1) - self.u_lin.reshape(-1, 1), self.T, axis=1)
         y_ref = np.concatenate((x_ref, u_ref), axis=0)
@@ -400,9 +210,6 @@ class LinearMPC_ACADOS(MPC):
             self.acados_ocp_solver.print_statistics()
             status = self.acados_ocp_solver.get_stats('status')
             print(f'acados returned status {status}. ')
-            # OPTIONAL: shift the x_prev and u_prev and copy the last state
-            # self.x_prev = np.concatenate((self.x_guess[:, 1:], np.atleast_2d(self.x_guess[:, -1]).T), axis=1)
-            # self.u_prev = np.concatenate((self.u_guess[:, 1:], np.atleast_2d(self.u_guess[:, -1]).T), axis=1)
         action = self.acados_ocp_solver.get(0, 'u')
 
         self.x_guess = self.x_prev
@@ -410,6 +217,7 @@ class LinearMPC_ACADOS(MPC):
         self.results_dict['horizon_states'].append(deepcopy(self.x_prev))
         self.results_dict['horizon_inputs'].append(deepcopy(self.u_prev))
         self.results_dict['goal_states'].append(deepcopy(goal_states))
+        self.results_dict['inference_time'].append(self.acados_ocp_solver.get_stats("time_tot"))
 
         self.prev_action = action
 

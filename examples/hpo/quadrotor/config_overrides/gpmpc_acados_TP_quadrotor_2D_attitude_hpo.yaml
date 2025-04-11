@@ -4,69 +4,286 @@ hpo_config:
   objective: [exponentiated_rmse, exponentiated_rms_action_change] # [other metrics defined in base_experiment.py]
   objective_bounds: [[0.0, 1.0], [0.0, 1.0]] # [bounds for each objective]. Worse value will be assigned if objective evaluation is None
   direction: [maximize, maximize] # [minimize, maximize]
-  repetitions: 5 # number of samples of performance for each objective query
+  repetitions: 2 # number of samples of performance for each objective query
   n_episodes: 5 # number of episodes to evaluate each policy
-  use_gpu: True
+  use_gpu: False
   seed: 24
   save_n_best_hps: 1
   # budget
-  trials: 40
+  trials: 60
+  hp_eval_list: ['basic', 'ob_ns=5', 'proc_ns=3', 'ob_ns=5_proc_ns=3'] # list of optimized hyperparameter configurations to evaluate
 
-  # hyperparameters
+  # initial hyperparameters
   hps_config:
-    horizon: 25
+    horizon: 30
     learning_rate:
-    - 0.001
-    - 0.001
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
     optimization_iterations:
-    - 500 
-    - 500 
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    kernel: RBF
     n_ind_points: 40
-    num_epochs: 4
+    num_epochs: 6
     num_samples: 50
-    q_mpc: [15, 0.1, 15, 0.1, 0.5, 0.01]
-    r_mpc: [15., 5.]
-  vizier_hps:
-    horizon: 25
-    learning_rate:
-    - 0.001295064632205154
-    - 0.001295064632205154
-    n_ind_points: 40
-    num_epochs: 2
-    num_samples: 80
-    optimization_iterations:
-    - 1000
-    - 1000
     q_mpc:
-    - 15.0
-    - 0.0001
-    - 15.0
-    - 2.125483674492009
-    - 0.0001
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
     - 0.0001
     r_mpc:
-    - 15.0
-    - 5.983763933381028
-  optuna_hps:
-    horizon: 40
+    - 3
+    - 3
+  basic_init:
+    horizon: 30
     learning_rate:
-    - 0.037698716128765714
-    - 0.037698716128765714
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    kernel: RBF
     n_ind_points: 40
-    num_epochs: 9
+    num_epochs: 6
     num_samples: 50
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_init:
+    horizon: 30
+    learning_rate:
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    kernel: RBF
+    n_ind_points: 40
+    num_epochs: 6
+    num_samples: 50
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  proc_ns=3_init:
+    horizon: 30
+    learning_rate:
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    kernel: RBF
+    n_ind_points: 40
+    num_epochs: 6
+    num_samples: 50
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_proc_ns=3_init:
+    horizon: 30
+    learning_rate:
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    kernel: RBF
+    n_ind_points: 40
+    num_epochs: 6
+    num_samples: 50
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  basic:
+    horizon: 30
+    kernel: RBF
+    learning_rate:
+    - 0.01433059485189967
+    - 0.01433059485189967
+    - 0.01433059485189967
+    - 0.01433059485189967
+    - 0.01433059485189967
+    - 0.01433059485189967
+    n_ind_points: 40
+    num_epochs: 5
+    num_samples: 50
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5:
+    horizon: 30
+    kernel: RBF
+    learning_rate:
+    - 0.0009950539358468274
+    - 0.0009950539358468274
+    - 0.0009950539358468274
+    - 0.0009950539358468274
+    - 0.0009950539358468274
+    - 0.0009950539358468274
+    n_ind_points: 30
+    num_epochs: 8
+    num_samples: 70
     optimization_iterations:
     - 500
     - 500
+    - 500
+    - 500
+    - 500
+    - 500
     q_mpc:
-    - 12.522030216382474
-    - 0.005365037059564759
-    - 14.23494784523414
-    - 9.431441342048704
-    - 0.11647151972157371
-    - 0.02161096348902896
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
     r_mpc:
-    - 13.96472043195951
-    - 0.17094019932776305
+    - 3
+    - 3
+  proc_ns=3:
+    horizon: 25
+    kernel: RBF
+    learning_rate:
+    - 0.0008999306224632365
+    - 0.0008999306224632365
+    - 0.0008999306224632365
+    - 0.0008999306224632365
+    - 0.0008999306224632365
+    - 0.0008999306224632365
+    n_ind_points: 50
+    num_epochs: 5
+    num_samples: 70
+    optimization_iterations:
+    - 500
+    - 500
+    - 500
+    - 500
+    - 500
+    - 500
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_proc_ns=3:
+    horizon: 30
+    kernel: RBF
+    learning_rate:
+    - 0.0005000000000000001
+    - 0.0005000000000000001
+    - 0.0005000000000000001
+    - 0.0005000000000000001
+    - 0.0005000000000000001
+    - 0.0005000000000000001
+    n_ind_points: 40
+    num_epochs: 8
+    num_samples: 40
+    optimization_iterations:
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    - 3000
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+
 
 

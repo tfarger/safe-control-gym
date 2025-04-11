@@ -1,0 +1,124 @@
+hpo_config:
+
+  load_if_exists: True # this should set to True if hpo is run in parallel
+  objective: [exponentiated_rmse, exponentiated_rms_action_change] # [other metrics defined in base_experiment.py]
+  objective_bounds: [[0.0, 1.0], [0.0, 1.0]] # [bounds for each objective]. Worse value will be assigned if objective evaluation is None
+  direction: [maximize, maximize] # [minimize, maximize]
+  repetitions: 5 # number of samples of performance for each objective query
+  n_episodes: 5 # number of episodes to evaluate each policy
+  use_gpu: True
+  seed: 24
+  save_n_best_hps: 1
+  # budget
+  trials: 60
+  hp_eval_list: ['basic', 'ob_ns=5', 'proc_ns=3', 'ob_ns=5_proc_ns=3'] # list of optimized hyperparameter configurations to evaluate
+
+  # initial hyperparameters
+  hps_config:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  basic_init:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_init:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  proc_ns=3_init:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_proc_ns=3_init:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  basic:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5:
+    horizon: 20
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  proc_ns=3:
+    horizon: 25
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3
+  ob_ns=5_proc_ns=3:
+    horizon: 30
+    q_mpc:
+    - 12
+    - 0.1
+    - 12
+    - 0.1
+    - 0.05
+    - 0.0001
+    r_mpc:
+    - 3
+    - 3

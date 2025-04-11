@@ -48,6 +48,13 @@ def covSE_single(x,
     dist = ca.sum1((x - z) ** 2 / ell ** 2)
     return sf2 * ca.exp(-.5 * dist)
 
+def covLinear(x,
+              z,
+              variance,
+              constant
+              ):
+    return variance * ca.sum1(x * z) + constant
+
 def covMatern52ard(x,
                    z,
                    ell,
@@ -116,6 +123,9 @@ class ZeroMeanIndependentMultitaskGPModel(gpytorch.models.ExactGP):
                 batch_shape=torch.Size([self.n]),
                 ard_num_dims=train_x.shape[1]
             )
+        elif kernel == 'Linear':
+            self.covar_module = gpytorch.kernels.LinearKernel(batch_shape=torch.Size([self.n])) \
+                              + gpytorch.kernels.ConstantKernel()
         else:
             raise NotImplementedError
 
@@ -166,6 +176,10 @@ class ZeroMeanIndependentGPModel(gpytorch.models.ExactGP):
             self.covar_module = gpytorch.kernels.ScaleKernel(
                 gpytorch.kernels.RBFKernel(),
             )
+        elif kernel == 'Linear':
+            self.covar_module = gpytorch.kernels.LinearKernel() \
+                              + gpytorch.kernels.ConstantKernel()
+
 
     def forward(self,
                 x
@@ -204,6 +218,9 @@ class BatchIndependentMultitaskGPModel(gpytorch.models.ExactGP):
                 gpytorch.kernels.MaternKernel(ard_num_dims=train_x.shape[-1], batch_shape=torch.Size([train_y.shape[0]])),
                 batch_shape=torch.Size([train_y.shape[0]]), ard_num_dims=train_x.shape[-1]
             )
+        elif kernel == 'Linear':
+            self.covar_module = gpytorch.kernels.LinearKernel(batch_shape=torch.Size(train_y.shape[0])) \
+                              + gpytorch.kernels.ConstantKernel()
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -1072,6 +1089,12 @@ class BatchGPModel:
                                          [covMatern52ard(z, train_inputs.T, lengthscale.T, output_scale)],
                                          ['z'],
                                          ['K'])
+            elif self.kernel == 'Linear':
+                K_z_ztrain = ca.Function('k_z_ztrain',
+                                         [z],
+                                         [covLinear(z, train_inputs.T, output_scale)],
+                                         ['z'],
+                                         ['K'])
             y += [ca.Function('pred',
                               [z],
                               [K_z_ztrain(z=z)['K'] @ self.gp_K_plus_noise_inv[i, :, :].detach().numpy() @ train_targets[:, i]],
@@ -1233,9 +1256,11 @@ class GaussianProcess:
         self.casadi_predict = self.make_casadi_prediction_func(train_inputs, train_targets)
         # self.casadi_linearized_predict = \
         #     self.make_casadi_linearized_prediction_func(train_inputs, train_targets)
-        print(colored(f'outputscale: {self.model.covar_module.outputscale}', 'green'))
-        print(colored(f'lengthscale: {self.model.covar_module.base_kernel.lengthscale}', 'green'))
-        print(colored(f'noise: {self.model.likelihood.noise}', 'green'))
+        # print(colored(f'outputscale: {self.model.covar_module.outputscale}', 'green'))
+        # print(colored(f'lengthscale: {self.model.covar_module.base_kernel.lengthscale}', 'green'))
+        # print(colored(f'noise: {self.model.likelihood.noise}', 'green'))
+        for name, param in self.model.named_parameters():
+            print(f"{name}: {param.item():.4f}")
 
     def train(self,
               train_input_data,
@@ -1302,9 +1327,12 @@ class GaussianProcess:
             # self.model.covar_module.initialize(outputscale=init_output_scale)
             # self.model.covar_module.base_kernel.initialize(lengthscale=init_length_scale)
             # self.model.likelihood.initialize(noise=init_noise)
-            print('init outputscale: ', self.model.covar_module.outputscale)
-            print('init lengthscale: ', self.model.covar_module.base_kernel.lengthscale)
-            print('init noise: ', self.model.likelihood.noise)
+            # print('init outputscale: ', self.model.covar_module.outputscale)
+            # print("\nInit model parameters:")
+            # for name, param in self.model.named_parameters():
+            #     print(f"{name}: {param.item():.4f}")
+            # print('init lengthscale: ', self.model.covar_module.base_kernel.lengthscale)
+            # print('init noise: ', self.model.likelihood.noise)
             last_loss = 99999999
             best_loss = 99999999
             loss = torch.tensor(0)
@@ -1341,9 +1369,12 @@ class GaussianProcess:
         torch.save(opti_result[best_idx], fname)
         print(colored('Training Complete', 'green'))
         print(colored(f'Best loss in {max_trial} trials: {loss_result[best_idx]}', 'green'))
-        print(colored(f'final outputscale: {self.model.covar_module.outputscale}', 'green'))
-        print(colored(f'final lengthscale: {self.model.covar_module.base_kernel.lengthscale}', 'green'))
-        print(colored(f'final noise: {self.model.likelihood.noise}', 'green'))
+        # print("\nLearned model parameters:")
+        # for name, param in self.model.named_parameters():
+        #     print(f"{name}: {param.item():.4f}")
+        # print(colored(f'final outputscale: {self.model.covar_module.outputscale}', 'green'))
+        # print(colored(f'final lengthscale: {self.model.covar_module.base_kernel.lengthscale}', 'green'))
+        # print(colored(f'final noise: {self.model.likelihood.noise}', 'green'))
         self.model = self.model.cpu()
         self.likelihood = self.likelihood.cpu()
         train_x = train_x.cpu()
@@ -1402,8 +1433,13 @@ class GaussianProcess:
         '''Assumes train_inputs and train_targets are already masked.'''
         train_inputs = train_inputs.numpy()
         train_targets = train_targets.numpy()
-        lengthscale = self.model.covar_module.base_kernel.lengthscale.detach().numpy()
-        output_scale = self.model.covar_module.outputscale.detach().numpy()
+        if self.kernel == 'Linear':
+            varaince = self.model.covar_module.kernels[0].variance.detach().numpy()
+            constant = self.model.covar_module.kernels[1].constant.detach().numpy()
+        else:
+            lengthscale = self.model.covar_module.base_kernel.lengthscale.detach().numpy()
+            output_scale = self.model.covar_module.outputscale.detach().numpy()
+            
         # Nx = len(self.input_mask)
         Nx = self.input_dimension
         if train_targets.ndim == 1:
@@ -1427,6 +1463,12 @@ class GaussianProcess:
             K_z_ztrain = ca.Function('k_z_ztrain',
                                      [z],
                                      [covMatern52ard(z, train_inputs.T, lengthscale.T, output_scale)],
+                                     ['z'],
+                                     ['K'])
+        elif self.kernel == 'Linear':
+            K_z_ztrain = ca.Function('k_z_ztrain',
+                                     [z],
+                                     [covLinear(z, train_inputs.T, varaince, constant)],
                                      ['z'],
                                      ['K'])
         predict = ca.Function('pred',

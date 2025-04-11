@@ -7,28 +7,27 @@ from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import FormatStrFormatter
 
-from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.experiments.base_experiment import BaseExperiment
-from safe_control_gym.experiments.epoch_experiments import EpochExperiment
 from safe_control_gym.utils.configuration import ConfigFactory
 from safe_control_gym.utils.registration import make
 from safe_control_gym.utils.utils import mkdirs, set_dir_from_config, timing
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor import Quadrotor
 from safe_control_gym.utils.gpmpc_plotting import make_quad_plots
 from benchmarking_sim.quadrotor.mb_experiment import plot_quad_eval
+from safe_control_gym.controllers.mpc.gpmpc_base import GPMPC
 
 script_path = os.path.dirname(os.path.realpath(__file__))
-# gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_aggresive'
-# # get all directories in the gp_model_path
-# gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
-# gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
 
 @timing
 def run(gui=False, n_episodes=1, n_steps=None, save_data=True, 
         seed=2, Additional='', ALGO='pid', SYS='quadrotor_2D_attitude',
-        noise_factor=1, eval_task=None):
+        noise_factor=1, 
+        dw_height=None, dw_height_scale=None, 
+        eval_task=None,
+        gp_model_tag='',
+        ctrl_tag='',
+        ):
     '''The main function running experiments for model-based methods.
 
     Args:
@@ -37,24 +36,13 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         n_steps (int): The total number of steps to execute.
         save_data (bool): Whether to save the collected experiment data.
     '''
-    # ALGO = 'ilqr'
-    # ALGO = 'gp_mpc'
-    # ALGO = 'gpmpc_acados'
-    # ALGO = 'mpc'
-    # ALGO = 'mpc_acados'
     ALGO = ALGO
-    # ALGO = 'linear_mpc'
-    # ALGO = 'lqr'
-    # ALGO = 'lqr_c'
-    # ALGO = 'pid'
     SYS = SYS
     TASK = 'tracking'
-    # PRIOR = '200'
     PRIOR = '100'
-    agent = 'quadrotor' if SYS == 'quadrotor_2D' or SYS == 'quadrotor_2D_attitude' else SYS
-    # ADDITIONAL = '_fast'
+    agent = 'quadrotor' if SYS in ['quadrotor_2D', 'quadrotor_2D_attitude', 
+                                   'quadrotor_3D_attitude'] else SYS
     ADDITIONAL = Additional
-    # ADDITIONAL = ''
     SAFETY_FILTER = None
     # SAFETY_FILTER='linear_mpsc'
 
@@ -92,33 +80,75 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     fac.add_argument('--n_episodes', type=int, default=1, help='number of episodes to run.')
     # merge config and create output directory
     config = fac.merge()
+    gp_model_path = None
     if ALGO in ['gpmpc_acados', 'gp_mpc', 'gpmpc_acados_TP']:
-        num_data_max = config.algo_config.num_epochs * config.algo_config.num_samples
-        config.output_dir = os.path.join(config.output_dir, PRIOR + '_' + repr(num_data_max) + f'_rollout{ADDITIONAL}')
-        if seed%10 == 0:
-            config.algo_config.gp_model_path = gp_model_dirs[10-1]
-        else:
-            config.algo_config.gp_model_path = gp_model_dirs[seed%10-1]
+        gp_model_path = os.path.join(script_path, f'gpmpc_acados_TP/results/{gp_model_tag}/temp')
+    elif ALGO in ['gpmpc_acados_TRP']:
+        gp_model_path = os.path.join(script_path, f'gpmpc_acados_TRP/results/{gp_model_tag}/temp')
+    if gp_model_path is not None:
+        # gp_model_path = '/home/mingxuan/Repositories/scg_tsung/benchmarking_sim/quadrotor/gpmpc_acados/results/200_300_aggresive'
+        # # get all directories in the gp_model_path
+        gp_model_dirs = [d for d in os.listdir(gp_model_path) if os.path.isdir(os.path.join(gp_model_path, d))]
+        gp_model_dirs = [os.path.join(gp_model_path, d) for d in gp_model_dirs]
+        config.output_dir = os.path.join(config.output_dir, f'_{gp_model_tag}')
+        idx = seed % len(gp_model_dirs)
+        config.algo_config.gp_model_path = gp_model_dirs[idx]
+    # else:
+    if eval_task == 'rollout':
+        config.output_dir = config.output_dir + f'{ctrl_tag}_rollout_{SYS}{ADDITIONAL}'
+    elif eval_task in ['obs_noise', 'proc_noise', 'param', 'downwash']:
+        config.output_dir = config.output_dir + f'{ctrl_tag}_{eval_task}_{SYS}/' + f'seed_{seed}'
     else:
-        if eval_task == 'rollout':
-            config.output_dir = config.output_dir + f'_rollout{ADDITIONAL}'
-        elif eval_task == 'noise':
-            config.output_dir = config.output_dir + '_noise/' + f'seed_{seed}'
-        else:
-            raise ValueError('eval_task not recognized')
+        raise ValueError('eval_task not recognized')
         
     print('output_dir',  config.algo_config.output_dir)
     set_dir_from_config(config)
     config.algo_config.output_dir = config.output_dir
     mkdirs(config.output_dir)
 
-    config.algo_config.gp_model_path = gp_model_dirs[seed-1] if ALGO == 'gpmpc_acados' else None
+    # config.algo_config.gp_model_path = None
+    # if ALGO in ['gpmpc_acados', 'gp_mpc', 'gpmpc_acados_TP', 'gpmpc_acados_TRP']:
+    #     config.algo_config.gp_model_path = gp_model_dirs[seed-1]
+    
     # amplify the observation noise std with a factor 
-    default_noise_std = config.task_config.disturbances.observation[0]['std']
-    print(f'Original observation noise std: {default_noise_std}')
-    config.task_config.disturbances.observation[0]['std'] = [noise_factor * default_noise_std[i] for i in range(len(default_noise_std))]
-    print(f'Amplified observation noise std: {config.task_config.disturbances.observation[0]["std"]}')
-
+    if eval_task == 'obs_noise':
+        default_noise_std = config.task_config.disturbances.observation[0]['std']
+        print(f'Original observation noise std: {default_noise_std}')
+        config.task_config.disturbances.observation[0]['std'] = [noise_factor * default_noise_std[i] for i in range(len(default_noise_std))]
+        print(f'Amplified observation noise std: {config.task_config.disturbances.observation[0]["std"]}')
+    elif eval_task == 'proc_noise':
+        default_noise_std = config.task_config.disturbances.action[0]['std']
+        print(f'Original process noise std: {default_noise_std}')
+        config.task_config.disturbances.action[0]['std'] = [noise_factor * default_noise_std[i] for i in range(len(default_noise_std))]
+        print(f'Amplified process noise std: {config.task_config.disturbances.action[0]["std"]}')
+    elif eval_task == 'param':
+        # parametric uncertainty
+        config.task_config.randomized_inertial_prop = True
+        inertial_prop_rand_info = config.task_config.inertial_prop_randomization_info
+        print('Original inertial properties: ', inertial_prop_rand_info)
+        for key, value in inertial_prop_rand_info.items():
+            if value.distrib == 'uniform':
+                inertial_prop_rand_info[key].low = noise_factor * value.low
+                inertial_prop_rand_info[key].high = noise_factor * value.high
+            elif value.distrib == 'normal':
+                inertial_prop_rand_info[key].scale = noise_factor * value.scale
+        config.task_config.inertial_prop_randomization_info = inertial_prop_rand_info
+        print('Inertial properties: ', inertial_prop_rand_info)     
+            
+    elif eval_task == 'downwash':
+        # downwash height scale
+        if dw_height is not None:
+            config.task_config.disturbances.downwash[0].pos[-1] = dw_height
+            print('downwash height: ', config.task_config.disturbances.downwash[0].pos)
+        elif dw_height_scale is not None:
+            max_dw_height, min_dw_height = 3, 0.5
+            dw_height_space = max_dw_height - min_dw_height
+            traj_center = config.task_config.task_info.trajectory_position_offset[1] # 1 [m] by default
+            config.task_config.disturbances.downwash[0].pos[-1] = traj_center + min_dw_height + \
+                                                                dw_height_scale * dw_height_space
+            print(f'dw_height_scale: {dw_height_scale:.2f}')
+            print('downwash height: ', config.task_config.disturbances.downwash[0].pos[-1])
+    
     # Create an environment
     env_func = partial(make,
                        config.task,
@@ -159,7 +189,7 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
 
         # Create experiment, train, and run evaluation
         if SAFETY_FILTER is None:  
-            if ALGO in ['gpmpc_acados', 'gp_mpc'] :
+            if isinstance(ctrl, GPMPC):
                 experiment = BaseExperiment(env=static_env, ctrl=ctrl, train_env=static_train_env)
                 if config.algo_config.num_epochs == 1:
                     print('Evaluating prior controller')
@@ -185,20 +215,10 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
         else:
             trajs_data, _ = experiment.run_evaluation(training=True, n_steps=n_steps)
 
-        # plotting training and evaluation results
-        # training
-        if ALGO in ['gpmpc_acados', 'gp_mpc'] and \
-           config.algo_config.gp_model_path is None and \
-           config.algo_config.num_epochs > 1:
-                if isinstance(static_env, Quadrotor):
-                    make_quad_plots(test_runs=test_runs, 
-                                    train_runs=train_runs, 
-                                    trajectory=ctrl.traj.T,
-                                    dir=ctrl.output_dir)
-        plot_quad_eval(trajs_data['obs'][0], trajs_data['action'][0], ctrl.env, config.output_dir)
 
 
         # Close environments
+        experiment.close()
         static_env.close()
         static_train_env.close()
 
@@ -210,6 +230,24 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
     random_env.close()
     metrics = experiment.compute_metrics(all_trajs)
     metrics['noise_factor'] = noise_factor
+    metrics['dw_height'] = dw_height
+    metrics['dw_height_scale'] = dw_height_scale
+    max_dw_force = None
+    ctrl_params = ctrl.env.last_prop_values
+    env_params = experiment.env.last_prop_values
+    # metrics['ctrl_params'] = ctrl_params
+    # metrics['env_params'] = env_params
+    if hasattr(experiment.env, 'dw_model') and eval_task == 'downwash':
+        force_log = experiment.env.dw_model.get_force_log()
+        max_dw_force = np.max(force_log)
+        force_log = experiment.env.dw_model.get_force_log()
+        fig, ax = plt.subplots()
+        ax.plot(np.arange(len(force_log))/60, force_log)
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('Downwash force [N]')
+        ax.set_title('Downwash force')
+        fig.savefig(f'./{config.output_dir}/downwash_force.png')
+    metrics['max_dw_force'] = max_dw_force    
     all_trajs = dict(all_trajs)
 
     if save_data:
@@ -224,6 +262,8 @@ def run(gui=False, n_episodes=1, n_steps=None, save_data=True,
             print(f'Metrics saved to ./{config.output_dir}/metrics.txt')
 
     print('FINAL METRICS - ' + ', '.join([f'{key}: {value}' for key, value in metrics.items()]))
+    # plotting training and evaluation results
+    plot_quad_eval(results, ctrl.env, config.output_dir)
 
 if __name__ == '__main__':
 

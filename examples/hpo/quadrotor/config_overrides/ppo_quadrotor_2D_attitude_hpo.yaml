@@ -10,12 +10,13 @@ hpo_config:
   seed: 24
   save_n_best_hps: 1
   # budget
-  trials: 40
+  trials: 60
+  hp_eval_list: ['hps_config']
 
   # hyperparameters
   hps_config:
     # model args
-    hidden_dim: 64
+    hidden_dim: 128
     activation: relu
 
     # loss args
@@ -23,7 +24,7 @@ hpo_config:
     gae_lambda: 0.92
     clip_param: 0.2
     target_kl: 0.01
-    entropy_coef: 0.005
+    entropy_coef: 0.002
 
     # optim args
     opt_epochs: 20
@@ -32,58 +33,9 @@ hpo_config:
     critic_lr: 0.001
 
     # runner args
-    max_env_steps: 336000
+    max_env_steps: 660000
     rollout_batch_size: 5
 
     # objective
-    rew_state_weight: [10.0, 0.1, 10.0, 0.1, 0.1, 0.001]
-    rew_act_weight: [0.1, 0.1]
-  vizier_hps:
-    activation: relu
-    actor_lr: 0.0008983071385131106
-    clip_param: 0.2
-    critic_lr: 0.0010604750567992504
-    entropy_coef: 0.027168142112125156
-    gae_lambda: 0.92
-    gamma: 0.98
-    hidden_dim: 64
-    max_env_steps: 336000
-    mini_batch_size: 256
-    opt_epochs: 20
-    rew_act_weight:
-    - 0.004342434109985312
-    - 0.16308846035025895
-    rew_state_weight:
-    - 8.681025660217175
-    - 0.007712483036226952
-    - 8.684351881484186
-    - 0.25416422315600956
-    - 0.2089113565062738
-    - 0.042781113613173966
-    rollout_batch_size: 5
-    target_kl: 0.003516987203810008
-  optuna_hps:
-    activation: relu
-    actor_lr: 0.001242429110643358
-    clip_param: 0.2
-    critic_lr: 0.0007409742970868751
-    entropy_coef: 0.011477148555145044
-    gae_lambda: 0.92
-    gamma: 0.995
-    hidden_dim: 64
-    max_env_steps: 336000
-    mini_batch_size: 256
-    opt_epochs: 20
-    rew_act_weight:
-    - 2.398067015799397
-    - 8.4601550853529
-    rew_state_weight:
-    - 8.398154529340253
-    - 3.4328554805141462
-    - 14.329562904757722
-    - 3.167493869531107
-    - 0.28023049036766756
-    - 1.6380948160813094
-    rollout_batch_size: 4
-    target_kl: 0.0049339425693280346
-
+    rew_state_weight: [3., .1, 3., .1, .1, 0.001]
+    rew_act_weight: [.1, .1]

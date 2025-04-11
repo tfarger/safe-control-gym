@@ -12,6 +12,7 @@ import colorsys
 
 from safe_control_gym.experiments.base_experiment import BaseExperiment
 from safe_control_gym.hyperparameters.hpo_search_space import HYPERPARAMS_DICT
+from safe_control_gym.safety_filters.mpsc.mpsc_utils import Cost_Function
 from safe_control_gym.utils.logging import ExperimentLogger
 from safe_control_gym.utils.registration import make
 from safe_control_gym.utils.utils import mkdirs
@@ -54,7 +55,8 @@ class BaseHPO(ABC):
                  output_dir='./results',
                  safety_filter=None,
                  sf_config=None,
-                 load_study=False):
+                 load_study=False,
+                 resume=False):
         """
         Base class for Hyperparameter Optimization (HPO).
 
@@ -68,21 +70,33 @@ class BaseHPO(ABC):
             safety_filter (str): Safety filter to be applied (optional).
             sf_config: Safety filter configuration (optional).
             load_study (bool): Load existing study if True.
+            resume (bool): Resume existing trials if True.
         """
         self.algo = algo
         self.task = task
         self.output_dir = output_dir
+        self.exp_name = output_dir.split('/')[-2]
         self.task_config = task_config
         self.hpo_config = hpo_config
         self.algo_config = algo_config
         self.safety_filter = safety_filter
         self.sf_config = sf_config
         assert self.safety_filter is None or self.sf_config is not None, 'Safety filter config must be provided if safety filter is not None'
-        self.search_space_key = 'ilqr_sf' if self.safety_filter == 'linear_mpsc' and self.algo == 'ilqr' else self.algo
+        if self.safety_filter == 'linear_mpsc' and self.algo == 'ilqr':
+            self.search_space_key = 'ilqr_sf'
+        elif self.safety_filter == 'nl_mpsc' and self.algo == 'ppo':
+            self.search_space_key = 'ppo_mpsf'
+            self.study_name = algo + '_mpsf_hpo' + f'_{self.exp_name}'
+        else:
+            self.study_name = algo + '_hpo' + f'_{self.exp_name}'
+            self.search_space_key = self.algo
         self.logger = ExperimentLogger(output_dir)
         self.load_study = load_study
-        self.study_name = algo + '_hpo'
-        self.hps_config = hpo_config.hps_config
+        # set up hp initializations
+        if f'{self.exp_name}_init' in self.hpo_config:
+            self.hps_config = self.hpo_config[f'{self.exp_name}_init']
+        else:
+            self.hps_config = hpo_config.hps_config
         self.n_episodes = hpo_config.n_episodes
         self.objective_bounds = hpo_config.objective_bounds
 
@@ -91,6 +105,8 @@ class BaseHPO(ABC):
 
         self.state_dim = env.state_dim
         self.action_dim = env.action_dim
+
+        self.resume = resume
 
         self.append_hps_config()
         self.check_hyperparmeter_config()
@@ -106,6 +122,25 @@ class BaseHPO(ABC):
             for hp in HYPERPARAMS_DICT[self.search_space_key]:
                 if hp in self.sf_config:
                     self.hps_config[hp] = self.sf_config[hp]
+
+    def remove_umoptimized_hps(self, params):
+        ''' Remove unoptimized hyperparameters from the sampled hyperparameters (one may wants to speficify hps in self.hps_config
+            but does not want them to be optimized).'''
+        
+        for hp in list(params.keys()):
+            if hp not in HYPERPARAMS_DICT[self.search_space_key]:
+                del params[hp]
+
+        return params
+    
+    def add_unoptimized_hps(self, params):
+        ''' Add unoptimized hyperparameters to the sampled hyperparameters for saving purposes.'''
+
+        for hp in self.hps_config:
+            if hp not in params:
+                params[hp] = self.hps_config[hp]
+
+        return params
 
     def special_handle(self, param_name, param_value):
         """
@@ -140,10 +175,11 @@ class BaseHPO(ABC):
         """
         valid = True
         for param in self.hps_config:
-            if HYPERPARAMS_DICT[self.search_space_key][param]['type'] is not type(self.hps_config[param]):
-                valid = False
-                valid, _ = self.special_handle(param, self.hps_config[param])
-                assert valid, f'Hyperparameter {param} should be of type {HYPERPARAMS_DICT[self.search_space_key][param]["type"]}'
+            if param in HYPERPARAMS_DICT[self.search_space_key]:
+                if HYPERPARAMS_DICT[self.search_space_key][param]['type'] is not type(self.hps_config[param]):
+                    valid = False
+                    valid, _ = self.special_handle(param, self.hps_config[param])
+                    assert valid, f'Hyperparameter {param} should be of type {HYPERPARAMS_DICT[self.search_space_key][param]["type"]}'
 
     @abstractmethod
     def setup_problem(self):
@@ -161,6 +197,13 @@ class BaseHPO(ABC):
         Args:
             params (dict): Specified hyperparameters.
             objective (float): Objective value.
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    def resume_trials(self):
+        """
+        Resume existing trials.
         """
         raise NotImplementedError
 
@@ -255,16 +298,17 @@ class BaseHPO(ABC):
         params = deepcopy(params)
         for param in list(params.keys()):
             is_list = isinstance(params[param], list)
-            if is_list:
-                # multi-dimensional hyperparameters
-                if list == HYPERPARAMS_DICT[self.search_space_key][param]['type']:
-                    for i, value in enumerate(params[param]):
-                        new_param = f'{param}_{i}'
-                        params[new_param] = value
-                    del params[param]
-                # single-dimensional hyperparameters but in list format
-                else:
-                    params[param] = params[param][0]
+            if param in HYPERPARAMS_DICT[self.search_space_key]:
+                if is_list:
+                    # multi-dimensional hyperparameters
+                    if list == HYPERPARAMS_DICT[self.search_space_key][param]['type']:
+                        for i, value in enumerate(params[param]):
+                            new_param = f'{param}_{i}'
+                            params[new_param] = value
+                        del params[param]
+                    # single-dimensional hyperparameters but in list format
+                    else:
+                        params[param] = params[param][0]
 
         return params
 
@@ -353,18 +397,19 @@ class BaseHPO(ABC):
                                          env_func_filter,
                                          **self.sf_config)
                     safety_filter.reset()
-                    try:
-                        safety_filter.learn()
-                    except Exception as e:
-                        self.logger.info(f'Exception occurs when constructing safety filter: {e}')
-                        self.logger.info('Safety filter config: {}'.format(self.sf_config))
-                        self.logger.std_out_logger.logger.exception('Full exception traceback')
-                        self.agent.close()
-                        del self.agent
-                        del self.env_func
-                        return self.none_handler()
-                    mkdirs(f'{self.output_dir}/models/')
-                    safety_filter.save(path=f'{self.output_dir}/models/{self.safety_filter}.pkl')
+                    # try:
+                    #     safety_filter.learn()
+                    # except Exception as e:
+                    #     self.logger.info(f'Exception occurs when constructing safety filter: {e}')
+                    #     self.logger.info('Safety filter config: {}'.format(self.sf_config))
+                    #     self.logger.std_out_logger.logger.exception('Full exception traceback')
+                    #     self.agent.close()
+                    #     del self.agent
+                    #     del self.env_func
+                    #     return self.none_handler()
+                    # mkdirs(f'{self.output_dir}/models/')
+                    # safety_filter.save(path=f'{self.output_dir}/models/{self.safety_filter}.pkl')
+                    self.agent.safety_filter = safety_filter
                     experiment = BaseExperiment(eval_env, self.agent, safety_filter=safety_filter)
                 else:
                     experiment = BaseExperiment(eval_env, self.agent)
@@ -396,7 +441,43 @@ class BaseHPO(ABC):
 
             # TODO: add n_episondes to the config
             try:
-                trajs_data, metrics = experiment.run_evaluation(n_episodes=self.n_episodes, n_steps=None, done_on_max_steps=True)
+                if self.algo == 'ppo' and self.safety_filter == 'nl_mpsc':
+                    self.sf_config.cost_function = 'precomputed_cost'
+                    self.sf_config.mpsc_cost_horizon = 25
+                    self.sf_config.decay_factor = 1
+                    self.sf_config.max_w = 0.0
+                    self.sf_config.slack_cost = 1000.0
+                    self.task_config.done_on_violation = False
+                    self.task_config.randomized_init = False
+                    env_func = partial(make, self.task, output_dir=self.output_dir, **self.task_config)
+                    env = env_func()
+                    self.task_config.constraints[0].upper_bounds = [0.899, 1.99, 1.449, 1.99, 0.749, 2.99]
+                    self.task_config.constraints[0].lower_bounds = [-0.899, -1.99, 0.551, -1.99, -0.749, -2.99]
+                    self.task_config.constraints[1].upper_bounds = [0.59, 0.436]
+                    self.task_config.constraints[1].lower_bounds = [0.113, -0.436]
+                    env_func = partial(make, self.task, output_dir=self.output_dir, **self.task_config)
+                    agent = make(self.algo,
+                                  env_func,
+                                  training=False,
+                                  checkpoint_path=os.path.join(self.output_dir, 'model_latest.pt'),
+                                  output_dir=os.path.join(self.output_dir, 'hpo'),
+                                  use_gpu=self.hpo_config.use_gpu,
+                                  seed=seed,
+                                  **deepcopy(self.algo_config))
+                    agent.load(os.path.join(self.output_dir, 'model_latest.pt'))
+                    sf = make(self.safety_filter,
+                                        env_func,
+                                        **self.sf_config)
+                    sf.reset()
+                    if self.sf_config.cost_function == Cost_Function.PRECOMPUTED_COST:
+                        sf.cost_function.uncertified_controller = self.agent
+                        sf.cost_function.output_dir = '.'
+                    exp = BaseExperiment(env, agent, safety_filter=sf)
+                    trajs_data, metrics = exp.run_evaluation(n_episodes=self.n_episodes, n_steps=None, done_on_max_steps=True)
+                    exp.close()
+                    sf.close()
+                else:
+                    trajs_data, metrics = experiment.run_evaluation(n_episodes=self.n_episodes, n_steps=None, done_on_max_steps=True)
             except Exception as e:
                 self.agent.close()
                 # delete instances
@@ -544,11 +625,8 @@ class BaseHPO(ABC):
             axes = np.expand_dims(axes, axis=-1)
 
         # Define a base color for each hyperparameter set
-        hps_colors = {
-            'handtuned hps': 'blue',
-            'vizier hps': 'green',
-            'optuna hps': 'orange'
-        }
+        color_palette = plt.get_cmap('tab10')
+        hps_colors = {tag: color_palette(i) for i, tag in enumerate(self.hp_eval_list)}
 
         # Iterate over tags and data
         for col_idx, (tag, trajs_data_list) in enumerate(trajs_dict.items()):

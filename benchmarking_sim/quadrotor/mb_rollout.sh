@@ -1,51 +1,23 @@
 
-
-# for STARTSEED in 1 21 41 61 81
-# for STARTSEED in 40
-# do 
-#     for ADDITIOANL in '_11' # '_10' '_12' '_13' '_14'
-#     do
-#         python3 mb_experiment_rollout.py $STARTSEED 20 $ADDITIOANL 'gpmpc_acados'
-#     done
-# done
-
-# for algo in 'mpc_acados' # 'linear_mpc' 
-# do
-#     for STARTSEED in 21 41 61 81
-#     do 
-#         for ADDITIOANL in  '_13' '_14' # '_10' '_12'
-#         do
-#         python3 mb_experiment_rollout.py $STARTSEED 20 $ADDITIOANL $algo
-#         done
-#     done
-# done
-
-# for ADDITIOANL in '_9' '_11' '_13' '_15'
-# for ADDITIOANL in '_10' '_12' '_14'
-# for ADDITIOANL in '_9' '_10' '_11' '_12' '_13' '_14' '_15'
-for ADDITIOANL in '_11' 
+# for algo in 'pid'
+for algo in 'mpc_acados' 'fmpc' 'linear_mpc_acados' 'lqr' 'ilqr' 'pid'
 do
-    for STARTSEED in 1 11 21 31 41 51 61 71 81 91
-    # for STARTSEED in 1 
-    do 
-        # for algo in 'lqr' 'ilqr' # 'pid' 
-        # for algo in 'linear_mpc' 
-        for algo in 'fmpc' # 'mpc_acados' 'linear_mpc_acados' # 'lqr'
-        do
-            python3 results_rollout.py $ADDITIOANL $STARTSEED $algo 1
-        done
-    done
+    python3 results_noise.py $algo 'obs_noise'
+    python3 results_noise.py $algo 'proc_noise'
 done
 
-# noise testing. 
-# for ADDITIOANL in ''
-# do
-#     for STARTSEED in 1 
-#     do 
-#         for algo in 'ilqr'
-#         # for algo in 'linear_mpc_acados'
-#         do
-#             python3 results_noise.py $algo
-#         done
-#     done
-# done
+for algo in 'pid'
+for algo in 'mpc_acados' 'fmpc' 'linear_mpc_acados' 'lqr' 'ilqr' 'pid'
+do
+    python3 results_dw.py $algo
+done
+
+for ADDITIOANL in '_9' '_10' '_11' '_12' '_13' '_14' '_15'
+# for ADDITIOANL in '_11'
+do
+    # for algo in 'pid'
+    for algo in 'mpc_acados' 'fmpc' 'linear_mpc_acados' 'lqr' 'ilqr' 'pid'
+    do
+        python3 results_rollout.py $ADDITIOANL $algo 
+    done
+done
