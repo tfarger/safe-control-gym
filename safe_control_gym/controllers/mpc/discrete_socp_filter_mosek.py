@@ -13,7 +13,9 @@ import matplotlib.pyplot as plt
 from time import perf_counter # for GP inference time logging
 from line_profiler import profile
 
-import scipy.sparse as sp
+from mosek.fusion import Model, Domain, Expr, Matrix, ObjectiveSense, Param
+
+import sys
 
 class DiscreteSOCPFilterMOSEK:
     def __init__(self, gps, ctrl_mat, input_bound, normalization_vect = np.ones((6,)), slack_weights=[25.0, 250000.0, 25.0], beta_sqrt = [2, 2], state_bound=None, thrust_bound=None, dyn_ext_mat=None):
@@ -21,7 +23,7 @@ class DiscreteSOCPFilterMOSEK:
         self.gps = gps
         gps[0].model.precompute_np_quantities()
         gps[1].model.precompute_np_quantities()
-        self.d_weights = slack_weights # for slack variable, = 2*sqrt(rho) in formulas, 2 components        
+        self.d_weights = slack_weights # for slack variable        
         self.beta_sqrt = beta_sqrt # sqrt(beta_i) in formulas
 
         # get matrices for stability constraint
@@ -41,6 +43,38 @@ class DiscreteSOCPFilterMOSEK:
         # precompute quantity for stability filter
         W3_mat_comp = self.Ad - self.Bd @ self.K
         self.W3_mat = self.P - W3_mat_comp.T @ self.P @ W3_mat_comp
+
+        # problem definition with MOSEK Fusion API
+        self.model = Model("safety_filter")
+        self.model.setLogHandler(sys.stdout)
+
+        self.x = self.model.variable("x", 7, Domain.unbounded())# TODO add u_bar constraint here as domain
+
+        self.cost_variable = self.model.parameter("cost_variable", 7)
+        self.cost_variable.setValue([0, 0, 1, 0, 0, 0, 0]) # set initial value
+
+        self.A_fblin_rows = [0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 6, 7, 8, 9]
+        self.A_fblin_cols = [0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 2, 3, 4, 5]
+        A_fblin_initial_vals = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, self.d_weights[0], self.d_weights[1], self.d_weights[2]] #order: gam2_0, gam2_1
+        self.A_fblin = Matrix.sparse(10, 7, self.A_fblin_rows, self.A_fblin_cols, A_fblin_initial_vals)
+        self.b_fblin = Matrix.sparse(10, 1, [6], [0], [1.0])
+        self.c_fblin = Matrix.sparse(7, 1, [2], [0], [1.0])
+        self.d_fblin = 1.0
+
+        print(self.A_fblin.toString())
+        print(self.b_fblin.toString())
+        print(self.c_fblin.toString())
+        
+        rhs = Expr.add(Expr.dot(self.c_fblin, self.x), self.d_fblin)
+        lhs = Expr.add(Expr.mul(self.A_fblin, self.x), self.b_fblin)
+        expr_fblin = Expr.reshape(Expr.vstack(rhs, lhs), 11)
+        self.soc_fblin = self.model.constraint("soc_fblin", expr_fblin, Domain.inQCone())
+
+    
+        self.model.objective(ObjectiveSense.Minimize, Expr.dot(self.cost_variable, self.x))
+
+
+
 
         # Opt variables and parameters
         self.X = cp.Variable(shape=(7,))
@@ -169,36 +203,38 @@ class DiscreteSOCPFilterMOSEK:
         gam5 = [gamma5_0, gamma5_1]
         L_gam5 = [L_chol_0, L_chol_1 ]
         Linv_gam5 = [L_chol_inv_0, L_chol_inv_1]
-        # gp_time = []
-        # for i in [0, 1]: #range(len(gp_models)):
-        #     start_time = perf_counter()
-        #     # gamma1_pt, gamma2_pt, gamma3_pt, gamma4_pt, gamma5_pt = get_gammas(z_query, self.gps[i])
-        #     gamma1, gamma2, gamma3, gamma4, gamma5 = get_gammas_np(z_query, self.gps[i])
-        #     gp_time.append(perf_counter()-start_time)
-        #     # print(gamma1_pt-gamma1)
-        #     # print(gamma2_pt-gamma2)
-        #     # print(gamma3_pt-gamma3)
-        #     # print(gamma4_pt-gamma4)
-        #     # print(gamma5_pt-gamma5)
-        #     L_chol = np.linalg.cholesky(gamma5)
-        #     L_chol_inv = np.linalg.inv(L_chol)
-        #     gam1.append(gamma1)
-        #     gam2.append(gamma2)
-        #     gam3.append(gamma3)
-        #     gam4.append(gamma4)
-        #     gam5.append(gamma5)
-        #     L_gam5.append(L_chol)
-        #     Linv_gam5.append(L_chol_inv)
-        
-        # gp_time_total = gp_time[0] + gp_time[1]
 
         # Compute cost coefficients
-        cost = compute_cost(gam1, gam2, gam4, v_des)
-        self.cost.value = cost
+        cost = 2*(gamma1_0 - v_des[0]) *gamma2_0.T + gamma4_0.T + 2*(gamma1_1 - v_des[1]) *gamma2_1.T + gamma4_1.T 
+        cost = np.append(cost, np.array([[1.0, 0, 0, 0, 0]]))
+        self.cost_variable.setValue(cost)
+
+        # SOC fblin update A matrix
+        L_chol_flattened_0 = L_chol_0[L_chol_0 != 0]
+        L_chol_flattened_1 = L_chol_1[L_chol_1 != 0]
+        A_fblin_new = np.concatenate([gamma2_0, gamma2_1, L_chol_flattened_0, L_chol_flattened_1, np.array([-1, self.d_weights[0], self.d_weights[1], self.d_weights[2]])])
+        self.A_fblin = Matrix.sparse(10, 7, self.A_fblin_rows, self.A_fblin_cols, A_fblin_new)
+
+        rhs = Expr.add(Expr.dot(self.c_fblin, self.x), self.d_fblin)
+        lhs = Expr.add(Expr.mul(self.A_fblin, self.x), self.b_fblin)
+        expr_fblin = Expr.reshape(Expr.vstack(rhs, lhs), 11)
+        self.soc_fblin.update(expr_fblin, self.x)
+
+        self.model.solve()
+        print(self.x.level())
 
         # Compute dummy var mats (feedback linearization part)
-        A1 = dummy_var_matrices(gam2, L_gam5, self.d_weights)
-        self.A1.value = A1
+        # A1 = dummy_var_matrices(gam2, L_gam5, self.d_weights)
+        A = np.zeros((10,7))
+        A[0, :2] = 2*gam2[0]
+        A[1, :2] = 2*gam2[1]
+        A[2:4, :2] = 2*L_gam5[0].T
+        A[4:6, :2] = 2*L_gam5[1].T
+        A[6, 2] = -1.0
+        A[7, 3] = self.d_weights[0]
+        A[8, 4] = self.d_weights[1]
+        A[9, 5] = self.d_weights[2]
+        self.A1.value = A
 
         # Compute stablity filter coeffs
         e_k = z - z_ref
