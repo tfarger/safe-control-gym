@@ -25,7 +25,7 @@ from safe_control_gym.controllers.mpc.mpc_utils import compute_discrete_lqr_gain
 from safe_control_gym.envs.benchmark_env import Task
 from safe_control_gym.envs.gym_pybullet_drones.quadrotor_utils import QuadType
 
-from safe_control_gym.controllers.mpc.discrete_socp_filter import DiscreteSOCPFilter
+from safe_control_gym.controllers.mpc.discrete_socp_filter_mosek import DiscreteSOCPFilterMOSEK
 from safe_control_gym.controllers.mpc.flat_gp_utils import ZeroMeanAffineGP, GaussianProcess
 import gpytorch
 
@@ -259,7 +259,7 @@ class FlatMPC_SOCP(BaseController):
         d_weights = [socp_config.slack_weight_stability, socp_config.slack_weight_dyn_ext, socp_config.slack_weight_state] 
 
         # initialize SOCP Filter
-        self.filter = DiscreteSOCPFilter(gps, ctrl_mats, np.array(socp_config.input_bound), 
+        self.filter = DiscreteSOCPFilterMOSEK(gps, ctrl_mats, np.array(socp_config.input_bound), 
                                          normalization_vect=normalization_vect, 
                                          slack_weights=d_weights, beta_sqrt=socp_config.beta_sqrt, 
                                          thrust_bound=thrust_max, dyn_ext_mat=dyn_ext_mat, 
@@ -392,7 +392,7 @@ class FlatMPC_SOCP(BaseController):
         # flat input transformation: z and v to action u        
         z_ref = self.mpc.get_references()[:, 0] # TODO return from MPC for performance improvements
         # action_extended = _get_u_from_flat_states_2D_att_ext(z_obs, vd, self.inertial_prop, self.mpc.env.GRAVITY_ACC)
-        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input(z_obs, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
+        action_extended_socp, success, self.socp_opt, socp_logging = self.filter.compute_feedback_input_mosek(z_obs, z_ref, vd, self.eta) #, x_init=self.socp_opt) 
         time_safety = time.perf_counter()-start
 
         start = time.perf_counter()               
